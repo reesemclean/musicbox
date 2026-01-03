@@ -11,6 +11,7 @@ import {
   getSongById,
   getSongMetadata,
   removeSongFromPlaylist,
+  reorderPlaylistSongs,
   updatePlaylist,
   updateSong,
 } from '@/services/songsService'
@@ -71,7 +72,7 @@ export const removeSong = createServerFn({ method: 'POST' })
   .inputValidator((data: { id: number }) => data)
   .handler(async ({ data }) => {
     await deleteSong(data.id)
-    return { success: true }
+    return { success: true, deletedSongId: data.id }
   })
 
 // ============================================================================
@@ -104,6 +105,18 @@ export const removePlaylist = createServerFn({ method: 'POST' })
   .inputValidator((data: { id: number }) => data)
   .handler(async ({ data }) => {
     await deletePlaylist(data.id)
+    return { success: true }
+  })
+
+export const reorderPlaylistSongsFn = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: {
+      playlistId: number
+      reorderedSongs: Array<{ playlistSongId: number; position: number }>
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    await reorderPlaylistSongs(data.playlistId, data.reorderedSongs)
     return { success: true }
   })
 

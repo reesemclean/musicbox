@@ -1,10 +1,5 @@
-import {
-  createContext,
-  useContext,
-  useReducer,
-  useEffect,
-  type ReactNode,
-} from 'react'
+import { createContext, useContext, useEffect, useReducer } from 'react'
+import type { ReactNode } from 'react'
 
 export interface PlayerState {
   currentSongId: number | null
@@ -48,7 +43,12 @@ function getInitialState(): PlayerState {
 
 // Actions
 type PlayerAction =
-  | { type: 'PLAY_SONG'; songId: number; playlistId?: number; rowKey?: string | number }
+  | {
+      type: 'PLAY_SONG'
+      songId: number
+      playlistId?: number
+      rowKey?: string | number
+    }
   | {
       type: 'PLAY_PLAYLIST'
       playlistId: number
@@ -142,7 +142,11 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
 // Context
 interface PlayerContextType {
   state: PlayerState
-  playSong: (songId: number, playlistId?: number, rowKey?: string | number) => void
+  playSong: (
+    songId: number,
+    playlistId?: number,
+    rowKey?: string | number,
+  ) => void
   playPlaylist: (
     playlistId: number,
     songIds: Array<number>,
@@ -192,7 +196,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     playSong: (songId, playlistId, rowKey) =>
       dispatch({ type: 'PLAY_SONG', songId, playlistId, rowKey }),
     playPlaylist: (playlistId, songIds, startIndex, rowKey) =>
-      dispatch({ type: 'PLAY_PLAYLIST', playlistId, songIds, startIndex, rowKey }),
+      dispatch({
+        type: 'PLAY_PLAYLIST',
+        playlistId,
+        songIds,
+        startIndex,
+        rowKey,
+      }),
     togglePlayPause: () => dispatch({ type: 'TOGGLE_PLAY_PAUSE' }),
     setVolume: (volume) => dispatch({ type: 'SET_VOLUME', volume }),
     nextSong: () => dispatch({ type: 'NEXT_SONG' }),

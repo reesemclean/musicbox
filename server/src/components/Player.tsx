@@ -4,7 +4,7 @@ import { Pause, Play, SkipBack, SkipForward, Volume2 } from 'lucide-react'
 import { usePlayer } from '@/hooks/usePlayerState'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
-import { getSongMeta } from '@/services/songsServerFunctions'
+import { getPlaylist, getSongMeta } from '@/services/songsServerFunctions'
 
 export function Player() {
   const player = usePlayer()
@@ -19,6 +19,16 @@ export function Player() {
     queryKey: ['song-meta', player.state.currentSongId],
     queryFn: () => getSongMeta({ data: { id: player.state.currentSongId! } }),
     enabled: player.state.currentSongId !== null,
+  })
+
+  // Fetch current playlist if one is playing
+  const { data: currentPlaylist } = useQuery({
+    queryKey: ['playlist', player.state.currentPlaylistId],
+    queryFn: () =>
+      getPlaylist({ data: { id: player.state.currentPlaylistId! } }),
+    enabled:
+      player.state.currentPlaylistId !== null &&
+      player.state.currentPlaylistId !== 0,
   })
 
   // Create streaming URL directly (no blob, no memory overhead)
@@ -86,9 +96,54 @@ export function Player() {
     player.nextSong()
   }
 
-  // Don't show anything if no song is selected
+  // Handle error loading audio (e.g., song was deleted)
+  const handleError = () => {
+    console.error('Failed to load audio, skipping to next song')
+    // Skip to next song if there is one, otherwise clear the player
+    if (player.state.queueIndex < player.state.queue.length - 1) {
+      player.nextSong()
+    } else {
+      // At the end or only song in queue, clear player
+      player.clearPlayer()
+    }
+  }
+
+  // Show placeholder when no song is selected
   if (player.state.currentSongId === null) {
-    return null
+    return (
+      <div className="flex items-center gap-4 flex-1 max-w-4xl mx-auto">
+        {/* Song Info Placeholder */}
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-muted-foreground">
+            No song playing
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Select a song to start playing
+          </div>
+        </div>
+
+        {/* Controls - Disabled */}
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" disabled>
+            <SkipBack className="h-4 w-4" />
+          </Button>
+
+          <Button variant="default" size="icon" disabled>
+            <Play className="h-4 w-4" />
+          </Button>
+
+          <Button variant="ghost" size="icon" disabled>
+            <SkipForward className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Volume - Disabled */}
+        <div className="flex items-center gap-2 w-32 opacity-50">
+          <Volume2 className="h-4 w-4" />
+          <Slider value={[80]} max={100} step={1} className="flex-1" disabled />
+        </div>
+      </div>
+    )
   }
 
   // Show loading state while fetching song
@@ -122,6 +177,7 @@ export function Player() {
         src={audioUrl}
         autoPlay={player.state.isPlaying}
         onEnded={handleEnded}
+        onError={handleError}
       />
 
       {/* Song Info */}
@@ -129,6 +185,14 @@ export function Player() {
         <div className="font-medium truncate">{currentSong.title}</div>
         <div className="text-sm text-muted-foreground truncate">
           {currentSong.artist}
+          {player.state.currentPlaylistId !== null && (
+            <>
+              {' • '}
+              {player.state.currentPlaylistId === 0
+                ? 'All Songs'
+                : currentPlaylist?.name || 'Playlist'}
+            </>
+          )}
         </div>
       </div>
 

@@ -245,3 +245,25 @@ export async function removeSongFromPlaylist(
     .set({ updatedAt: new Date() })
     .where(eq(playlists.id, playlistId))
 }
+
+/**
+ * Reorder songs in a playlist
+ */
+export async function reorderPlaylistSongs(
+  playlistId: number,
+  reorderedSongs: Array<{ playlistSongId: number; position: number }>,
+): Promise<void> {
+  // Update positions in a transaction
+  for (const { playlistSongId, position } of reorderedSongs) {
+    await db
+      .update(playlistSongs)
+      .set({ position })
+      .where(eq(playlistSongs.id, playlistSongId))
+  }
+
+  // Update playlist updatedAt
+  await db
+    .update(playlists)
+    .set({ updatedAt: new Date() })
+    .where(eq(playlists.id, playlistId))
+}

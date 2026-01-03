@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 export interface YTMusicSearchResult {
   videoId: string
   title: string
-  artists: string[]
+  artists: Array<string>
   album?: string
   duration?: number
   thumbnails?: Array<{ url: string; width: number; height: number }>
@@ -15,13 +15,13 @@ export interface YTMusicAlbum {
   artist: string
   year?: number
   trackCount?: number
-  tracks: YTMusicAlbumTrack[]
+  tracks: Array<YTMusicAlbumTrack>
 }
 
 export interface YTMusicAlbumTrack {
   videoId: string
   title: string
-  artists: string[]
+  artists: Array<string>
   album?: string
   duration?: number
 }
@@ -29,7 +29,9 @@ export interface YTMusicAlbumTrack {
 /**
  * Search YouTube Music for songs
  */
-export async function searchSongs(query: string): Promise<YTMusicSearchResult[]> {
+export async function searchSongs(
+  query: string,
+): Promise<Array<YTMusicSearchResult>> {
   return new Promise((resolve, reject) => {
     const python = spawn('python3', [
       '-c',

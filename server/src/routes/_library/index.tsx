@@ -7,15 +7,29 @@ import {
 } from '@tanstack/react-query'
 import { useServerFn } from '@tanstack/react-start'
 import { useMemo, useState } from 'react'
+import type { Song } from '@/components/SongList'
+import { SongList } from '@/components/SongList'
 import {
   addPlaylist,
   addSongToPlaylistFn,
   getPlaylists,
   getSongs,
+  removeSong,
 } from '@/services/songsServerFunctions'
-import { SongList } from '@/components/SongList'
 import { Input } from '@/components/ui/input'
 import { PlaylistSelector } from '@/components/PlaylistSelector'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { usePlayer } from '@/hooks/usePlayerState'
+import { buttonVariants } from '@/components/ui/button'
 
 const songsQueryOptions = queryOptions({
   queryKey: ['songs'],
@@ -40,10 +54,13 @@ function AllSongsView() {
   const { data: playlists } = useSuspenseQuery(playlistsQueryOptions)
   const [selectedSongs, setSelectedSongs] = useState<Set<number>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  const [songToDelete, setSongToDelete] = useState<Song | null>(null)
   const queryClient = useQueryClient()
+  const player = usePlayer()
 
   const addSongFn = useServerFn(addSongToPlaylistFn)
   const createPlaylistFn = useServerFn(addPlaylist)
+  const deleteSongFn = useServerFn(removeSong)
 
   // Filter songs based on search query
   const filteredSongs = useMemo(() => {
@@ -104,6 +121,33 @@ function AllSongsView() {
     },
   })
 
+  const deleteSongMutation = useMutation({
+    mutationFn: async (songId: number) => {
+      await deleteSongFn({ data: { id: songId } })
+      return songId
+    },
+    onMutate: (songId) => {
+      // If deleting currently playing song, handle it
+      if (player.state.currentSongId === songId) {
+        if (player.state.queueIndex < player.state.queue.length - 1) {
+          player.nextSong()
+        } else {
+          player.clearPlayer()
+        }
+      }
+    },
+    onSuccess: async () => {
+      // Invalidate all song-related queries
+      await queryClient.invalidateQueries({ queryKey: ['songs'] })
+      await queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      setSongToDelete(null)
+    },
+    onError: (error) => {
+      console.error('Failed to delete song:', error)
+      setSongToDelete(null)
+    },
+  })
+
   const toggleSongSelection = (songId: number) => {
     const newSelection = new Set(selectedSongs)
     if (newSelection.has(songId)) {
@@ -133,6 +177,16 @@ function AllSongsView() {
     const songIds = Array.from(selectedSongs)
     setSelectedSongs(new Set()) // Clear immediately to prevent double-adding
     createPlaylistMutation.mutate({ name, songIds })
+  }
+
+  const handleDeleteSong = (song: Song) => {
+    setSongToDelete(song)
+  }
+
+  const confirmDeleteSong = () => {
+    if (songToDelete) {
+      deleteSongMutation.mutate(songToDelete.id)
+    }
   }
 
   return (
@@ -177,7 +231,37 @@ function AllSongsView() {
         selectedSongs={selectedSongs}
         onToggleSelection={toggleSongSelection}
         onToggleSelectAll={toggleSelectAll}
+        onDeleteSong={handleDeleteSong}
+        deletingSongId={deleteSongMutation.isPending ? songToDelete?.id : null}
       />
+
+      <AlertDialog
+        open={!!songToDelete}
+        onOpenChange={(open) => !open && setSongToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Song</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{songToDelete?.title}"? This will
+              permanently remove the song from your library and all playlists.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteSongMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteSong}
+              disabled={deleteSongMutation.isPending}
+              className={buttonVariants({ variant: 'destructive' })}
+            >
+              {deleteSongMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
