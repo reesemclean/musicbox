@@ -1,4 +1,6 @@
-import { Pause, Play } from 'lucide-react'
+import { ClientOnly } from '@tanstack/react-router'
+import { Play } from 'lucide-react'
+import { SongPlayButton } from './SongPlayButton'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { usePlayer } from '@/hooks/usePlayerState'
@@ -11,11 +13,12 @@ export interface Song {
   duration?: number | string | null
 }
 
-interface SongListProps {
-  songs: Array<Song>
+interface SongListProps<T extends Song> {
+  songs: Array<T>
   playlistId?: number
-  renderActions?: (song: Song) => React.ReactNode
+  renderActions?: (song: T) => React.ReactNode
   emptyMessage?: string
+  getRowKey?: (song: T) => string | number
   // Multiselect props
   selectable?: boolean
   selectedSongs?: Set<number>
@@ -23,42 +26,39 @@ interface SongListProps {
   onToggleSelectAll?: () => void
 }
 
-export function SongList({
+export function SongList<T extends Song>({
   songs,
   playlistId = 0,
   renderActions,
   emptyMessage = 'No songs available',
+  getRowKey,
   selectable = false,
   selectedSongs = new Set(),
   onToggleSelection,
   onToggleSelectAll,
-}: SongListProps) {
+}: SongListProps<T>) {
   const player = usePlayer()
 
-  const handlePlaySong = (songId: number) => {
+  const handlePlaySong = (song: T) => {
     const songIds = songs.map((s) => s.id)
-    const songIndex = songIds.indexOf(songId)
-    player.playPlaylist(playlistId, songIds, songIndex)
+    const songIndex = songIds.indexOf(song.id)
+    const rowKey = getRowKey ? getRowKey(song) : song.id
+    player.playPlaylist(playlistId, songIds, songIndex, rowKey)
   }
 
-  const handleTogglePlay = (songId: number) => {
+  const handleTogglePlay = (song: T) => {
+    const rowKey = getRowKey ? getRowKey(song) : song.id
     // If this song is currently playing, toggle play/pause
     if (
-      player.state.currentSongId === songId &&
-      player.state.currentPlaylistId === playlistId
+      player.state.currentSongId === song.id &&
+      player.state.currentPlaylistId === playlistId &&
+      player.state.currentRowKey === rowKey
     ) {
       player.togglePlayPause()
     } else {
       // Otherwise, play the song
-      handlePlaySong(songId)
+      handlePlaySong(song)
     }
-  }
-
-  const isCurrentSong = (songId: number) => {
-    return (
-      player.state.currentSongId === songId &&
-      player.state.currentPlaylistId === playlistId
-    )
   }
 
   const allSelected = songs.length > 0 && selectedSongs.size === songs.length
@@ -99,13 +99,12 @@ export function SongList({
         </thead>
         <tbody>
           {songs.map((song) => {
-            const isCurrent = isCurrentSong(song.id)
-            const isPlaying = isCurrent && player.state.isPlaying
             const isSelected = selectedSongs.has(song.id)
+            const rowKey = getRowKey ? getRowKey(song) : song.id
 
             return (
               <tr
-                key={song.id}
+                key={rowKey}
                 className="border-b last:border-0 hover:bg-accent/50 transition-colors group"
               >
                 {selectable && (
@@ -118,47 +117,51 @@ export function SongList({
                   </td>
                 )}
                 <td className="p-4">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`h-8 w-8 transition-opacity ${
-                      isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                    }`}
-                    onClick={() => handleTogglePlay(song.id)}
-                    aria-label={
-                      isPlaying ? `Pause ${song.title}` : `Play ${song.title}`
+                  <ClientOnly
+                    fallback={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 opacity-0 group-hover:opacity-100"
+                      >
+                        <Play className="h-4 w-4" />
+                      </Button>
                     }
                   >
-                    {isPlaying ? (
-                      <Pause className="h-4 w-4" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
-                  </Button>
+                    <SongPlayButton
+                      songId={song.id}
+                      songTitle={song.title}
+                      playlistId={playlistId}
+                      getIsCurrentSong={() =>
+                        player.state.currentSongId === song.id &&
+                        player.state.currentPlaylistId === playlistId &&
+                        player.state.currentRowKey === rowKey
+                      }
+                      onTogglePlay={() => handleTogglePlay(song)}
+                    />
+                  </ClientOnly>
                 </td>
                 <td
                   className="p-4 cursor-pointer"
-                  onClick={() => handlePlaySong(song.id)}
+                  onClick={() => handlePlaySong(song)}
                 >
-                  <div className={`font-medium ${isCurrent ? 'text-primary' : ''}`}>
-                    {song.title}
-                  </div>
+                  <div className="font-medium">{song.title}</div>
                 </td>
                 <td
                   className="p-4 text-muted-foreground cursor-pointer"
-                  onClick={() => handlePlaySong(song.id)}
+                  onClick={() => handlePlaySong(song)}
                 >
                   {song.artist || '—'}
                 </td>
                 <td
                   className="p-4 text-muted-foreground cursor-pointer"
-                  onClick={() => handlePlaySong(song.id)}
+                  onClick={() => handlePlaySong(song)}
                 >
                   {song.album || '—'}
                 </td>
                 <td
                   className="p-4 text-right text-muted-foreground cursor-pointer"
-                  onClick={() => handlePlaySong(song.id)}
+                  onClick={() => handlePlaySong(song)}
                 >
                   {song.duration || '—'}
                 </td>

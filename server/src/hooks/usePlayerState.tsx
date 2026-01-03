@@ -9,6 +9,7 @@ import {
 export interface PlayerState {
   currentSongId: number | null
   currentPlaylistId: number | null
+  currentRowKey: string | number | null
   isPlaying: boolean
   volume: number
   queue: Array<number>
@@ -18,6 +19,7 @@ export interface PlayerState {
 const DEFAULT_STATE: PlayerState = {
   currentSongId: null,
   currentPlaylistId: null,
+  currentRowKey: null,
   isPlaying: false,
   volume: 0.8,
   queue: [],
@@ -46,12 +48,13 @@ function getInitialState(): PlayerState {
 
 // Actions
 type PlayerAction =
-  | { type: 'PLAY_SONG'; songId: number; playlistId?: number }
+  | { type: 'PLAY_SONG'; songId: number; playlistId?: number; rowKey?: string | number }
   | {
       type: 'PLAY_PLAYLIST'
       playlistId: number
       songIds: Array<number>
       startIndex?: number
+      rowKey?: string | number
     }
   | { type: 'TOGGLE_PLAY_PAUSE' }
   | { type: 'SET_VOLUME'; volume: number }
@@ -68,6 +71,7 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
         ...state,
         currentSongId: action.songId,
         currentPlaylistId: action.playlistId || null,
+        currentRowKey: action.rowKey ?? action.songId,
         isPlaying: true,
         queue: [action.songId],
         queueIndex: 0,
@@ -78,6 +82,7 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
         ...state,
         currentPlaylistId: action.playlistId,
         currentSongId: action.songIds[action.startIndex ?? 0] || null,
+        currentRowKey: action.rowKey ?? action.songIds[action.startIndex ?? 0],
         isPlaying: true,
         queue: action.songIds,
         queueIndex: action.startIndex ?? 0,
@@ -101,6 +106,7 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
         newState = {
           ...state,
           currentSongId: state.queue[newIndex],
+          currentRowKey: state.queue[newIndex],
           queueIndex: newIndex,
         }
       } else {
@@ -113,6 +119,7 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
         newState = {
           ...state,
           currentSongId: state.queue[newIndex],
+          currentRowKey: state.queue[newIndex],
           queueIndex: newIndex,
         }
       } else {
@@ -135,11 +142,12 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
 // Context
 interface PlayerContextType {
   state: PlayerState
-  playSong: (songId: number, playlistId?: number) => void
+  playSong: (songId: number, playlistId?: number, rowKey?: string | number) => void
   playPlaylist: (
     playlistId: number,
     songIds: Array<number>,
     startIndex?: number,
+    rowKey?: string | number,
   ) => void
   togglePlayPause: () => void
   setVolume: (volume: number) => void
@@ -181,10 +189,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const value: PlayerContextType = {
     state,
-    playSong: (songId, playlistId) =>
-      dispatch({ type: 'PLAY_SONG', songId, playlistId }),
-    playPlaylist: (playlistId, songIds, startIndex) =>
-      dispatch({ type: 'PLAY_PLAYLIST', playlistId, songIds, startIndex }),
+    playSong: (songId, playlistId, rowKey) =>
+      dispatch({ type: 'PLAY_SONG', songId, playlistId, rowKey }),
+    playPlaylist: (playlistId, songIds, startIndex, rowKey) =>
+      dispatch({ type: 'PLAY_PLAYLIST', playlistId, songIds, startIndex, rowKey }),
     togglePlayPause: () => dispatch({ type: 'TOGGLE_PLAY_PAUSE' }),
     setVolume: (volume) => dispatch({ type: 'SET_VOLUME', volume }),
     nextSong: () => dispatch({ type: 'NEXT_SONG' }),

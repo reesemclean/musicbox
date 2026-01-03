@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { db } from '@/db'
 import { playlistSongs, playlists, songs } from '@/db/schema'
 
@@ -10,7 +10,7 @@ export type Playlist = typeof playlists.$inferSelect
 export type NewPlaylist = typeof playlists.$inferInsert
 
 export interface PlaylistWithSongs extends Playlist {
-  songs: Array<SongWithoutBlob & { position: number }>
+  songs: Array<SongWithoutBlob & { position: number; playlistSongId: number }>
 }
 
 /**
@@ -140,6 +140,7 @@ export async function getPlaylistById(
 
   const playlistSongsData = await db
     .select({
+      playlistSongId: playlistSongs.id,
       song: {
         id: songs.id,
         title: songs.title,
@@ -162,6 +163,7 @@ export async function getPlaylistById(
     ...playlist[0],
     songs: playlistSongsData.map((item) => ({
       ...item.song,
+      playlistSongId: item.playlistSongId,
       position: item.position,
     })),
   }
@@ -229,20 +231,13 @@ export async function addSongToPlaylist(
 }
 
 /**
- * Remove a song from a playlist
+ * Remove a song from a playlist (specific instance by playlistSongId)
  */
 export async function removeSongFromPlaylist(
   playlistId: number,
-  songId: number,
+  playlistSongId: number,
 ): Promise<void> {
-  await db
-    .delete(playlistSongs)
-    .where(
-      and(
-        eq(playlistSongs.playlistId, playlistId),
-        eq(playlistSongs.songId, songId),
-      ),
-    )
+  await db.delete(playlistSongs).where(eq(playlistSongs.id, playlistSongId))
 
   // Update playlist updatedAt
   await db

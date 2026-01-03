@@ -111,18 +111,20 @@ export const removePlaylist = createServerFn({ method: 'POST' })
 // Playlist Songs
 // ============================================================================
 
+export const removeSongFromPlaylistFn = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: { playlistId: number; playlistSongId: number }) => data,
+  )
+  .handler(async ({ data }) => {
+    await removeSongFromPlaylist(data.playlistId, data.playlistSongId)
+    return { success: true }
+  })
+
 export const addSongToPlaylistFn = createServerFn({ method: 'POST' })
   .inputValidator((data: { playlistId: number; songId: number }) => data)
   .handler(async ({ data }) => {
     await addSongToPlaylist(data.playlistId, data.songId)
     return { success: true }
-  })
-
-export const removeSongFromPlaylistFn = createServerFn({ method: 'POST' })
-  .inputValidator((data: { playlistId: number; songId: number }) => data)
-  .handler(async ({ data }) => {
-    await removeSongFromPlaylist(data.playlistId, data.songId)
-    return await removeSongFromPlaylist(data.playlistId, data.songId)
   })
 
 // ============================================================================
