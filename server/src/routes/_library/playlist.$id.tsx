@@ -7,7 +7,7 @@ import {
   useSuspenseQuery,
 } from '@tanstack/react-query'
 import { useServerFn } from '@tanstack/react-start'
-import { Plus } from 'lucide-react'
+import { Play, Plus } from 'lucide-react'
 import { useState } from 'react'
 import {
   addSongToPlaylistFn,
@@ -16,6 +16,8 @@ import {
   removeSongFromPlaylistFn,
 } from '@/services/songsServerFunctions'
 import { Button } from '@/components/ui/button'
+import { usePlayer } from '@/hooks/usePlayerState'
+import { SongList } from '@/components/SongList'
 
 const songsQueryOptions = queryOptions({
   queryKey: ['songs'],
@@ -39,6 +41,7 @@ export const Route = createFileRoute('/_library/playlist/$id')({
 function PlaylistView() {
   const { id } = Route.useParams()
   const playlistId = parseInt(id)
+  const player = usePlayer()
 
   const { data: playlist } = useQuery({
     queryKey: ['playlist', playlistId],
@@ -77,6 +80,12 @@ function PlaylistView() {
     },
   })
 
+  const handlePlayPlaylist = (startIndex: number = 0) => {
+    if (!playlist || !playlist.songs || playlist.songs.length === 0) return
+    const songIds = playlist.songs.map((s: any) => s.id)
+    player.playPlaylist(playlistId, songIds, startIndex)
+  }
+
   if (!playlist) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -93,7 +102,19 @@ function PlaylistView() {
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">{playlist.name}</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-3xl font-bold">{playlist.name}</h1>
+          {songsInPlaylist.length > 0 && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => handlePlayPlaylist(0)}
+            >
+              <Play className="h-4 w-4 mr-2" />
+              Play Playlist
+            </Button>
+          )}
+        </div>
         <Button onClick={() => setShowAddSong(!showAddSong)}>
           <Plus className="h-4 w-4 mr-2" />
           Add Song
@@ -124,49 +145,21 @@ function PlaylistView() {
         </div>
       )}
 
-      <div className="bg-card rounded-lg border">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b">
-              <th className="text-left p-4 font-medium">Title</th>
-              <th className="text-left p-4 font-medium">Artist</th>
-              <th className="text-left p-4 font-medium">Album</th>
-              <th className="text-right p-4 font-medium">Duration</th>
-              <th className="text-right p-4 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {songsInPlaylist.map((song: any) => (
-              <tr
-                key={song.id}
-                className="border-b last:border-0 hover:bg-accent/50"
-              >
-                <td className="p-4">{song.title}</td>
-                <td className="p-4 text-muted-foreground">{song.artist}</td>
-                <td className="p-4 text-muted-foreground">{song.album}</td>
-                <td className="p-4 text-right text-muted-foreground">
-                  {song.duration || '--:--'}
-                </td>
-                <td className="p-4 text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeSongMutation.mutate(song.id)}
-                    disabled={removeSongMutation.isPending}
-                  >
-                    Remove
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {songsInPlaylist.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            No songs in this playlist. Click "Add Song" to get started.
-          </div>
+      <SongList
+        songs={songsInPlaylist}
+        playlistId={playlistId}
+        emptyMessage="No songs in this playlist. Click 'Add Song' to get started."
+        renderActions={(song) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => removeSongMutation.mutate(song.id)}
+            disabled={removeSongMutation.isPending}
+          >
+            Remove
+          </Button>
         )}
-      </div>
+      />
     </div>
   )
 }
