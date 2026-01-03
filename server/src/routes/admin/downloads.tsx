@@ -1,25 +1,41 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { searchYTMusic, downloadYTMusicSong, getDownloadQueueStatus } from '@/services/ytmusicServerFunctions'
-import { useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import {
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+} from '@tanstack/react-query'
+import {
+  downloadYTMusicSong,
+  getDownloadQueueStatus,
+  searchYTMusic,
+} from '@/services/ytmusicServerFunctions'
+
+const downloadQueueOptions = {
+  queryKey: ['downloadQueue'],
+  queryFn: async () => {
+    const result = await getDownloadQueueStatus()
+    return result
+  },
+}
 
 export const Route = createFileRoute('/admin/downloads')({
   component: DownloadsPage,
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(downloadQueueOptions)
+  },
 })
 
 function DownloadsPage() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<Array<any>>([])
   const [isSearching, setIsSearching] = useState(false)
   const queryClient = useQueryClient()
 
   // Fetch download queue
   const { data: queue } = useSuspenseQuery({
-    queryKey: ['downloadQueue'],
-    queryFn: async () => {
-      const result = await getDownloadQueueStatus()
-      return result
-    },
+    ...downloadQueueOptions,
     refetchInterval: 2000, // Refresh every 2 seconds
   })
 
@@ -52,15 +68,23 @@ function DownloadsPage() {
         },
       })
     },
-    onSuccess: () => {
+    onSuccess: (_, song) => {
       queryClient.invalidateQueries({ queryKey: ['downloadQueue'] })
+      toast.success('Download started', {
+        description: `Started downloading "${song.title}"`,
+        duration: 3000,
+      })
+    },
+    onError: (_error, song) => {
+      toast.error('Download failed', {
+        description: `Failed to download "${song.title}"`,
+        duration: 3000,
+      })
     },
   })
 
   const handleDownload = (song: any) => {
-    if (confirm(`Download "${song.title}" by ${song.artists.join(', ')}?`)) {
-      downloadMutation.mutate(song)
-    }
+    downloadMutation.mutate(song)
   }
 
   return (
@@ -89,7 +113,7 @@ function DownloadsPage() {
         {searchResults.length > 0 && (
           <div className="mt-6 space-y-2">
             <h3 className="text-xl font-semibold mb-3">Results</h3>
-            {searchResults.slice(0, 10).map((song, i) => (
+            {searchResults.slice(0, 10).map((song) => (
               <div
                 key={song.videoId}
                 className="flex items-center justify-between p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors"
@@ -99,7 +123,8 @@ function DownloadsPage() {
                   <div className="text-sm text-gray-400">
                     {song.artists.join(', ')}
                     {song.album && ` • ${song.album}`}
-                    {song.duration && ` • ${Math.floor(song.duration / 60)}:${(song.duration % 60).toString().padStart(2, '0')}`}
+                    {song.duration &&
+                      ` • ${Math.floor(song.duration / 60)}:${(song.duration % 60).toString().padStart(2, '0')}`}
                   </div>
                 </div>
                 <button
@@ -119,11 +144,11 @@ function DownloadsPage() {
       <div className="bg-slate-800 rounded-lg p-6">
         <h2 className="text-2xl font-bold mb-4">Download Queue</h2>
 
-        {queue && queue.length === 0 ? (
+        {queue.length === 0 ? (
           <p className="text-gray-400">No downloads in queue</p>
         ) : (
           <div className="space-y-2">
-            {queue?.map((item: any) => (
+            {queue.map((item: any) => (
               <div
                 key={item.id}
                 className="flex items-center justify-between p-4 bg-slate-700 rounded-lg"
@@ -134,7 +159,9 @@ function DownloadsPage() {
                     {item.artist}
                     {item.album && ` • ${item.album}`}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">{item.targetPath}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {item.targetPath}
+                  </div>
                 </div>
                 <div className="flex items-center gap-4">
                   {item.status === 'downloading' && (
@@ -145,7 +172,9 @@ function DownloadsPage() {
                           style={{ width: `${item.progress}%` }}
                         />
                       </div>
-                      <span className="text-sm text-gray-400">{item.progress}%</span>
+                      <span className="text-sm text-gray-400">
+                        {item.progress}%
+                      </span>
                     </div>
                   )}
                   <span
@@ -153,10 +182,10 @@ function DownloadsPage() {
                       item.status === 'complete'
                         ? 'bg-green-900 text-green-300'
                         : item.status === 'failed'
-                        ? 'bg-red-900 text-red-300'
-                        : item.status === 'downloading'
-                        ? 'bg-blue-900 text-blue-300'
-                        : 'bg-gray-700 text-gray-300'
+                          ? 'bg-red-900 text-red-300'
+                          : item.status === 'downloading'
+                            ? 'bg-blue-900 text-blue-300'
+                            : 'bg-gray-700 text-gray-300'
                     }`}
                   >
                     {item.status}

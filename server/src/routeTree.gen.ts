@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminSongsRouteImport } from './routes/admin/songs'
+import { Route as AdminPlaylistsRouteImport } from './routes/admin/playlists'
 import { Route as AdminLibraryRouteImport } from './routes/admin/library'
 import { Route as AdminDownloadsRouteImport } from './routes/admin/downloads'
 import { Route as AdminCardsRouteImport } from './routes/admin/cards'
@@ -24,6 +26,16 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminSongsRoute = AdminSongsRouteImport.update({
+  id: '/songs',
+  path: '/songs',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminPlaylistsRoute = AdminPlaylistsRouteImport.update({
+  id: '/playlists',
+  path: '/playlists',
+  getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminLibraryRoute = AdminLibraryRouteImport.update({
   id: '/library',
@@ -47,6 +59,8 @@ export interface FileRoutesByFullPath {
   '/admin/cards': typeof AdminCardsRoute
   '/admin/downloads': typeof AdminDownloadsRoute
   '/admin/library': typeof AdminLibraryRoute
+  '/admin/playlists': typeof AdminPlaylistsRoute
+  '/admin/songs': typeof AdminSongsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +68,8 @@ export interface FileRoutesByTo {
   '/admin/cards': typeof AdminCardsRoute
   '/admin/downloads': typeof AdminDownloadsRoute
   '/admin/library': typeof AdminLibraryRoute
+  '/admin/playlists': typeof AdminPlaylistsRoute
+  '/admin/songs': typeof AdminSongsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,6 +78,8 @@ export interface FileRoutesById {
   '/admin/cards': typeof AdminCardsRoute
   '/admin/downloads': typeof AdminDownloadsRoute
   '/admin/library': typeof AdminLibraryRoute
+  '/admin/playlists': typeof AdminPlaylistsRoute
+  '/admin/songs': typeof AdminSongsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -71,8 +89,17 @@ export interface FileRouteTypes {
     | '/admin/cards'
     | '/admin/downloads'
     | '/admin/library'
+    | '/admin/playlists'
+    | '/admin/songs'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/admin/cards' | '/admin/downloads' | '/admin/library'
+  to:
+    | '/'
+    | '/admin'
+    | '/admin/cards'
+    | '/admin/downloads'
+    | '/admin/library'
+    | '/admin/playlists'
+    | '/admin/songs'
   id:
     | '__root__'
     | '/'
@@ -80,6 +107,8 @@ export interface FileRouteTypes {
     | '/admin/cards'
     | '/admin/downloads'
     | '/admin/library'
+    | '/admin/playlists'
+    | '/admin/songs'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -102,6 +131,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/songs': {
+      id: '/admin/songs'
+      path: '/songs'
+      fullPath: '/admin/songs'
+      preLoaderRoute: typeof AdminSongsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/playlists': {
+      id: '/admin/playlists'
+      path: '/playlists'
+      fullPath: '/admin/playlists'
+      preLoaderRoute: typeof AdminPlaylistsRouteImport
+      parentRoute: typeof AdminRouteRoute
     }
     '/admin/library': {
       id: '/admin/library'
@@ -131,12 +174,16 @@ interface AdminRouteRouteChildren {
   AdminCardsRoute: typeof AdminCardsRoute
   AdminDownloadsRoute: typeof AdminDownloadsRoute
   AdminLibraryRoute: typeof AdminLibraryRoute
+  AdminPlaylistsRoute: typeof AdminPlaylistsRoute
+  AdminSongsRoute: typeof AdminSongsRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminCardsRoute: AdminCardsRoute,
   AdminDownloadsRoute: AdminDownloadsRoute,
   AdminLibraryRoute: AdminLibraryRoute,
+  AdminPlaylistsRoute: AdminPlaylistsRoute,
+  AdminSongsRoute: AdminSongsRoute,
 }
 
 const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(

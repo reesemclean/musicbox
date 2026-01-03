@@ -4,7 +4,6 @@ import {
   downloadSong,
   getDownloadQueue,
   getDownloadStatus,
-  clearCompletedDownloads,
 } from './downloadService'
 
 // ============================================================================
@@ -82,10 +81,3 @@ export const getVideoDownloadStatus = createServerFn({ method: 'GET' })
 
     return await getDownloadStatus(data.videoId)
   })
-
-export const clearCompleted = createServerFn({ method: 'POST' }).handler(
-  async () => {
-    await clearCompletedDownloads()
-    return { success: true }
-  },
-)

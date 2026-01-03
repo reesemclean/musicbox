@@ -11,6 +11,7 @@ import Header from '../components/Header'
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
 import appCss from '../styles.css?url'
+import { Toaster } from '../components/ui/sonner'
 
 import type { QueryClient } from '@tanstack/react-query'
 
@@ -52,6 +53,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <Header />
         {children}
+        <Toaster />
         <TanStackDevtools
           config={{
             position: 'bottom-right',

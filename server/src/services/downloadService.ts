@@ -1,16 +1,17 @@
 import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { eq } from 'drizzle-orm'
 import { db } from '@/db'
 import { downloadQueue } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { createSong } from '@/services/songsService'
 
 const LIBRARY_ROOT = path.join(process.cwd(), 'library')
 
 export interface DownloadProgress {
   videoId: string
   progress: number
-  status: 'pending' | 'downloading' | 'complete' | 'failed'
+  status: 'pending' | 'downloading' | 'failed'
   error?: string
 }
 
@@ -124,17 +125,48 @@ async function downloadInBackground(
 
     ytdlp.on('close', async (code) => {
       if (code === 0) {
-        // Success
-        await db
-          .update(downloadQueue)
-          .set({
-            status: 'complete',
-            progress: 100,
-            completedAt: new Date(),
-          })
+        // Success - read file into buffer and create song entry
+        const queueItem = await db
+          .select()
+          .from(downloadQueue)
           .where(eq(downloadQueue.id, queueId))
+          .limit(1)
+
+        if (queueItem[0]) {
+          try {
+            // Read the downloaded file into a buffer
+            const fileData = await fs.readFile(outputPath)
+            const fileStats = await fs.stat(outputPath)
+
+            // Create song entry in database with BLOB data
+            await createSong({
+              title: queueItem[0].title,
+              artist: queueItem[0].artist || undefined,
+              album: queueItem[0].album || undefined,
+              fileData: fileData,
+              mimeType: 'audio/mpeg',
+              fileSize: fileStats.size,
+              youtubeVideoId: queueItem[0].videoId,
+            })
+
+            // Remove completed item from queue
+            await db.delete(downloadQueue).where(eq(downloadQueue.id, queueId))
+
+            // Delete the downloaded file from filesystem
+            await fs.unlink(outputPath)
+          } catch (error) {
+            console.error('Failed to save song to database:', error)
+            await db
+              .update(downloadQueue)
+              .set({
+                status: 'failed',
+                error: `Failed to save to database: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              })
+              .where(eq(downloadQueue.id, queueId))
+          }
+        }
       } else {
-        // Failed
+        // Failed - mark as failed but keep in queue for retry
         await db
           .update(downloadQueue)
           .set({
@@ -169,10 +201,7 @@ async function downloadInBackground(
  * Get download queue status
  */
 export async function getDownloadQueue() {
-  return await db
-    .select()
-    .from(downloadQueue)
-    .orderBy(downloadQueue.addedAt)
+  return await db.select().from(downloadQueue).orderBy(downloadQueue.addedAt)
 }
 
 /**
@@ -186,13 +215,6 @@ export async function getDownloadStatus(videoId: string) {
     .limit(1)
 
   return item
-}
-
-/**
- * Clear completed downloads from queue
- */
-export async function clearCompletedDownloads() {
-  await db.delete(downloadQueue).where(eq(downloadQueue.status, 'complete'))
 }
 
 /**

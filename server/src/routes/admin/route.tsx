@@ -10,7 +10,7 @@ export const Route = createFileRoute('/admin')({
   beforeLoad: ({ location }) => {
     if (location.pathname === '/admin' || location.pathname === '/admin/') {
       throw redirect({
-        to: '/admin/library',
+        to: '/admin/songs',
       })
     }
   },
@@ -19,7 +19,8 @@ export const Route = createFileRoute('/admin')({
 
 function AdminLayout() {
   const matchRoute = useMatchRoute()
-  const isLibrary = matchRoute({ to: '/admin/library' })
+  const isSongs = matchRoute({ to: '/admin/songs' })
+  const isPlaylists = matchRoute({ to: '/admin/playlists' })
   const isDownloads = matchRoute({ to: '/admin/downloads' })
   const isCards = matchRoute({ to: '/admin/cards' })
 
@@ -30,14 +31,24 @@ function AdminLayout() {
 
         <div className="flex gap-4 mb-8 border-b border-slate-700">
           <Link
-            to="/admin/library"
+            to="/admin/songs"
             className={`px-4 py-2 font-semibold transition-colors ${
-              isLibrary
+              isSongs
                 ? 'text-amber-400 border-b-2 border-amber-400'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            Library
+            Songs
+          </Link>
+          <Link
+            to="/admin/playlists"
+            className={`px-4 py-2 font-semibold transition-colors ${
+              isPlaylists
+                ? 'text-amber-400 border-b-2 border-amber-400'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Playlists
           </Link>
           <Link
             to="/admin/downloads"
