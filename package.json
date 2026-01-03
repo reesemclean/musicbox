@@ -1,0 +1,23 @@
+{
+  "name": "musicbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "player",
+    "shared"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=server",
+    "dev:player": "npm run dev --workspace=player",
+    "build:server": "npm run build --workspace=server",
+    "build:player": "npm run build --workspace=player",
+    "lint": "npm run lint --workspaces",
+    "format": "npm run format --workspaces"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.3"
+  }
+}
