@@ -9,6 +9,7 @@ import {
   getAllSongs,
   getPlaylistById,
   getSongById,
+  getSongMetadata,
   removeSongFromPlaylist,
   updatePlaylist,
   updateSong,
@@ -26,6 +27,12 @@ export const getSong = createServerFn()
   .inputValidator((data: { id: number }) => data)
   .handler(async ({ data }) => {
     return await getSongById(data.id)
+  })
+
+export const getSongMeta = createServerFn()
+  .inputValidator((data: { id: number }) => data)
+  .handler(async ({ data }) => {
+    return await getSongMetadata(data.id)
   })
 
 export const addSong = createServerFn({ method: 'POST' })

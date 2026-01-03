@@ -42,6 +42,30 @@ export async function getSongById(id: number): Promise<Song | undefined> {
 }
 
 /**
+ * Get song metadata by ID (without file data for performance)
+ */
+export async function getSongMetadata(
+  id: number,
+): Promise<SongWithoutBlob | undefined> {
+  const result = await db
+    .select({
+      id: songs.id,
+      title: songs.title,
+      artist: songs.artist,
+      album: songs.album,
+      duration: songs.duration,
+      mimeType: songs.mimeType,
+      fileSize: songs.fileSize,
+      youtubeVideoId: songs.youtubeVideoId,
+      createdAt: songs.createdAt,
+    })
+    .from(songs)
+    .where(eq(songs.id, id))
+    .limit(1)
+  return result[0]
+}
+
+/**
  * Create a new song entry
  */
 export async function createSong(data: {

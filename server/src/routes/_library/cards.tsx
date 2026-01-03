@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { getAllCards } from '@/services/serverFunctions'
 
-export const Route = createFileRoute('/admin/cards')({
+export const Route = createFileRoute('/_library/cards')({
   component: CardsPage,
 })
 

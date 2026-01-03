@@ -33,7 +33,7 @@ export function DownloadsPopover() {
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <button
-          className="relative p-2 hover:bg-gray-700 rounded-lg transition-colors"
+          className="relative p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-300 hover:text-white"
           aria-label="Downloads"
         >
           <Download size={20} />

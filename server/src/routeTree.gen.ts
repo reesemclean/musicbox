@@ -9,190 +9,134 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AdminRouteRouteImport } from './routes/admin/route'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AdminSongsRouteImport } from './routes/admin/songs'
-import { Route as AdminPlaylistsRouteImport } from './routes/admin/playlists'
-import { Route as AdminLibraryRouteImport } from './routes/admin/library'
-import { Route as AdminDownloadsRouteImport } from './routes/admin/downloads'
-import { Route as AdminCardsRouteImport } from './routes/admin/cards'
+import { Route as LibraryRouteImport } from './routes/_library'
+import { Route as LibraryIndexRouteImport } from './routes/_library/index'
+import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
+import { Route as ApiStreamSongIdRouteImport } from './routes/api/stream/$songId'
+import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlist.$id'
 
-const AdminRouteRoute = AdminRouteRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const LibraryRoute = LibraryRouteImport.update({
+  id: '/_library',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
+const LibraryIndexRoute = LibraryIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => LibraryRoute,
 } as any)
-const AdminSongsRoute = AdminSongsRouteImport.update({
-  id: '/songs',
-  path: '/songs',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminPlaylistsRoute = AdminPlaylistsRouteImport.update({
-  id: '/playlists',
-  path: '/playlists',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminLibraryRoute = AdminLibraryRouteImport.update({
-  id: '/library',
-  path: '/library',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminDownloadsRoute = AdminDownloadsRouteImport.update({
-  id: '/downloads',
-  path: '/downloads',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminCardsRoute = AdminCardsRouteImport.update({
+const LibraryCardsRoute = LibraryCardsRouteImport.update({
   id: '/cards',
   path: '/cards',
-  getParentRoute: () => AdminRouteRoute,
+  getParentRoute: () => LibraryRoute,
+} as any)
+const ApiStreamSongIdRoute = ApiStreamSongIdRouteImport.update({
+  id: '/api/stream/$songId',
+  path: '/api/stream/$songId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LibraryPlaylistIdRoute = LibraryPlaylistIdRouteImport.update({
+  id: '/playlist/$id',
+  path: '/playlist/$id',
+  getParentRoute: () => LibraryRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/admin': typeof AdminRouteRouteWithChildren
-  '/admin/cards': typeof AdminCardsRoute
-  '/admin/downloads': typeof AdminDownloadsRoute
-  '/admin/library': typeof AdminLibraryRoute
-  '/admin/playlists': typeof AdminPlaylistsRoute
-  '/admin/songs': typeof AdminSongsRoute
+  '/cards': typeof LibraryCardsRoute
+  '/': typeof LibraryIndexRoute
+  '/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/stream/$songId': typeof ApiStreamSongIdRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/admin': typeof AdminRouteRouteWithChildren
-  '/admin/cards': typeof AdminCardsRoute
-  '/admin/downloads': typeof AdminDownloadsRoute
-  '/admin/library': typeof AdminLibraryRoute
-  '/admin/playlists': typeof AdminPlaylistsRoute
-  '/admin/songs': typeof AdminSongsRoute
+  '/cards': typeof LibraryCardsRoute
+  '/': typeof LibraryIndexRoute
+  '/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/stream/$songId': typeof ApiStreamSongIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/admin': typeof AdminRouteRouteWithChildren
-  '/admin/cards': typeof AdminCardsRoute
-  '/admin/downloads': typeof AdminDownloadsRoute
-  '/admin/library': typeof AdminLibraryRoute
-  '/admin/playlists': typeof AdminPlaylistsRoute
-  '/admin/songs': typeof AdminSongsRoute
+  '/_library': typeof LibraryRouteWithChildren
+  '/_library/cards': typeof LibraryCardsRoute
+  '/_library/': typeof LibraryIndexRoute
+  '/_library/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/stream/$songId': typeof ApiStreamSongIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/admin'
-    | '/admin/cards'
-    | '/admin/downloads'
-    | '/admin/library'
-    | '/admin/playlists'
-    | '/admin/songs'
+  fullPaths: '/cards' | '/' | '/playlist/$id' | '/api/stream/$songId'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/admin'
-    | '/admin/cards'
-    | '/admin/downloads'
-    | '/admin/library'
-    | '/admin/playlists'
-    | '/admin/songs'
+  to: '/cards' | '/' | '/playlist/$id' | '/api/stream/$songId'
   id:
     | '__root__'
-    | '/'
-    | '/admin'
-    | '/admin/cards'
-    | '/admin/downloads'
-    | '/admin/library'
-    | '/admin/playlists'
-    | '/admin/songs'
+    | '/_library'
+    | '/_library/cards'
+    | '/_library/'
+    | '/_library/playlist/$id'
+    | '/api/stream/$songId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AdminRouteRoute: typeof AdminRouteRouteWithChildren
+  LibraryRoute: typeof LibraryRouteWithChildren
+  ApiStreamSongIdRoute: typeof ApiStreamSongIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteRouteImport
+    '/_library': {
+      id: '/_library'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof LibraryRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
+    '/_library/': {
+      id: '/_library/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof LibraryIndexRouteImport
+      parentRoute: typeof LibraryRoute
+    }
+    '/_library/cards': {
+      id: '/_library/cards'
+      path: '/cards'
+      fullPath: '/cards'
+      preLoaderRoute: typeof LibraryCardsRouteImport
+      parentRoute: typeof LibraryRoute
+    }
+    '/api/stream/$songId': {
+      id: '/api/stream/$songId'
+      path: '/api/stream/$songId'
+      fullPath: '/api/stream/$songId'
+      preLoaderRoute: typeof ApiStreamSongIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/songs': {
-      id: '/admin/songs'
-      path: '/songs'
-      fullPath: '/admin/songs'
-      preLoaderRoute: typeof AdminSongsRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/playlists': {
-      id: '/admin/playlists'
-      path: '/playlists'
-      fullPath: '/admin/playlists'
-      preLoaderRoute: typeof AdminPlaylistsRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/library': {
-      id: '/admin/library'
-      path: '/library'
-      fullPath: '/admin/library'
-      preLoaderRoute: typeof AdminLibraryRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/downloads': {
-      id: '/admin/downloads'
-      path: '/downloads'
-      fullPath: '/admin/downloads'
-      preLoaderRoute: typeof AdminDownloadsRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/cards': {
-      id: '/admin/cards'
-      path: '/cards'
-      fullPath: '/admin/cards'
-      preLoaderRoute: typeof AdminCardsRouteImport
-      parentRoute: typeof AdminRouteRoute
+    '/_library/playlist/$id': {
+      id: '/_library/playlist/$id'
+      path: '/playlist/$id'
+      fullPath: '/playlist/$id'
+      preLoaderRoute: typeof LibraryPlaylistIdRouteImport
+      parentRoute: typeof LibraryRoute
     }
   }
 }
 
-interface AdminRouteRouteChildren {
-  AdminCardsRoute: typeof AdminCardsRoute
-  AdminDownloadsRoute: typeof AdminDownloadsRoute
-  AdminLibraryRoute: typeof AdminLibraryRoute
-  AdminPlaylistsRoute: typeof AdminPlaylistsRoute
-  AdminSongsRoute: typeof AdminSongsRoute
+interface LibraryRouteChildren {
+  LibraryCardsRoute: typeof LibraryCardsRoute
+  LibraryIndexRoute: typeof LibraryIndexRoute
+  LibraryPlaylistIdRoute: typeof LibraryPlaylistIdRoute
 }
 
-const AdminRouteRouteChildren: AdminRouteRouteChildren = {
-  AdminCardsRoute: AdminCardsRoute,
-  AdminDownloadsRoute: AdminDownloadsRoute,
-  AdminLibraryRoute: AdminLibraryRoute,
-  AdminPlaylistsRoute: AdminPlaylistsRoute,
-  AdminSongsRoute: AdminSongsRoute,
+const LibraryRouteChildren: LibraryRouteChildren = {
+  LibraryCardsRoute: LibraryCardsRoute,
+  LibraryIndexRoute: LibraryIndexRoute,
+  LibraryPlaylistIdRoute: LibraryPlaylistIdRoute,
 }
 
-const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
-  AdminRouteRouteChildren,
-)
+const LibraryRouteWithChildren =
+  LibraryRoute._addFileChildren(LibraryRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AdminRouteRoute: AdminRouteRouteWithChildren,
+  LibraryRoute: LibraryRouteWithChildren,
+  ApiStreamSongIdRoute: ApiStreamSongIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
