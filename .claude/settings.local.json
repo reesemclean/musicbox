@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(nix --version:*)"
+      "Bash(nix --version:*)",
+      "Bash(nix print-dev-env:*)"
     ]
   }
 }

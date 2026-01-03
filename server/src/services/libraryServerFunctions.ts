@@ -126,3 +126,23 @@ export const deletePlaylist = createServerFn({ method: 'POST' })
 
     return { success: true }
   })
+
+export const deleteSong = createServerFn({ method: 'POST' })
+  .inputValidator((data: { songPath: string }) => data)
+  .handler(async ({ data }) => {
+    const { promises: fs } = await import('node:fs')
+    const path = await import('node:path')
+
+    const LIBRARY_ROOT = path.join(process.cwd(), 'library')
+    const fullPath = path.join(LIBRARY_ROOT, data.songPath)
+
+    // Security check: ensure the path is within the library
+    const normalizedPath = path.normalize(fullPath)
+    if (!normalizedPath.startsWith(LIBRARY_ROOT)) {
+      throw new Error('Invalid path')
+    }
+
+    await fs.unlink(fullPath)
+
+    return { success: true }
+  })

@@ -1,8 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
+import {
+  queryOptions,
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+} from '@tanstack/react-query'
 import { useServerFn } from '@tanstack/react-start'
 import { useState } from 'react'
 import {
+  deleteSong,
   getLibraryContents,
   uploadSong,
 } from '@/services/libraryServerFunctions'
@@ -35,8 +41,28 @@ function LibraryPage() {
 }
 
 function LibraryTab({ library, refetch, isFetching }: any) {
+  const queryClient = useQueryClient()
+  const deleteSongFn = useServerFn(deleteSong)
+
+  const deleteMutation = useMutation({
+    mutationFn: async (songPath: string) => {
+      return await deleteSongFn({ data: { songPath } })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    },
+  })
+
   const handleRefresh = async () => {
     await refetch()
+  }
+
+  const handleDelete = (songPath: string) => {
+    if (!confirm('Are you sure you want to delete this song?')) {
+      return
+    }
+
+    deleteMutation.mutate(songPath)
   }
 
   return (
@@ -68,6 +94,7 @@ function LibraryTab({ library, refetch, isFetching }: any) {
               <tr>
                 <th className="text-left py-2 px-3">Filename</th>
                 <th className="text-left py-2 px-3">Path</th>
+                <th className="text-right py-2 px-3">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -79,6 +106,15 @@ function LibraryTab({ library, refetch, isFetching }: any) {
                   <td className="py-2 px-3">{song.filename}</td>
                   <td className="py-2 px-3 text-gray-400 text-xs">
                     {song.path}
+                  </td>
+                  <td className="py-2 px-3 text-right">
+                    <button
+                      onClick={() => handleDelete(song.path)}
+                      disabled={deleteMutation.isPending}
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-xs font-semibold rounded transition-colors"
+                    >
+                      {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+                    </button>
                   </td>
                 </tr>
               ))}
