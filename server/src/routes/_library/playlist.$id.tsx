@@ -226,6 +226,7 @@ function PlaylistView() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      await queryClient.invalidateQueries({ queryKey: ['cards'] })
       // Navigate to library home after deletion
       navigate({ to: '/' })
     },

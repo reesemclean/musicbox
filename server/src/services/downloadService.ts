@@ -26,6 +26,8 @@ export async function downloadSong(
   album?: string,
   destination: 'songs' | 'playlist' = 'songs',
   playlistName?: string,
+  playlistId?: number,
+  trackPosition?: number,
 ): Promise<string> {
   // Sanitize filename components
   const sanitizedArtist = sanitizeFilename(artist)
@@ -60,6 +62,8 @@ export async function downloadSong(
       artist,
       album,
       targetPath: relativePath,
+      playlistId: playlistId,
+      trackPosition: trackPosition,
       status: 'pending',
       progress: 0,
       addedAt: new Date(),
@@ -67,7 +71,13 @@ export async function downloadSong(
     .returning()
 
   // Start download in background
-  downloadInBackground(videoId, outputPath, queueItem.id)
+  downloadInBackground(
+    videoId,
+    outputPath,
+    queueItem.id,
+    playlistId,
+    trackPosition,
+  )
 
   return relativePath
 }
@@ -79,6 +89,8 @@ async function downloadInBackground(
   videoId: string,
   outputPath: string,
   queueId: number,
+  playlistId?: number,
+  trackPosition?: number,
 ) {
   try {
     // Update status to downloading
@@ -153,7 +165,7 @@ async function downloadInBackground(
             }
 
             // Create song entry in database with BLOB data
-            await createSong({
+            const newSong = await createSong({
               title: queueItem[0].title,
               artist: queueItem[0].artist || undefined,
               album: queueItem[0].album || undefined,
@@ -163,6 +175,16 @@ async function downloadInBackground(
               fileSize: fileStats.size,
               youtubeVideoId: queueItem[0].videoId,
             })
+
+            // If playlist specified, add song to playlist with proper position
+            if (playlistId !== undefined && trackPosition !== undefined) {
+              const { playlistSongs } = await import('@/db/schema')
+              await db.insert(playlistSongs).values({
+                playlistId,
+                songId: newSong.id,
+                position: trackPosition,
+              })
+            }
 
             // Remove completed item from queue
             await db.delete(downloadQueue).where(eq(downloadQueue.id, queueId))
@@ -230,6 +252,67 @@ export async function getDownloadStatus(videoId: string) {
     .limit(1)
 
   return item
+}
+
+/**
+ * Remove a download from the queue
+ */
+export async function removeFromQueue(queueId: number): Promise<void> {
+  await db.delete(downloadQueue).where(eq(downloadQueue.id, queueId))
+}
+
+/**
+ * Retry a failed download
+ */
+export async function retryDownload(queueId: number): Promise<void> {
+  const items = await db
+    .select()
+    .from(downloadQueue)
+    .where(eq(downloadQueue.id, queueId))
+    .limit(1)
+
+  if (items.length === 0) {
+    throw new Error('Download not found')
+  }
+
+  const item = items[0]
+
+  if (item.status !== 'failed') {
+    throw new Error('Can only retry failed downloads')
+  }
+
+  // Determine output path
+  const sanitizedArtist = sanitizeFilename(item.artist || 'Unknown')
+  const sanitizedTitle = sanitizeFilename(item.title)
+  const filename = `${sanitizedArtist} - ${sanitizedTitle}.mp3`
+
+  let outputPath: string
+  if (item.targetPath?.startsWith('playlists/')) {
+    const pathParts = item.targetPath.split('/')
+    const playlistName = pathParts[1]
+    outputPath = path.join(LIBRARY_ROOT, 'playlists', playlistName, filename)
+  } else {
+    outputPath = path.join(LIBRARY_ROOT, 'songs', filename)
+  }
+
+  // Reset status and retry
+  await db
+    .update(downloadQueue)
+    .set({
+      status: 'pending',
+      progress: 0,
+      error: null,
+    })
+    .where(eq(downloadQueue.id, queueId))
+
+  // Start download in background with stored playlist info
+  downloadInBackground(
+    item.videoId,
+    outputPath,
+    queueId,
+    item.playlistId || undefined,
+    item.trackPosition || undefined,
+  )
 }
 
 /**

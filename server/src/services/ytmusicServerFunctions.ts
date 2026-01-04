@@ -4,6 +4,8 @@ import {
   downloadSong,
   getDownloadQueue,
   getDownloadStatus,
+  removeFromQueue,
+  retryDownload,
 } from './downloadService'
 import { createPlaylist } from './songsService'
 
@@ -95,13 +97,16 @@ export const downloadYTMusicAlbum = createServerFn({ method: 'POST' })
 
     // Create playlist if requested
     let playlistName: string | undefined
+    let playlistId: number | undefined
     if (data.createPlaylist) {
-      playlistName = album.title
-      await createPlaylist(playlistName)
+      playlistName = `${album.title} - ${album.artist}`
+      const playlist = await createPlaylist(playlistName)
+      playlistId = playlist.id
     }
 
-    // Queue all tracks for download
-    for (const track of album.tracks) {
+    // Queue all tracks for download with proper track positions
+    for (let i = 0; i < album.tracks.length; i++) {
+      const track = album.tracks[i]
       await downloadSong(
         track.videoId,
         track.title,
@@ -109,6 +114,8 @@ export const downloadYTMusicAlbum = createServerFn({ method: 'POST' })
         album.title,
         data.createPlaylist ? 'playlist' : 'songs',
         playlistName,
+        playlistId,
+        i, // Track position in album order
       )
     }
 
@@ -129,4 +136,34 @@ export const getYTMusicDownloadStatus = createServerFn({ method: 'GET' })
     }
 
     return await getDownloadStatus(data.videoId)
+  })
+
+export const retryFailedDownload = createServerFn({ method: 'POST' })
+  .inputValidator((data: { queueId: number }) => data)
+  .handler(async ({ data }) => {
+    if (!data.queueId) {
+      throw new Error('Queue ID is required')
+    }
+
+    await retryDownload(data.queueId)
+
+    return {
+      success: true,
+      message: 'Download retry started',
+    }
+  })
+
+export const removeDownloadFromQueue = createServerFn({ method: 'POST' })
+  .inputValidator((data: { queueId: number }) => data)
+  .handler(async ({ data }) => {
+    if (!data.queueId) {
+      throw new Error('Queue ID is required')
+    }
+
+    await removeFromQueue(data.queueId)
+
+    return {
+      success: true,
+      message: 'Download removed from queue',
+    }
   })

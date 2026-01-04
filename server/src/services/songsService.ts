@@ -1,6 +1,6 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '@/db'
-import { playlistSongs, playlists, songs } from '@/db/schema'
+import { cards, playlistSongs, playlists, songs } from '@/db/schema'
 
 // Use Drizzle's inferred types from schema
 export type Song = typeof songs.$inferSelect
@@ -114,7 +114,33 @@ export async function updateSong(
  * Delete a song (removes from DB only - no filesystem)
  */
 export async function deleteSong(id: number): Promise<void> {
+  // Delete any NFC cards pointing to this song
+  await db
+    .delete(cards)
+    .where(
+      and(eq(cards.contentType, 'song'), eq(cards.contentPath, id.toString())),
+    )
+
+  // Delete the song
   await db.delete(songs).where(eq(songs.id, id))
+}
+
+/**
+ * Bulk delete songs by IDs
+ */
+export async function bulkDeleteSongs(ids: Array<number>): Promise<void> {
+  if (ids.length === 0) return
+
+  // Delete any NFC cards pointing to these songs
+  const songPaths = ids.map((id) => id.toString())
+  await db
+    .delete(cards)
+    .where(
+      and(eq(cards.contentType, 'song'), inArray(cards.contentPath, songPaths)),
+    )
+
+  // Delete the songs
+  await db.delete(songs).where(inArray(songs.id, ids))
 }
 
 /**
@@ -196,6 +222,17 @@ export async function updatePlaylist(
  * Delete a playlist
  */
 export async function deletePlaylist(id: number): Promise<void> {
+  // Delete any NFC cards pointing to this playlist
+  await db
+    .delete(cards)
+    .where(
+      and(
+        eq(cards.contentType, 'playlist'),
+        eq(cards.contentPath, id.toString()),
+      ),
+    )
+
+  // Delete the playlist (playlistSongs cascade deletes automatically)
   await db.delete(playlists).where(eq(playlists.id, id))
 }
 

@@ -63,3 +63,47 @@ export interface PlayHistory {
   songPath: string;
   playedAt: Date;
 }
+
+// NFC Scan API Response Types
+export interface SongContent {
+  id: number;
+  title: string;
+  artist?: string | null;
+  album?: string | null;
+  duration?: number | null;
+  mimeType: string;
+  fileSize: number;
+}
+
+export interface PlaylistContent {
+  id: number;
+  name: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  songs: Array<{
+    position: number;
+    id: number;
+    title: string;
+    artist?: string | null;
+    album?: string | null;
+    duration?: number | null;
+    mimeType: string;
+    fileSize: number;
+  }>;
+}
+
+export interface NFCScanResponse {
+  success: true;
+  nfcId: string;
+  contentType: ContentType;
+  content:
+    | { type: "song"; song: SongContent }
+    | { type: "playlist"; playlist: PlaylistContent }
+    | { type: "action"; action: Action }
+    | null;
+}
+
+export interface NFCScanErrorResponse {
+  error: string;
+  nfcId?: string;
+}

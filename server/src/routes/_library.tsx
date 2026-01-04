@@ -19,6 +19,7 @@ import {
   getPlaylists,
   getSongs,
 } from '@/services/songsServerFunctions'
+import { getAllCards } from '@/services/serverFunctions'
 import { getDownloadQueueStatus } from '@/services/ytmusicServerFunctions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,10 +36,16 @@ const playlistsQueryOptions = queryOptions({
   queryFn: getPlaylists,
 })
 
+const cardsQueryOptions = queryOptions({
+  queryKey: ['cards'],
+  queryFn: getAllCards,
+})
+
 export const Route = createFileRoute('/_library')({
   loader: async ({ context }) => {
     await context.queryClient.ensureQueryData(songsQueryOptions)
     await context.queryClient.ensureQueryData(playlistsQueryOptions)
+    await context.queryClient.ensureQueryData(cardsQueryOptions)
   },
   component: LibraryLayout,
 })
@@ -46,6 +53,7 @@ export const Route = createFileRoute('/_library')({
 function LibraryLayout() {
   const { data: songs } = useSuspenseQuery(songsQueryOptions)
   const { data: playlists } = useSuspenseQuery(playlistsQueryOptions)
+  const { data: cards } = useSuspenseQuery(cardsQueryOptions)
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false)
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const queryClient = useQueryClient()
@@ -123,6 +131,9 @@ function LibraryLayout() {
             >
               <CreditCard className="h-4 w-4" />
               <span>Cards</span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {cards.length}
+              </span>
             </Link>
           </div>
 
@@ -190,7 +201,6 @@ function LibraryLayout() {
                   params={{ id: playlist.id.toString() }}
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors [&.active]:bg-accent [&.active]:text-accent-foreground hover:bg-accent/50"
                 >
-                  <Music className="h-4 w-4" />
                   <span className="truncate">{playlist.name}</span>
                 </Link>
               ))}

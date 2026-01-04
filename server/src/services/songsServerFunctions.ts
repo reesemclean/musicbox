@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { parseBuffer } from 'music-metadata'
 import {
   addSongToPlaylist,
+  bulkDeleteSongs,
   createPlaylist,
   createSong,
   deletePlaylist,
@@ -98,6 +99,13 @@ export const removeSong = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     await deleteSong(data.id)
     return { success: true, deletedSongId: data.id }
+  })
+
+export const bulkRemoveSongs = createServerFn({ method: 'POST' })
+  .inputValidator((data: { ids: Array<number> }) => data)
+  .handler(async ({ data }) => {
+    await bulkDeleteSongs(data.ids)
+    return { success: true, deletedSongIds: data.ids }
   })
 
 // ============================================================================

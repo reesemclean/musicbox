@@ -97,7 +97,9 @@ function CardsPage() {
         <div className="bg-card rounded-lg border overflow-hidden">
           <CardsTable
             cards={cards}
-            getContentDisplay={(card) => getContentDisplay({ card, songs, playlists })}
+            getContentDisplay={(card) =>
+              getContentDisplay({ card, songs, playlists })
+            }
             onEdit={handleEdit}
             onDelete={handleDelete}
           />

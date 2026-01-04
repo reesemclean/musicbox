@@ -1,4 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, notFound } from '@tanstack/react-router'
+import { eq } from 'drizzle-orm'
+import { db } from '@/db'
+import { cards, playlistSongs, playlists, songs } from '@/db/schema'
 import { nfcQueue } from '@/lib/nfc-queue'
 
 export const Route = createFileRoute('/api/nfc/scan')({
@@ -10,39 +13,122 @@ export const Route = createFileRoute('/api/nfc/scan')({
           const { deviceId, nfcId } = body
 
           if (!deviceId || !nfcId) {
-            return new Response(
-              JSON.stringify({
-                error: 'Missing required fields: deviceId and nfcId',
-              }),
+            return Response.json(
               {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' },
+                error: 'Missing required fields: deviceId and nfcId',
               },
+              { status: 400 },
             )
           }
 
-          // Add scan to queue
           console.log(`📡 NFC scan received: ${nfcId} from ${deviceId}`)
+
+          // Look up the card mapping
+          const cardMapping = await db
+            .select()
+            .from(cards)
+            .where(eq(cards.nfcId, nfcId))
+            .limit(1)
+
+          if (cardMapping.length === 0) {
+            console.log(`❌ Card ${nfcId} not registered`)
+            // Still add to queue for web UI registration flow
+            nfcQueue.addScan(deviceId, nfcId)
+
+            return Response.json(
+              {
+                error: 'Card not registered',
+                nfcId,
+              },
+              { status: 422 },
+            )
+          }
+
+          const card = cardMapping[0]
+          console.log(`✅ Card ${nfcId} mapped to ${card.contentType}`)
+
+          // Add to queue for web UI notifications
           nfcQueue.addScan(deviceId, nfcId)
 
-          return new Response(
-            JSON.stringify({
-              success: true,
-              message: `NFC card ${nfcId} detected on device ${deviceId}`,
-            }),
-            {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          )
+          // Build response based on content type
+          let content = null
+
+          if (card.contentType === 'song' && card.contentPath) {
+            // Fetch song metadata (without file data)
+            const songId = parseInt(card.contentPath, 10)
+            const songData = await db
+              .select({
+                id: songs.id,
+                title: songs.title,
+                artist: songs.artist,
+                album: songs.album,
+                duration: songs.duration,
+                mimeType: songs.mimeType,
+                fileSize: songs.fileSize,
+              })
+              .from(songs)
+              .where(eq(songs.id, songId))
+              .limit(1)
+
+            if (songData.length > 0) {
+              content = {
+                type: 'song',
+                song: songData[0],
+              }
+            }
+          } else if (card.contentType === 'playlist' && card.contentPath) {
+            // Fetch playlist with songs
+            const playlistId = parseInt(card.contentPath, 10)
+            const playlistData = await db
+              .select()
+              .from(playlists)
+              .where(eq(playlists.id, playlistId))
+              .limit(1)
+
+            if (playlistData.length > 0) {
+              // Fetch playlist songs
+              const playlistTracks = await db
+                .select({
+                  position: playlistSongs.position,
+                  id: songs.id,
+                  title: songs.title,
+                  artist: songs.artist,
+                  album: songs.album,
+                  duration: songs.duration,
+                  mimeType: songs.mimeType,
+                  fileSize: songs.fileSize,
+                })
+                .from(playlistSongs)
+                .innerJoin(songs, eq(playlistSongs.songId, songs.id))
+                .where(eq(playlistSongs.playlistId, playlistId))
+                .orderBy(playlistSongs.position)
+
+              content = {
+                type: 'playlist',
+                playlist: {
+                  ...playlistData[0],
+                  songs: playlistTracks,
+                },
+              }
+            }
+          } else if (card.contentType === 'action' && card.action) {
+            content = {
+              type: 'action',
+              action: card.action,
+            }
+          }
+
+          return Response.json({
+            success: true,
+            nfcId: card.nfcId,
+            contentType: card.contentType,
+            content,
+          })
         } catch (error) {
           console.error('NFC scan endpoint error:', error)
-          return new Response(
-            JSON.stringify({ error: 'Failed to process NFC scan' }),
-            {
-              status: 500,
-              headers: { 'Content-Type': 'application/json' },
-            },
+          return Response.json(
+            { error: 'Failed to process NFC scan' },
+            { status: 500 },
           )
         }
       },

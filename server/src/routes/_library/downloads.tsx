@@ -4,7 +4,9 @@ import { useServerFn } from '@tanstack/react-start'
 import {
   Download,
   Loader2,
+  RefreshCw,
   Search,
+  Trash2,
   Upload as UploadIcon,
   XCircle,
 } from 'lucide-react'
@@ -14,6 +16,8 @@ import {
   downloadYTMusicAlbum,
   downloadYTMusicSong,
   getDownloadQueueStatus,
+  removeDownloadFromQueue,
+  retryFailedDownload,
   searchYTMusic,
   searchYTMusicAlbums,
 } from '@/services/ytmusicServerFunctions'
@@ -91,6 +95,8 @@ function YTMusicTab() {
   const downloadFn = useServerFn(downloadYTMusicSong)
   const downloadAlbumFn = useServerFn(downloadYTMusicAlbum)
   const getSongsFn = useServerFn(getSongs)
+  const retryFn = useServerFn(retryFailedDownload)
+  const removeFn = useServerFn(removeDownloadFromQueue)
 
   const { data: queue = [] } = useQuery({
     ...downloadQueueOptions,
@@ -227,6 +233,7 @@ function YTMusicTab() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['downloadQueue'] })
+      queryClient.invalidateQueries({ queryKey: ['playlists'] })
       toast.success(`Album download started`, {
         description: `Downloading ${data.trackCount} tracks from "${data.albumTitle}"`,
       })
@@ -357,10 +364,14 @@ function YTMusicTab() {
                       onClick={() =>
                         albumDownloadMutation.mutate(album.browseId)
                       }
-                      disabled={albumDownloadMutation.isPending}
+                      disabled={
+                        albumDownloadMutation.isPending &&
+                        albumDownloadMutation.variables === album.browseId
+                      }
                       size="sm"
                     >
-                      {albumDownloadMutation.isPending ? (
+                      {albumDownloadMutation.isPending &&
+                      albumDownloadMutation.variables === album.browseId ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                           Downloading
@@ -432,6 +443,45 @@ function YTMusicTab() {
                     </p>
                   )}
                 </div>
+                {item.status === 'failed' && (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await retryFn({ data: { queueId: item.id } })
+                          queryClient.invalidateQueries({
+                            queryKey: ['downloadQueue'],
+                          })
+                          toast.success('Retrying download')
+                        } catch (error) {
+                          toast.error('Failed to retry download')
+                        }
+                      }}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Retry
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await removeFn({ data: { queueId: item.id } })
+                          queryClient.invalidateQueries({
+                            queryKey: ['downloadQueue'],
+                          })
+                          toast.success('Removed from queue')
+                        } catch (error) {
+                          toast.error('Failed to remove from queue')
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

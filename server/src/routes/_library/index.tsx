@@ -7,11 +7,13 @@ import {
 } from '@tanstack/react-query'
 import { useServerFn } from '@tanstack/react-start'
 import { useMemo, useState } from 'react'
+import { MoreHorizontal } from 'lucide-react'
 import type { Song } from '@/components/SongList'
 import { SongList } from '@/components/SongList'
 import {
   addPlaylist,
   addSongToPlaylistFn,
+  bulkRemoveSongs,
   getPlaylists,
   getSongs,
   removeSong,
@@ -36,7 +38,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { usePlayer } from '@/hooks/usePlayerState'
-import { buttonVariants } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const songsQueryOptions = queryOptions({
   queryKey: ['songs'],
@@ -63,12 +71,14 @@ function AllSongsView() {
   const [searchQuery, setSearchQuery] = useState('')
   const [groupBy, setGroupBy] = useState<'none' | 'artist' | 'album'>('none')
   const [songToDelete, setSongToDelete] = useState<Song | null>(null)
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const queryClient = useQueryClient()
-  const player = usePlayer()
+  const { state: playerState, clearPlayer } = usePlayer()
 
   const addSongFn = useServerFn(addSongToPlaylistFn)
   const createPlaylistFn = useServerFn(addPlaylist)
   const deleteSongFn = useServerFn(removeSong)
+  const bulkDeleteSongsFn = useServerFn(bulkRemoveSongs)
 
   // Filter songs based on search query
   const filteredSongs = useMemo(() => {
@@ -165,29 +175,60 @@ function AllSongsView() {
   })
 
   const deleteSongMutation = useMutation({
-    mutationFn: async (songId: number) => {
-      await deleteSongFn({ data: { id: songId } })
-      return songId
-    },
+    mutationFn: (songId: number) => deleteSongFn({ data: { id: songId } }),
     onMutate: (songId) => {
-      // If deleting currently playing song, handle it
-      if (player.state.currentSongId === songId) {
-        if (player.state.queueIndex < player.state.queue.length - 1) {
-          player.nextSong()
-        } else {
-          player.clearPlayer()
-        }
+      // If deleting the currently playing song, clear player
+      if (playerState.currentSongId === songId) {
+        clearPlayer()
+      }
+      // Remove from selected songs
+      if (selectedSongs.has(songId)) {
+        const newSelection = new Set(selectedSongs)
+        newSelection.delete(songId)
+        setSelectedSongs(newSelection)
       }
     },
     onSuccess: async () => {
       // Invalidate all song-related queries
       await queryClient.invalidateQueries({ queryKey: ['songs'] })
       await queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      await queryClient.invalidateQueries({ queryKey: ['cards'] })
       setSongToDelete(null)
     },
     onError: (error) => {
       console.error('Failed to delete song:', error)
       setSongToDelete(null)
+    },
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (songIds: Array<number>) => {
+      await bulkDeleteSongsFn({ data: { ids: songIds } })
+    },
+    onMutate: (songIds) => {
+      // If deleting the currently playing song, clear player
+      if (
+        playerState.currentSongId &&
+        songIds.includes(playerState.currentSongId)
+      ) {
+        clearPlayer()
+      }
+      // Remove deleted songs from selected songs
+      const newSelection = new Set(selectedSongs)
+      songIds.forEach((id) => newSelection.delete(id))
+      setSelectedSongs(newSelection)
+    },
+    onSuccess: async () => {
+      // Invalidate all song-related queries
+      await queryClient.invalidateQueries({ queryKey: ['songs'] })
+      await queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      await queryClient.invalidateQueries({ queryKey: ['cards'] })
+      setSelectedSongs(new Set())
+      setBulkDeleteConfirmOpen(false)
+    },
+    onError: (error) => {
+      console.error('Failed to delete songs:', error)
+      setBulkDeleteConfirmOpen(false)
     },
   })
 
@@ -245,6 +286,14 @@ function AllSongsView() {
     if (songToDelete) {
       deleteSongMutation.mutate(songToDelete.id)
     }
+  }
+
+  const handleBulkDelete = () => {
+    setBulkDeleteConfirmOpen(true)
+  }
+
+  const confirmBulkDelete = () => {
+    bulkDeleteMutation.mutate(Array.from(selectedSongs))
   }
 
   return (
@@ -341,12 +390,29 @@ function AllSongsView() {
               Clear
             </button>
           </div>
-          <PlaylistSelector
-            playlists={playlists}
-            onSelect={handleAddToPlaylist}
-            onCreatePlaylist={handleCreatePlaylist}
-            disabled={addSongsMutation.isPending}
-          />
+          <div className="flex items-center gap-4 border border-border rounded-lg overflow-hidden">
+            <PlaylistSelector
+              playlists={playlists}
+              onSelect={handleAddToPlaylist}
+              onCreatePlaylist={handleCreatePlaylist}
+              disabled={addSongsMutation.isPending}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <MoreHorizontal className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={handleBulkDelete}
+                  className="text-destructive focus:text-destructive"
+                >
+                  Delete selected
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 
@@ -373,6 +439,37 @@ function AllSongsView() {
               className={buttonVariants({ variant: 'destructive' })}
             >
               {deleteSongMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={bulkDeleteConfirmOpen}
+        onOpenChange={(open) => !open && setBulkDeleteConfirmOpen(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedSongs.size} Songs
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedSongs.size} song
+              {selectedSongs.size !== 1 ? 's' : ''}? This will permanently
+              remove them from your library and all playlists. This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleteMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkDelete}
+              disabled={bulkDeleteMutation.isPending}
+              className={buttonVariants({ variant: 'destructive' })}
+            >
+              {bulkDeleteMutation.isPending ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

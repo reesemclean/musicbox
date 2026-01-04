@@ -42,6 +42,8 @@ export const downloadQueue = sqliteTable('download_queue', {
   artist: text('artist'),
   album: text('album'),
   targetPath: text('target_path'),
+  playlistId: integer('playlist_id'), // For adding to playlist after download
+  trackPosition: integer('track_position'), // Position in playlist
   status: text('status', {
     enum: ['pending', 'downloading', 'failed'],
   }).notNull(),
