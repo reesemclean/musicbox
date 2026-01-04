@@ -17,6 +17,13 @@ import {
   removeSong,
 } from '@/services/songsServerFunctions'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { PlaylistSelector } from '@/components/PlaylistSelector'
 import {
   AlertDialog,
@@ -54,6 +61,7 @@ function AllSongsView() {
   const { data: playlists } = useSuspenseQuery(playlistsQueryOptions)
   const [selectedSongs, setSelectedSongs] = useState<Set<number>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  const [groupBy, setGroupBy] = useState<'none' | 'artist' | 'album'>('none')
   const [songToDelete, setSongToDelete] = useState<Song | null>(null)
   const queryClient = useQueryClient()
   const player = usePlayer()
@@ -74,6 +82,40 @@ function AllSongsView() {
         song.album?.toLowerCase().includes(query),
     )
   }, [songs, searchQuery])
+
+  // Group songs by artist or album
+  const groupedSongs = useMemo(() => {
+    if (groupBy === 'none') return null
+
+    const groups = new Map<string, Array<Song>>()
+    
+    filteredSongs.forEach((song) => {
+      const key = groupBy === 'artist' 
+        ? (song.artist || 'Unknown Artist')
+        : (song.album || 'Unknown Album')
+      
+      if (!groups.has(key)) {
+        groups.set(key, [])
+      }
+      groups.get(key)!.push(song)
+    })
+
+    // Sort groups: Unknown first, then alphabetically
+    const sortedGroups = Array.from(groups.entries()).sort(([a], [b]) => {
+      const unknownA = a.startsWith('Unknown')
+      const unknownB = b.startsWith('Unknown')
+      if (unknownA && !unknownB) return -1
+      if (!unknownA && unknownB) return 1
+      return a.localeCompare(b)
+    })
+
+    // Sort songs within each group alphabetically by title
+    sortedGroups.forEach(([, groupSongs]) => {
+      groupSongs.sort((a, b) => a.title.localeCompare(b.title))
+    })
+
+    return sortedGroups
+  }, [filteredSongs, groupBy])
 
   const addSongsMutation = useMutation({
     mutationFn: async ({
@@ -166,6 +208,21 @@ function AllSongsView() {
     }
   }
 
+  const toggleGroupSelection = (groupSongs: Array<Song>) => {
+    const groupIds = new Set(groupSongs.map((s) => s.id))
+    const allSelected = groupSongs.every((s) => selectedSongs.has(s.id))
+    
+    const newSelection = new Set(selectedSongs)
+    if (allSelected) {
+      // Deselect all songs in group
+      groupIds.forEach((id) => newSelection.delete(id))
+    } else {
+      // Select all songs in group
+      groupIds.forEach((id) => newSelection.add(id))
+    }
+    setSelectedSongs(newSelection)
+  }
+
   const handleAddToPlaylist = (playlistId: number) => {
     addSongsMutation.mutate({
       playlistId,
@@ -190,50 +247,100 @@ function AllSongsView() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 pb-32">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">All Songs</h1>
-        {selectedSongs.size > 0 && (
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">
-              {selectedSongs.size} song{selectedSongs.size !== 1 ? 's' : ''}{' '}
-              selected
-            </span>
-            <PlaylistSelector
-              playlists={playlists}
-              onSelect={handleAddToPlaylist}
-              onCreatePlaylist={handleCreatePlaylist}
-              disabled={addSongsMutation.isPending}
-            />
-          </div>
-        )}
       </div>
 
-      {/* Search Input */}
-      <div className="mb-4">
+      {/* Search Input and Grouping */}
+      <div className="mb-4 flex gap-2">
         <Input
           placeholder="Search songs by title, artist, or album..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="max-w-sm"
         />
+        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as typeof groupBy)}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Group by" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No grouping</SelectItem>
+            <SelectItem value="artist">Group by Artist</SelectItem>
+            <SelectItem value="album">Group by Album</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      <SongList
-        songs={filteredSongs}
-        playlistId={0}
-        emptyMessage={
-          searchQuery
-            ? `No songs found matching "${searchQuery}"`
-            : 'No songs in your library'
-        }
-        selectable={true}
-        selectedSongs={selectedSongs}
-        onToggleSelection={toggleSongSelection}
-        onToggleSelectAll={toggleSelectAll}
-        onDeleteSong={handleDeleteSong}
-        deletingSongId={deleteSongMutation.isPending ? songToDelete?.id : null}
-      />
+      {groupedSongs ? (
+        <div className="space-y-6">
+          {groupedSongs.map(([groupName, groupSongs]) => (
+            <div key={groupName}>
+              <div className="flex items-center gap-3 mb-3 pb-2 border-b">
+                <h2 className="text-xl font-semibold">{groupName}</h2>
+                <span className="text-sm text-muted-foreground">
+                  ({groupSongs.length} song{groupSongs.length !== 1 ? 's' : ''})
+                </span>
+              </div>
+              <SongList
+                songs={groupSongs}
+                playlistId={0}
+                emptyMessage=""
+                selectable={true}
+                selectedSongs={selectedSongs}
+                onToggleSelection={toggleSongSelection}
+                onToggleSelectAll={() => toggleGroupSelection(groupSongs)}
+                onDeleteSong={handleDeleteSong}
+                deletingSongId={deleteSongMutation.isPending ? songToDelete?.id : null}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <SongList
+          songs={filteredSongs}
+          playlistId={0}
+          emptyMessage={
+            searchQuery
+              ? `No songs found matching "${searchQuery}"`
+              : 'No songs in your library'
+          }
+          selectable={true}
+          selectedSongs={selectedSongs}
+          onToggleSelection={toggleSongSelection}
+          onToggleSelectAll={toggleSelectAll}
+          onDeleteSong={handleDeleteSong}
+          deletingSongId={deleteSongMutation.isPending ? songToDelete?.id : null}
+        />
+      )}
+
+      {/* Floating Action Panel */}
+      <div
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 min-w-150 bg-accent border-2 border-accent-foreground/10 rounded-2xl shadow-2xl transition-transform duration-300 ease-in-out z-50 ${
+          selectedSongs.size > 0 ? 'translate-y-0' : 'translate-y-32'
+        }`}
+      >
+        <div className="px-6 py-4 flex items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <span className="text-base font-semibold">
+              {selectedSongs.size} song{selectedSongs.size !== 1 ? 's' : ''}{' '}
+              selected
+            </span>
+            <button
+              onClick={() => setSelectedSongs(new Set())}
+              className="text-sm text-muted-foreground hover:text-foreground font-medium underline underline-offset-4"
+            >
+              Clear
+            </button>
+          </div>
+          <PlaylistSelector
+            playlists={playlists}
+            onSelect={handleAddToPlaylist}
+            onCreatePlaylist={handleCreatePlaylist}
+            disabled={addSongsMutation.isPending}
+          />
+        </div>
+      </div>
 
       <AlertDialog
         open={!!songToDelete}
