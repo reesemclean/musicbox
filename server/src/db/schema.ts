@@ -20,6 +20,9 @@ export const cards = sqliteTable('cards', {
   ),
 })
 
+export type Card = typeof cards.$inferSelect
+export type NewCard = typeof cards.$inferInsert
+
 // Registered Pi devices
 export const devices = sqliteTable('devices', {
   id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
@@ -87,6 +90,8 @@ export const songs = sqliteTable('songs', {
   ),
 })
 
+export type Song = typeof songs.$inferSelect
+
 // Playlists
 export const playlists = sqliteTable('playlists', {
   id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
@@ -98,6 +103,8 @@ export const playlists = sqliteTable('playlists', {
     sql`(unixepoch())`,
   ),
 })
+
+export type Playlist = typeof playlists.$inferSelect
 
 // Playlist songs (join table with ordering)
 export const playlistSongs = sqliteTable('playlist_songs', {

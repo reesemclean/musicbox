@@ -12,7 +12,7 @@ import {
   useSuspenseQuery,
 } from '@tanstack/react-query'
 import { useServerFn } from '@tanstack/react-start'
-import { Download, Music, Plus } from 'lucide-react'
+import { Download, Music, Plus, CreditCard } from 'lucide-react'
 import { useState } from 'react'
 import {
   addPlaylist,
@@ -121,7 +121,7 @@ function LibraryLayout() {
               to="/cards"
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors [&.active]:bg-accent [&.active]:text-accent-foreground hover:bg-accent/50"
             >
-              <Music className="h-4 w-4" />
+              <CreditCard className="h-4 w-4" />
               <span>Cards</span>
             </Link>
           </div>

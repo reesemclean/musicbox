@@ -14,6 +14,7 @@ import { Route as LibraryIndexRouteImport } from './routes/_library/index'
 import { Route as LibraryDownloadsRouteImport } from './routes/_library/downloads'
 import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
 import { Route as ApiStreamSongIdRouteImport } from './routes/api/stream/$songId'
+import { Route as ApiNfcScanRouteImport } from './routes/api/nfc/scan'
 import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlist.$id'
 
 const LibraryRoute = LibraryRouteImport.update({
@@ -40,6 +41,11 @@ const ApiStreamSongIdRoute = ApiStreamSongIdRouteImport.update({
   path: '/api/stream/$songId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiNfcScanRoute = ApiNfcScanRouteImport.update({
+  id: '/api/nfc/scan',
+  path: '/api/nfc/scan',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LibraryPlaylistIdRoute = LibraryPlaylistIdRouteImport.update({
   id: '/playlist/$id',
   path: '/playlist/$id',
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/downloads': typeof LibraryDownloadsRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
 }
 export interface FileRoutesByTo {
@@ -58,6 +65,7 @@ export interface FileRoutesByTo {
   '/downloads': typeof LibraryDownloadsRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
 }
 export interface FileRoutesById {
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   '/_library/downloads': typeof LibraryDownloadsRoute
   '/_library/': typeof LibraryIndexRoute
   '/_library/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
 }
 export interface FileRouteTypes {
@@ -76,9 +85,16 @@ export interface FileRouteTypes {
     | '/downloads'
     | '/'
     | '/playlist/$id'
+    | '/api/nfc/scan'
     | '/api/stream/$songId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/cards' | '/downloads' | '/' | '/playlist/$id' | '/api/stream/$songId'
+  to:
+    | '/cards'
+    | '/downloads'
+    | '/'
+    | '/playlist/$id'
+    | '/api/nfc/scan'
+    | '/api/stream/$songId'
   id:
     | '__root__'
     | '/_library'
@@ -86,11 +102,13 @@ export interface FileRouteTypes {
     | '/_library/downloads'
     | '/_library/'
     | '/_library/playlist/$id'
+    | '/api/nfc/scan'
     | '/api/stream/$songId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   LibraryRoute: typeof LibraryRouteWithChildren
+  ApiNfcScanRoute: typeof ApiNfcScanRoute
   ApiStreamSongIdRoute: typeof ApiStreamSongIdRoute
 }
 
@@ -131,6 +149,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStreamSongIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/nfc/scan': {
+      id: '/api/nfc/scan'
+      path: '/api/nfc/scan'
+      fullPath: '/api/nfc/scan'
+      preLoaderRoute: typeof ApiNfcScanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_library/playlist/$id': {
       id: '/_library/playlist/$id'
       path: '/playlist/$id'
@@ -160,6 +185,7 @@ const LibraryRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   LibraryRoute: LibraryRouteWithChildren,
+  ApiNfcScanRoute: ApiNfcScanRoute,
   ApiStreamSongIdRoute: ApiStreamSongIdRoute,
 }
 export const routeTree = rootRouteImport

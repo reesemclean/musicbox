@@ -146,6 +146,8 @@ cd player
 npm run dev          # Start player in watch mode
 npm run build        # Compile TypeScript
 npm run start        # Run compiled player
+npm run simulate-nfc # Simulate NFC card scan (random ID)
+npm run simulate-nfc 04:A3:2F:BA  # Simulate with specific ID
 ```
 
 ### Shared
@@ -216,27 +218,30 @@ MOCK_NFC=true
 
 ## Key Features (Roadmap)
 
-### Phase 1: MVP ✓
+### Phase 1: MVP ✅
 
 - [x] Nix development environment
 - [x] TanStack Start scaffold
 - [x] Database schema with Drizzle ORM
 - [x] Shared type definitions
-- [ ] Library file serving
-- [ ] Mock NFC endpoint
-- [ ] File upload endpoint
-- [ ] Card linking flow
+- [x] Library file serving (BLOB storage in SQLite)
+- [x] Mock NFC endpoint
+- [x] File upload endpoint
+- [x] Card linking flow (WebSocket-based registration)
 
-### Phase 2: YouTube Integration
+### Phase 2: YouTube Integration ✅
 
-- [ ] YouTube Music search API
-- [ ] Download service (yt-dlp)
-- [ ] Download queue tracking
+- [x] YouTube Music search API
+- [x] Download service (yt-dlp)
+- [x] Download queue tracking
+- [x] Album download with playlist creation
 
-### Phase 3: Playlists
+### Phase 3: Playlists ✅
 
-- [ ] Create/edit playlists
-- [ ] Add/remove songs from playlists
+- [x] Create/edit playlists
+- [x] Add/remove songs from playlists
+- [x] Drag-and-drop reordering
+- [x] Web-based MiniPlayer with queue
 
 ### Phase 4: Pi Player
 
@@ -251,13 +256,46 @@ MOCK_NFC=true
 - [ ] Deployment documentation
 - [ ] Statistics and monitoring
 
+## Testing NFC Card Registration
+
+To test NFC card registration during development:
+
+1. **Start the server** (in terminal 1):
+   ```bash
+   cd server
+   npm run dev
+   ```
+
+2. **Open the web UI** in your browser:
+   ```
+   http://localhost:3000/cards
+   ```
+
+3. **Click "Register New Card"** - the dialog will wait for an NFC scan
+
+4. **Simulate an NFC tap** (in terminal 2):
+   ```bash
+   cd player
+   npm run simulate-nfc           # Random card ID
+   # or
+   npm run simulate-nfc 04:A3:2F  # Specific card ID
+   ```
+
+5. **The dialog should detect the card** and show the assignment form
+
+6. **Select content** (song/playlist/action) and save
+
+The simulation works by:
+- Player CLI sends POST request to `/api/nfc/scan`
+- Server broadcasts via WebSocket to all connected browsers
+- CardDialog receives the WebSocket message and transitions to assignment form
+
 ## Next Steps
 
 1. **Test the setup**: Verify all dev commands work
 2. **Build API routes**: Library scanning, file serving
-3. **Mock NFC**: Create HTTP endpoint to simulate card taps
-4. **File upload**: Accept MP3 uploads to library
-5. **Basic playback**: Wire up music files to player
+3. **File upload**: Accept MP3 uploads to library
+4. **Basic playback**: Wire up music files to player
 
 ## Troubleshooting
 

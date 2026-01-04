@@ -9,6 +9,32 @@ import {
   libraryVersion,
   playHistory,
 } from '@/db/schema'
+import { nfcQueue } from '@/lib/nfc-queue'
+
+// ============================================================================
+// NFC Scanning
+// ============================================================================
+
+export const startNFCScanSession = createServerFn({ method: 'POST' }).handler(
+  async () => {
+    const sessionId = nfcQueue.startSession()
+    return { sessionId }
+  },
+)
+
+export const stopNFCScanSession = createServerFn({ method: 'POST' })
+  .inputValidator((data: { sessionId: string }) => data)
+  .handler(async ({ data }) => {
+    nfcQueue.endSession(data.sessionId)
+    return { success: true }
+  })
+
+export const pollNFCScans = createServerFn({ method: 'GET' })
+  .inputValidator((data: { sessionId: string }) => data)
+  .handler(async ({ data }) => {
+    const scans = nfcQueue.getRecentScans(data.sessionId)
+    return { scans }
+  })
 
 // ============================================================================
 // Card Management
@@ -25,7 +51,7 @@ export const getCard = createServerFn({ method: 'GET' })
       .select()
       .from(cards)
       .where(eq(cards.nfcId, data.nfcId))
-    return result[0] || null
+    return result.length > 0 ? result[0] : null
   })
 
 const CreateCardSchema = z.object({
