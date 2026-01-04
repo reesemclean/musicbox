@@ -1,5 +1,4 @@
-import { Link } from '@tanstack/react-router'
-import { ClientOnly } from '@tanstack/react-router'
+import { ClientOnly, Link } from '@tanstack/react-router'
 import { Music } from 'lucide-react'
 import { DownloadsPopover } from './DownloadsPopover'
 import { Player } from './Player'

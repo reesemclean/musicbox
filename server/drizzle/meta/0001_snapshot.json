@@ -62,9 +62,7 @@
       "indexes": {
         "cards_nfc_id_unique": {
           "name": "cards_nfc_id_unique",
-          "columns": [
-            "nfc_id"
-          ],
+          "columns": ["nfc_id"],
           "isUnique": true
         }
       },
@@ -117,9 +115,7 @@
       "indexes": {
         "devices_name_unique": {
           "name": "devices_name_unique",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         }
       },
@@ -214,9 +210,7 @@
       "indexes": {
         "download_queue_video_id_unique": {
           "name": "download_queue_video_id_unique",
-          "columns": [
-            "video_id"
-          ],
+          "columns": ["video_id"],
           "isUnique": true
         }
       },
@@ -303,12 +297,8 @@
           "name": "play_history_device_id_devices_id_fk",
           "tableFrom": "play_history",
           "tableTo": "devices",
-          "columnsFrom": [
-            "device_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["device_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -363,12 +353,8 @@
           "name": "playlist_songs_playlist_id_playlists_id_fk",
           "tableFrom": "playlist_songs",
           "tableTo": "playlists",
-          "columnsFrom": [
-            "playlist_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["playlist_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -376,12 +362,8 @@
           "name": "playlist_songs_song_id_songs_id_fk",
           "tableFrom": "playlist_songs",
           "tableTo": "songs",
-          "columnsFrom": [
-            "song_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["song_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -427,9 +409,7 @@
       "indexes": {
         "playlists_name_unique": {
           "name": "playlists_name_unique",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         }
       },
@@ -502,9 +482,7 @@
       "indexes": {
         "songs_file_path_unique": {
           "name": "songs_file_path_unique",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": true
         }
       },

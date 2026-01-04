@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { searchSongs, searchAlbums, getAlbum } from './ytmusicService'
+import { getAlbum, searchAlbums, searchSongs } from './ytmusicService'
 import {
   downloadSong,
   getDownloadQueue,

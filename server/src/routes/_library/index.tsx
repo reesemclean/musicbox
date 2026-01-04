@@ -88,12 +88,13 @@ function AllSongsView() {
     if (groupBy === 'none') return null
 
     const groups = new Map<string, Array<Song>>()
-    
+
     filteredSongs.forEach((song) => {
-      const key = groupBy === 'artist' 
-        ? (song.artist || 'Unknown Artist')
-        : (song.album || 'Unknown Album')
-      
+      const key =
+        groupBy === 'artist'
+          ? song.artist || 'Unknown Artist'
+          : song.album || 'Unknown Album'
+
       if (!groups.has(key)) {
         groups.set(key, [])
       }
@@ -211,7 +212,7 @@ function AllSongsView() {
   const toggleGroupSelection = (groupSongs: Array<Song>) => {
     const groupIds = new Set(groupSongs.map((s) => s.id))
     const allSelected = groupSongs.every((s) => selectedSongs.has(s.id))
-    
+
     const newSelection = new Set(selectedSongs)
     if (allSelected) {
       // Deselect all songs in group
@@ -260,7 +261,10 @@ function AllSongsView() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="max-w-sm"
         />
-        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as typeof groupBy)}>
+        <Select
+          value={groupBy}
+          onValueChange={(v) => setGroupBy(v as typeof groupBy)}
+        >
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Group by" />
           </SelectTrigger>
@@ -291,7 +295,9 @@ function AllSongsView() {
                 onToggleSelection={toggleSongSelection}
                 onToggleSelectAll={() => toggleGroupSelection(groupSongs)}
                 onDeleteSong={handleDeleteSong}
-                deletingSongId={deleteSongMutation.isPending ? songToDelete?.id : null}
+                deletingSongId={
+                  deleteSongMutation.isPending ? songToDelete?.id : null
+                }
               />
             </div>
           ))}
@@ -310,7 +316,9 @@ function AllSongsView() {
           onToggleSelection={toggleSongSelection}
           onToggleSelectAll={toggleSelectAll}
           onDeleteSong={handleDeleteSong}
-          deletingSongId={deleteSongMutation.isPending ? songToDelete?.id : null}
+          deletingSongId={
+            deleteSongMutation.isPending ? songToDelete?.id : null
+          }
         />
       )}
 
