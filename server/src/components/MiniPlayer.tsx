@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { Pause, Play, SkipBack, SkipForward } from 'lucide-react'
+import { MiniPlayerEmpty } from './MiniPlayerEmpty'
 import { usePlayer } from '@/hooks/usePlayerState'
 import { Button } from '@/components/ui/button'
 import { getPlaylist, getSongMeta } from '@/services/songsServerFunctions'
@@ -107,37 +108,12 @@ export function MiniPlayer() {
 
   // Show placeholder when no song is selected
   if (player.state.currentSongId === null) {
-    return (
-      <div className="p-4 border-b bg-background/50">
-        <div className="flex flex-col gap-2">
-          <div className="text-xs font-medium text-muted-foreground">
-            No song playing
-          </div>
-          <div className="flex items-center justify-center gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
-              <SkipBack className="h-3 w-3" />
-            </Button>
-            <Button variant="default" size="icon" className="h-8 w-8" disabled>
-              <Play className="h-3 w-3" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
-              <SkipForward className="h-3 w-3" />
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
+    return <MiniPlayerEmpty />
   }
 
   // Show error state if song fetch failed
   if (error || !currentSong || !audioUrl) {
-    return (
-      <div className="p-4 border-b bg-background/50">
-        <div className="text-xs text-center text-destructive">
-          Failed to load song
-        </div>
-      </div>
-    )
+    return <MiniPlayerEmpty error />
   }
 
   return (

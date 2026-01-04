@@ -23,6 +23,7 @@ import { getDownloadQueueStatus } from '@/services/ytmusicServerFunctions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MiniPlayer } from '@/components/MiniPlayer'
+import { MiniPlayerEmpty } from '@/components/MiniPlayerEmpty'
 
 const songsQueryOptions = queryOptions({
   queryKey: ['songs'],
@@ -83,7 +84,7 @@ function LibraryLayout() {
       {/* Sidebar */}
       <div className="w-64 border-r bg-background/50 flex flex-col">
         {/* Mini Player at top */}
-        <ClientOnly fallback={null}>
+        <ClientOnly fallback={<MiniPlayerEmpty />}>
           <MiniPlayer />
         </ClientOnly>
 
