@@ -242,7 +242,10 @@ function YTMusicTab() {
     <div className="space-y-6">
       {/* Search */}
       <div className="flex gap-2">
-        <Select value={searchType} onValueChange={(v) => setSearchType(v as 'songs' | 'albums')}>
+        <Select
+          value={searchType}
+          onValueChange={(v) => setSearchType(v as 'songs' | 'albums')}
+        >
           <SelectTrigger className="w-[140px]">
             <SelectValue />
           </SelectTrigger>

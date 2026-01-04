@@ -10,10 +10,7 @@ export function MiniPlayer() {
   const audioRef = useRef<HTMLAudioElement>(null)
 
   // Fetch current song metadata only (not the file data)
-  const {
-    data: currentSong,
-    error,
-  } = useQuery({
+  const { data: currentSong, error } = useQuery({
     queryKey: ['song-meta', player.state.currentSongId],
     queryFn: () => getSongMeta({ data: { id: player.state.currentSongId! } }),
     enabled: player.state.currentSongId !== null,

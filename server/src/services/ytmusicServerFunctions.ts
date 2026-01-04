@@ -84,12 +84,7 @@ export const getDownloadQueueStatus = createServerFn({ method: 'GET' }).handler(
 )
 
 export const downloadYTMusicAlbum = createServerFn({ method: 'POST' })
-  .inputValidator(
-    (data: {
-      browseId: string
-      createPlaylist: boolean
-    }) => data,
-  )
+  .inputValidator((data: { browseId: string; createPlaylist: boolean }) => data)
   .handler(async ({ data }) => {
     if (!data.browseId) {
       throw new Error('Browse ID is required')

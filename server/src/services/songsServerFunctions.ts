@@ -55,12 +55,14 @@ export const addSong = createServerFn({ method: 'POST' })
     const fileData = Array.isArray(data.fileData)
       ? Buffer.from(data.fileData)
       : data.fileData
-    
+
     // Extract duration from audio file if not provided
     let duration = data.duration
     if (!duration) {
       try {
-        const metadata = await parseBuffer(fileData, { mimeType: data.mimeType })
+        const metadata = await parseBuffer(fileData, {
+          mimeType: data.mimeType,
+        })
         if (metadata.format.duration) {
           duration = Math.round(metadata.format.duration)
         }
@@ -68,7 +70,7 @@ export const addSong = createServerFn({ method: 'POST' })
         console.warn('Could not extract duration from uploaded file:', error)
       }
     }
-    
+
     return await createSong({
       ...data,
       fileData,
