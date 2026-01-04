@@ -6,7 +6,6 @@ import {
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 
-import Header from '../components/Header'
 import { PlayerProvider } from '../hooks/usePlayerState'
 
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
@@ -31,7 +30,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TanStack Start Starter',
+        title: 'Music Box',
       },
     ],
     links: [
@@ -53,7 +52,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <PlayerProvider>
-          <Header />
           {children}
           <Toaster />
           <TanStackDevtools

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LibraryRouteImport } from './routes/_library'
 import { Route as LibraryIndexRouteImport } from './routes/_library/index'
+import { Route as LibraryDownloadsRouteImport } from './routes/_library/downloads'
 import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
 import { Route as ApiStreamSongIdRouteImport } from './routes/api/stream/$songId'
 import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlist.$id'
@@ -22,6 +23,11 @@ const LibraryRoute = LibraryRouteImport.update({
 const LibraryIndexRoute = LibraryIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => LibraryRoute,
+} as any)
+const LibraryDownloadsRoute = LibraryDownloadsRouteImport.update({
+  id: '/downloads',
+  path: '/downloads',
   getParentRoute: () => LibraryRoute,
 } as any)
 const LibraryCardsRoute = LibraryCardsRouteImport.update({
@@ -42,12 +48,14 @@ const LibraryPlaylistIdRoute = LibraryPlaylistIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/cards': typeof LibraryCardsRoute
+  '/downloads': typeof LibraryDownloadsRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
 }
 export interface FileRoutesByTo {
   '/cards': typeof LibraryCardsRoute
+  '/downloads': typeof LibraryDownloadsRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
@@ -56,19 +64,26 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_library': typeof LibraryRouteWithChildren
   '/_library/cards': typeof LibraryCardsRoute
+  '/_library/downloads': typeof LibraryDownloadsRoute
   '/_library/': typeof LibraryIndexRoute
   '/_library/playlist/$id': typeof LibraryPlaylistIdRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/cards' | '/' | '/playlist/$id' | '/api/stream/$songId'
+  fullPaths:
+    | '/cards'
+    | '/downloads'
+    | '/'
+    | '/playlist/$id'
+    | '/api/stream/$songId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/cards' | '/' | '/playlist/$id' | '/api/stream/$songId'
+  to: '/cards' | '/downloads' | '/' | '/playlist/$id' | '/api/stream/$songId'
   id:
     | '__root__'
     | '/_library'
     | '/_library/cards'
+    | '/_library/downloads'
     | '/_library/'
     | '/_library/playlist/$id'
     | '/api/stream/$songId'
@@ -93,6 +108,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof LibraryIndexRouteImport
+      parentRoute: typeof LibraryRoute
+    }
+    '/_library/downloads': {
+      id: '/_library/downloads'
+      path: '/downloads'
+      fullPath: '/downloads'
+      preLoaderRoute: typeof LibraryDownloadsRouteImport
       parentRoute: typeof LibraryRoute
     }
     '/_library/cards': {
@@ -121,12 +143,14 @@ declare module '@tanstack/react-router' {
 
 interface LibraryRouteChildren {
   LibraryCardsRoute: typeof LibraryCardsRoute
+  LibraryDownloadsRoute: typeof LibraryDownloadsRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
   LibraryPlaylistIdRoute: typeof LibraryPlaylistIdRoute
 }
 
 const LibraryRouteChildren: LibraryRouteChildren = {
   LibraryCardsRoute: LibraryCardsRoute,
+  LibraryDownloadsRoute: LibraryDownloadsRoute,
   LibraryIndexRoute: LibraryIndexRoute,
   LibraryPlaylistIdRoute: LibraryPlaylistIdRoute,
 }

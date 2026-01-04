@@ -9,6 +9,15 @@ export interface YTMusicSearchResult {
   thumbnails?: Array<{ url: string; width: number; height: number }>
 }
 
+export interface YTMusicAlbumSearchResult {
+  browseId: string
+  title: string
+  artist: string
+  year?: number
+  trackCount?: number
+  thumbnails?: Array<{ url: string; width: number; height: number }>
+}
+
 export interface YTMusicAlbum {
   browseId: string
   title: string
@@ -55,6 +64,69 @@ for result in results:
     })
 
 print(json.dumps(songs))
+`,
+    ])
+
+    let stdout = ''
+    let stderr = ''
+
+    python.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
+
+    python.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    python.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Python process exited with code ${code}: ${stderr}`))
+        return
+      }
+
+      try {
+        const results = JSON.parse(stdout)
+        resolve(results)
+      } catch (error) {
+        reject(new Error(`Failed to parse ytmusicapi response: ${error}`))
+      }
+    })
+
+    python.on('error', (error) => {
+      reject(new Error(`Failed to spawn Python process: ${error.message}`))
+    })
+  })
+}
+
+/**
+ * Search YouTube Music for albums
+ */
+export async function searchAlbums(
+  query: string,
+): Promise<Array<YTMusicAlbumSearchResult>> {
+  return new Promise((resolve, reject) => {
+    const python = spawn('python3', [
+      '-c',
+      `
+import json
+import sys
+from ytmusicapi import YTMusic
+
+ytmusic = YTMusic()
+results = ytmusic.search("${query.replace(/"/g, '\\"')}", filter="albums", limit=20)
+
+albums = []
+for result in results:
+    albums.append({
+        "browseId": result.get("browseId"),
+        "title": result.get("title"),
+        "artist": result.get("artists", [{}])[0].get("name", "Unknown") if result.get("artists") else "Unknown",
+        "year": result.get("year"),
+        "trackCount": result.get("trackCount"),
+        "thumbnails": result.get("thumbnails", [])
+    })
+
+print(json.dumps(albums))
 `,
     ])
 

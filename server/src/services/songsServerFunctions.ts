@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { parseBuffer } from 'music-metadata'
 import {
   addSongToPlaylist,
   createPlaylist,
@@ -43,14 +44,36 @@ export const addSong = createServerFn({ method: 'POST' })
       artist?: string
       album?: string
       duration?: number
-      fileData: Buffer
+      fileData: Buffer | Array<number>
       mimeType: string
       fileSize: number
       youtubeVideoId?: string
     }) => data,
   )
   .handler(async ({ data }) => {
-    return await createSong(data)
+    // Convert array back to Buffer if needed
+    const fileData = Array.isArray(data.fileData)
+      ? Buffer.from(data.fileData)
+      : data.fileData
+    
+    // Extract duration from audio file if not provided
+    let duration = data.duration
+    if (!duration) {
+      try {
+        const metadata = await parseBuffer(fileData, { mimeType: data.mimeType })
+        if (metadata.format.duration) {
+          duration = Math.round(metadata.format.duration)
+        }
+      } catch (error) {
+        console.warn('Could not extract duration from uploaded file:', error)
+      }
+    }
+    
+    return await createSong({
+      ...data,
+      fileData,
+      duration,
+    })
   })
 
 export const editSong = createServerFn({ method: 'POST' })

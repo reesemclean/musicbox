@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
+import { parseBuffer } from 'music-metadata'
 import { db } from '@/db'
 import { downloadQueue } from '@/db/schema'
 import { createSong } from '@/services/songsService'
@@ -138,11 +139,25 @@ async function downloadInBackground(
             const fileData = await fs.readFile(outputPath)
             const fileStats = await fs.stat(outputPath)
 
+            // Extract duration from audio file metadata
+            let duration: number | undefined
+            try {
+              const metadata = await parseBuffer(fileData, {
+                mimeType: 'audio/mpeg',
+              })
+              duration = metadata.format.duration
+                ? Math.round(metadata.format.duration)
+                : undefined
+            } catch (metadataError) {
+              console.warn('Failed to extract audio metadata:', metadataError)
+            }
+
             // Create song entry in database with BLOB data
             await createSong({
               title: queueItem[0].title,
               artist: queueItem[0].artist || undefined,
               album: queueItem[0].album || undefined,
+              duration: duration,
               fileData: fileData,
               mimeType: 'audio/mpeg',
               fileSize: fileStats.size,

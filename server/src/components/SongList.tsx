@@ -14,6 +14,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
+// Helper function to format duration from seconds to MM:SS
+function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds || seconds <= 0) return '—'
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
 export interface Song {
   id: number
   title: string
@@ -167,7 +175,9 @@ function DraggableRow<T extends Song>({
         className="p-4 text-right text-muted-foreground cursor-pointer"
         onClick={() => handlePlaySong(song)}
       >
-        {song.duration || '—'}
+        {typeof song.duration === 'number'
+          ? formatDuration(song.duration)
+          : song.duration || '—'}
       </td>
       {renderActions && (
         <td className="p-4 text-right">{renderActions(song)}</td>
