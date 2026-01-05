@@ -12,10 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LibraryRouteImport } from './routes/_library'
 import { Route as LibraryIndexRouteImport } from './routes/_library/index'
 import { Route as LibraryDownloadsRouteImport } from './routes/_library/downloads'
+import { Route as LibraryDevicesRouteImport } from './routes/_library/devices'
 import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
 import { Route as ApiStreamSongIdRouteImport } from './routes/api/stream/$songId'
 import { Route as ApiNfcScanRouteImport } from './routes/api/nfc/scan'
+import { Route as ApiDevicesHeartbeatRouteImport } from './routes/api/devices/heartbeat'
 import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlist.$id'
+import { Route as ApiDevicesDeviceIdConfigRouteImport } from './routes/api/devices/$deviceId/config'
 
 const LibraryRoute = LibraryRouteImport.update({
   id: '/_library',
@@ -29,6 +32,11 @@ const LibraryIndexRoute = LibraryIndexRouteImport.update({
 const LibraryDownloadsRoute = LibraryDownloadsRouteImport.update({
   id: '/downloads',
   path: '/downloads',
+  getParentRoute: () => LibraryRoute,
+} as any)
+const LibraryDevicesRoute = LibraryDevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
   getParentRoute: () => LibraryRoute,
 } as any)
 const LibraryCardsRoute = LibraryCardsRouteImport.update({
@@ -46,70 +54,101 @@ const ApiNfcScanRoute = ApiNfcScanRouteImport.update({
   path: '/api/nfc/scan',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDevicesHeartbeatRoute = ApiDevicesHeartbeatRouteImport.update({
+  id: '/api/devices/heartbeat',
+  path: '/api/devices/heartbeat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LibraryPlaylistIdRoute = LibraryPlaylistIdRouteImport.update({
   id: '/playlist/$id',
   path: '/playlist/$id',
   getParentRoute: () => LibraryRoute,
 } as any)
+const ApiDevicesDeviceIdConfigRoute =
+  ApiDevicesDeviceIdConfigRouteImport.update({
+    id: '/api/devices/$deviceId/config',
+    path: '/api/devices/$deviceId/config',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/cards': typeof LibraryCardsRoute
+  '/devices': typeof LibraryDevicesRoute
   '/downloads': typeof LibraryDownloadsRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
+  '/api/devices/$deviceId/config': typeof ApiDevicesDeviceIdConfigRoute
 }
 export interface FileRoutesByTo {
   '/cards': typeof LibraryCardsRoute
+  '/devices': typeof LibraryDevicesRoute
   '/downloads': typeof LibraryDownloadsRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
+  '/api/devices/$deviceId/config': typeof ApiDevicesDeviceIdConfigRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_library': typeof LibraryRouteWithChildren
   '/_library/cards': typeof LibraryCardsRoute
+  '/_library/devices': typeof LibraryDevicesRoute
   '/_library/downloads': typeof LibraryDownloadsRoute
   '/_library/': typeof LibraryIndexRoute
   '/_library/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
+  '/api/devices/$deviceId/config': typeof ApiDevicesDeviceIdConfigRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/cards'
+    | '/devices'
     | '/downloads'
     | '/'
     | '/playlist/$id'
+    | '/api/devices/heartbeat'
     | '/api/nfc/scan'
     | '/api/stream/$songId'
+    | '/api/devices/$deviceId/config'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/cards'
+    | '/devices'
     | '/downloads'
     | '/'
     | '/playlist/$id'
+    | '/api/devices/heartbeat'
     | '/api/nfc/scan'
     | '/api/stream/$songId'
+    | '/api/devices/$deviceId/config'
   id:
     | '__root__'
     | '/_library'
     | '/_library/cards'
+    | '/_library/devices'
     | '/_library/downloads'
     | '/_library/'
     | '/_library/playlist/$id'
+    | '/api/devices/heartbeat'
     | '/api/nfc/scan'
     | '/api/stream/$songId'
+    | '/api/devices/$deviceId/config'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   LibraryRoute: typeof LibraryRouteWithChildren
+  ApiDevicesHeartbeatRoute: typeof ApiDevicesHeartbeatRoute
   ApiNfcScanRoute: typeof ApiNfcScanRoute
   ApiStreamSongIdRoute: typeof ApiStreamSongIdRoute
+  ApiDevicesDeviceIdConfigRoute: typeof ApiDevicesDeviceIdConfigRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -135,6 +174,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryDownloadsRouteImport
       parentRoute: typeof LibraryRoute
     }
+    '/_library/devices': {
+      id: '/_library/devices'
+      path: '/devices'
+      fullPath: '/devices'
+      preLoaderRoute: typeof LibraryDevicesRouteImport
+      parentRoute: typeof LibraryRoute
+    }
     '/_library/cards': {
       id: '/_library/cards'
       path: '/cards'
@@ -156,6 +202,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiNfcScanRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/devices/heartbeat': {
+      id: '/api/devices/heartbeat'
+      path: '/api/devices/heartbeat'
+      fullPath: '/api/devices/heartbeat'
+      preLoaderRoute: typeof ApiDevicesHeartbeatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_library/playlist/$id': {
       id: '/_library/playlist/$id'
       path: '/playlist/$id'
@@ -163,11 +216,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryPlaylistIdRouteImport
       parentRoute: typeof LibraryRoute
     }
+    '/api/devices/$deviceId/config': {
+      id: '/api/devices/$deviceId/config'
+      path: '/api/devices/$deviceId/config'
+      fullPath: '/api/devices/$deviceId/config'
+      preLoaderRoute: typeof ApiDevicesDeviceIdConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface LibraryRouteChildren {
   LibraryCardsRoute: typeof LibraryCardsRoute
+  LibraryDevicesRoute: typeof LibraryDevicesRoute
   LibraryDownloadsRoute: typeof LibraryDownloadsRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
   LibraryPlaylistIdRoute: typeof LibraryPlaylistIdRoute
@@ -175,6 +236,7 @@ interface LibraryRouteChildren {
 
 const LibraryRouteChildren: LibraryRouteChildren = {
   LibraryCardsRoute: LibraryCardsRoute,
+  LibraryDevicesRoute: LibraryDevicesRoute,
   LibraryDownloadsRoute: LibraryDownloadsRoute,
   LibraryIndexRoute: LibraryIndexRoute,
   LibraryPlaylistIdRoute: LibraryPlaylistIdRoute,
@@ -185,8 +247,10 @@ const LibraryRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   LibraryRoute: LibraryRouteWithChildren,
+  ApiDevicesHeartbeatRoute: ApiDevicesHeartbeatRoute,
   ApiNfcScanRoute: ApiNfcScanRoute,
   ApiStreamSongIdRoute: ApiStreamSongIdRoute,
+  ApiDevicesDeviceIdConfigRoute: ApiDevicesDeviceIdConfigRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

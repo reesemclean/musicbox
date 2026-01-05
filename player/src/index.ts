@@ -1,11 +1,128 @@
-import type { Device, CardMapping } from "shared";
+#!/usr/bin/env tsx
+/**
+ * MusicBox Player - Main Entry Point
+ *
+ * Orchestrates the modular player architecture:
+ * - Loads configuration from environment variables
+ * - Initializes PlayerCore with server connection
+ * - Registers and starts enabled triggers
+ * - Handles graceful shutdown
+ *
+ * Usage:
+ *   npm run dev                              # Keyboard trigger only
+ *   TRIGGER_HTTP=true npm run dev            # Keyboard + HTTP
+ *   TRIGGER_HTTP=true HTTP_PORT=3001 npm run dev  # Custom port
+ */
 
-console.log("🎵 MusicBox Player - Starting...");
+import { PlayerCore } from "./core/PlayerCore.ts";
+import { ServerClient } from "./api/ServerClient.ts";
+import { KeyboardTrigger } from "./triggers/KeyboardTrigger.ts";
+import { HTTPTrigger } from "./triggers/HTTPTrigger.ts";
+import { NFCReaderTrigger } from "./triggers/NFCReaderTrigger.ts";
+import { HeartbeatService } from "./services/HeartbeatService.ts";
+import { loadConfig } from "./config/PlayerConfig.ts";
+import type { Trigger } from "./triggers/TriggerInterface.ts";
 
-// Placeholder for player initialization
-const deviceName = process.env.DEVICE_NAME || "dev-player";
-const proxmoxUrl = process.env.PROXMOX_URL || "http://localhost:3000";
+async function main() {
+  console.log("🎵 MusicBox Player");
+  console.log("═".repeat(60));
 
-console.log(`Device: ${deviceName}`);
-console.log(`Proxmox URL: ${proxmoxUrl}`);
-console.log("Waiting for implementation...");
+  const config = loadConfig();
+
+  console.log(`📡 Device: ${config.deviceName}`);
+  console.log(`🖥️  Server: ${config.serverUrl}`);
+  console.log("═".repeat(60));
+
+  // Initialize server client
+  const serverClient = new ServerClient(config.serverUrl, config.deviceName);
+
+  // Initialize player core
+  const playerCore = new PlayerCore(serverClient);
+
+  // Start heartbeat service (if device secret is configured)
+  let heartbeatService: HeartbeatService | undefined;
+  if (config.deviceSecret) {
+    heartbeatService = new HeartbeatService(
+      config.serverUrl,
+      config.deviceSecret,
+      playerCore
+    );
+    heartbeatService.start(30000); // Every 30 seconds
+  } else {
+    console.log("⚠️  No device secret configured - heartbeat disabled");
+    console.log(
+      "   Create a device in the server UI and deploy the config file"
+    );
+  }
+
+  // Register enabled triggers
+  const triggers: Trigger[] = [];
+
+  if (config.triggers.keyboard.enabled) {
+    triggers.push(new KeyboardTrigger());
+  }
+
+  if (config.triggers.http.enabled) {
+    triggers.push(new HTTPTrigger(config.triggers.http.port));
+  }
+
+  if (config.triggers.nfc.enabled) {
+    triggers.push(new NFCReaderTrigger(config.triggers.nfc.i2cBus));
+  }
+
+  if (triggers.length === 0) {
+    console.error("❌ No triggers enabled!");
+    console.error("   Enable at least one trigger via environment variables:");
+    console.error("   - TRIGGER_KEYBOARD=true (default)");
+    console.error("   - TRIGGER_HTTP=true");
+    console.error("   - TRIGGER_NFC=true");
+    process.exit(1);
+  }
+
+  // Start all triggers
+  console.log(`\n🚀 Starting ${triggers.length} trigger(s)...`);
+  for (const trigger of triggers) {
+    try {
+      await trigger.start(playerCore);
+    } catch (error) {
+      console.error(`❌ Failed to start ${trigger.name} trigger:`, error);
+    }
+  }
+  console.log(""); // Add spacing after all triggers started
+
+  // Handle shutdown - be forceful
+  let isShuttingDown = false;
+  const shutdown = () => {
+    if (isShuttingDown) {
+      // Second Ctrl+C = immediate exit
+      process.exit(0);
+    }
+    isShuttingDown = true;
+
+    console.log("\n\n👋 Shutting down...");
+
+    // Cleanup synchronously
+    heartbeatService?.stop();
+    playerCore.stop();
+
+    // Try to stop triggers but don't wait
+    triggers.forEach((trigger) => {
+      try {
+        trigger.stop();
+      } catch (err) {
+        // Ignore errors
+      }
+    });
+
+    // Exit immediately
+    process.exit(0);
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});

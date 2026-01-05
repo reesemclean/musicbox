@@ -4,12 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "node --watch --experimental-transform-types src/index.ts",
+    "dev:nowatch": "node --experimental-transform-types src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "player": "tsx src/player.ts",
-    "simulate-nfc": "tsx src/simulate-nfc.ts",
-    "scan-mode": "tsx src/scan-mode.ts"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "shared": "file:../shared"

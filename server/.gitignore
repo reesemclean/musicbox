@@ -11,3 +11,6 @@ count.txt
 .output
 .vinxi
 todos.json
+
+# Player config (contains device secrets)
+player.config.json

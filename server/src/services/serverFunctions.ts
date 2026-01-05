@@ -10,6 +10,7 @@ import {
   playHistory,
 } from '@/db/schema'
 import { nfcQueue } from '@/lib/nfc-queue'
+import * as devicesService from './devicesService.js'
 
 // ============================================================================
 // NFC Scanning
@@ -100,44 +101,6 @@ export const deleteCard = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     await db.delete(cards).where(eq(cards.nfcId, data.nfcId))
     return { success: true }
-  })
-
-// ============================================================================
-// Device Management
-// ============================================================================
-
-export const getAllDevices = createServerFn().handler(async () => {
-  return db.select().from(devices).orderBy(devices.name)
-})
-
-export const registerDevice = createServerFn({ method: 'POST' })
-  .inputValidator(
-    z.object({
-      name: z.string().min(1),
-      ipAddress: z.string().optional(),
-    }),
-  )
-  .handler(async ({ data }) => {
-    const result = await db
-      .insert(devices)
-      .values({
-        name: data.name,
-        ipAddress: data.ipAddress,
-        libraryVersion: 0,
-      })
-      .returning()
-    return result[0]
-  })
-
-export const updateDeviceHeartbeat = createServerFn({ method: 'POST' })
-  .inputValidator((data: { deviceId: number }) => data)
-  .handler(async ({ data }) => {
-    const result = await db
-      .update(devices)
-      .set({ lastSeen: new Date() })
-      .where(eq(devices.id, data.deviceId))
-      .returning()
-    return result[0]
   })
 
 // ============================================================================
@@ -272,4 +235,78 @@ export const updateDownloadStatus = createServerFn({ method: 'POST' })
       .where(eq(downloadQueue.videoId, data.videoId))
       .returning()
     return result[0]
+  })
+
+// ============================================================================
+// Device Management
+// ============================================================================
+
+/**
+ * Create a new device (admin)
+ */
+export const createDevice = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ name: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const device = await devicesService.createDevice(data.name)
+
+    // Generate downloadable config
+    const config = {
+      deviceId: device.id,
+      deviceName: device.name,
+      deviceSecret: device.secret,
+      serverUrl: process.env.PUBLIC_SERVER_URL || 'http://localhost:3000',
+      httpPort: 8080,
+    }
+
+    return { device, config }
+  })
+
+/**
+ * Get all devices
+ */
+export const getDevices = createServerFn().handler(async () => {
+  return await devicesService.getAllDevices()
+})
+
+/**
+ * Send command to device (HTTP proxy)
+ */
+export const sendDeviceCommand = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      deviceId: z.number(),
+      command: z.enum(['play', 'pause', 'next', 'previous', 'stop']),
+      nfcId: z.string().optional(), // For scan command
+    }),
+  )
+  .handler(async ({ data }) => {
+    const device = await devicesService.getDeviceById(data.deviceId)
+
+    if (!device || !device.ipAddress) {
+      throw new Error('Device not found or offline')
+    }
+
+    const playerUrl = `http://${device.ipAddress}:${device.httpPort}`
+
+    let endpoint: string
+    let body: string | undefined = undefined
+
+    if (data.nfcId) {
+      endpoint = '/scan'
+      body = JSON.stringify({ nfcId: data.nfcId })
+    } else {
+      endpoint = `/${data.command}`
+    }
+
+    const response = await fetch(`${playerUrl}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    })
+
+    if (!response.ok) {
+      throw new Error(`Player returned ${response.status}`)
+    }
+
+    return { success: true }
   })

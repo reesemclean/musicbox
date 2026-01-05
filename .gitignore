@@ -48,3 +48,6 @@ library/
 result
 result-*
 .direnv/
+
+# Player config
+player.config.json

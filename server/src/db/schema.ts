@@ -27,12 +27,19 @@ export type NewCard = typeof cards.$inferInsert
 export const devices = sqliteTable('devices', {
   id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
   name: text('name').notNull().unique(),
-  ipAddress: text('ip_address'),
-  lastSeen: integer('last_seen', { mode: 'timestamp' }).default(
+  secret: text('secret').notNull().unique(), // UUID for authentication
+  ipAddress: text('ip_address'), // Set by heartbeat
+  httpPort: integer('http_port').default(8080), // Player's HTTP port
+  lastSeen: integer('last_seen', { mode: 'timestamp' }), // Status calculated from this
+  currentSong: text('current_song'), // JSON string of current playback
+  libraryVersion: integer('library_version').default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(
     sql`(unixepoch())`,
   ),
-  libraryVersion: integer('library_version').default(0),
 })
+
+export type Device = typeof devices.$inferSelect
+export type NewDevice = typeof devices.$inferInsert
 
 // Download queue (YouTube Music)
 export const downloadQueue = sqliteTable('download_queue', {
