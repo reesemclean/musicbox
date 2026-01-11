@@ -72,6 +72,9 @@ function showUsage() {
   console.log('  "deviceSecret": "abc-123",');
   console.log('  "serverUrl": "http://192.168.1.100:3000"');
   console.log("}");
+  console.log("");
+  console.log("Note: Image includes a script to enable Git-based updates after first boot.");
+  console.log("Run 'sudo /etc/nixos/enable-git-updates.sh' on the Pi to activate.");
   process.exit(1);
 }
 
@@ -280,28 +283,30 @@ async function main() {
   const buildDir = mkdtempSync(join(tmpdir(), "musicbox-build-"));
 
   try {
-    // Generate configuration files
+    // Generate configuration
+    // Initial image uses local files, can enable Git mode later with a script
+    const gitRepo = process.env.GIT_REPO || "reesemclean/musicbox";
+
     const configNix = `# MusicBox Player Configuration for: ${deviceConfig.deviceName}
-# Auto-generated configuration
+# Initial mode: LOCAL (using embedded files)
+#
+# To enable Git-based updates (no reflashing needed):
+#   Run: sudo /etc/nixos/enable-git-updates.sh
 
 { config, pkgs, ... }:
 
 let
   secrets = import ./secrets.nix;
-
-  # Fetch MusicBox code from Git (allows updates without reflashing!)
-  musicbox = builtins.fetchGit {
-    url = "https://github.com/${process.env.GIT_REPO || "reesemclean/musicbox"}";
-    ref = "main";
-    # Uncomment to pin to specific commit (more stable):
-    # rev = "abc123...";
-  };
 in
 {
   imports = [
-    "\${musicbox}/player/image-building/nixos-module.nix"
-  ];
+    # Using local embedded files initially
+    # After running enable-git-updates.sh, this will fetch from Git
+    ./nixos-module.nix
+  ];`;
 
+    // Common configuration (goes in both build and deployed configs)
+    const commonConfig = `
   # Boot configuration for Raspberry Pi
   boot.loader.grub.enable = false;
   boot.loader.generic-extlinux-compatible.enable = true;
@@ -372,6 +377,104 @@ in
 }
 `;
 
+    // Complete configuration
+    const finalConfig = configNix + commonConfig;
+
+    // Create enable-git-updates script
+    const enableGitScript = `#!/usr/bin/env bash
+# MusicBox - Enable Git-Based Updates
+# Run this ONCE after initial deployment to enable updates via Git without reflashing
+
+set -e
+
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root: sudo $0"
+  exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════"
+echo "  MusicBox - Enable Git-Based Updates"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+echo "This will configure your Pi to fetch updates from:"
+echo "  https://github.com/${gitRepo}"
+echo ""
+echo "After enabling, you can update without reflashing:"
+echo "  1. Make changes and push to Git"
+echo "  2. SSH to Pi: ssh root@\$(hostname)"
+echo "  3. Update: sudo nixos-rebuild switch"
+echo ""
+read -p "Continue? (y/N) " -n 1 -r
+echo
+if [[ ! \$REPLY =~ ^[Yy]$ ]]; then
+  echo "Cancelled"
+  exit 0
+fi
+
+echo ""
+echo "Backing up configuration..."
+cd /etc/nixos
+cp configuration.nix configuration.nix.backup-\$(date +%Y%m%d-%H%M%S)
+
+echo "Updating configuration to use Git..."
+
+# Create new configuration with fetchGit
+cat > configuration.nix.new <<'EOF'
+# MusicBox Player Configuration
+# Mode: GIT (updates from GitHub)
+
+{ config, pkgs, ... }:
+
+let
+  secrets = import ./secrets.nix;
+
+  # Fetch MusicBox code from Git
+  musicbox = builtins.fetchGit {
+    url = "https://github.com/${gitRepo}";
+    ref = "main";
+  };
+in
+{
+  imports = [
+    "\${musicbox}/player/image-building/nixos-module.nix"
+  ];
+EOF
+
+# Append the rest of the original configuration (everything after "imports = [")
+sed -n '/# Boot configuration for Raspberry Pi/,\$p' configuration.nix >> configuration.nix.new
+
+# Replace
+mv configuration.nix.new configuration.nix
+
+echo "Testing configuration..."
+if ! nixos-rebuild dry-build 2>&1 | head -20; then
+  echo ""
+  echo "Configuration test failed! Restoring backup..."
+  mv configuration.nix.backup-* configuration.nix
+  exit 1
+fi
+
+echo ""
+echo "Applying configuration..."
+if nixos-rebuild switch; then
+  echo ""
+  echo "═══════════════════════════════════════════════════════════"
+  echo "  ✓ Git-based updates enabled!"
+  echo "═══════════════════════════════════════════════════════════"
+  echo ""
+  echo "Future updates:"
+  echo "  1. Push changes to Git"
+  echo "  2. Run: sudo nixos-rebuild switch"
+  echo ""
+else
+  echo "Failed to apply configuration"
+  echo "Restoring backup..."
+  mv configuration.nix.backup-* configuration.nix
+  nixos-rebuild switch
+  exit 1
+fi
+`;
+
     const secretsNix = `# Secrets for: ${deviceConfig.deviceName}
 
 {
@@ -390,12 +493,17 @@ in
 }
 `;
 
-    writeFileSync(join(buildDir, "configuration.nix"), configNix);
+    // Write configuration
+    writeFileSync(join(buildDir, "configuration.nix"), finalConfig);
+
+    // Write secrets
     writeFileSync(join(buildDir, "secrets.nix"), secretsNix);
 
-    // Copy required files for INITIAL build
-    // Note: After deployment, the Pi will fetch these from Git for updates
-    // Make sure to commit dist/ to your git repo!
+    // Write enable-git-updates script
+    writeFileSync(join(buildDir, "enable-git-updates.sh"), enableGitScript);
+
+    // Copy required files for initial Docker build
+    // These are ALWAYS needed (even in Git mode, for the initial build)
     cpSync(
       join(__dirname, "nixos-module.nix"),
       join(buildDir, "nixos-module.nix")
@@ -445,19 +553,20 @@ in
     // Run build in Docker
     const dockerScript = `
       set -e
-      
-      # Suppress verbose Nix output, only show warnings/errors
+
+      # Build using configuration.nix (uses local files)
+      echo 'Building NixOS image...'
       nixos-generate -f sd-aarch64 -c configuration.nix --system aarch64-linux 2>&1 | grep -E "(warning|error|evaluation warning)" || true
-      
+
       echo ''
       echo 'Extracting image from Nix store...'
-      
+
       STORE_DIRS=$(find /nix/store -maxdepth 1 -type d -name '*nixos-image-sd-card*.img.zst' 2>/dev/null)
-      
+
       for DIR in $STORE_DIRS; do
         if [ -d "$DIR/sd-image" ]; then
           IMAGE_FILE=$(find "$DIR/sd-image" -name '*.img' 2>/dev/null | head -n 1)
-          
+
           if [ -z "$IMAGE_FILE" ]; then
             IMAGE_FILE=$(find "$DIR/sd-image" -name '*.img.zst' 2>/dev/null | head -n 1)
             if [ -n "$IMAGE_FILE" ]; then
@@ -466,7 +575,7 @@ in
               exit 0
             fi
           fi
-          
+
           if [ -n "$IMAGE_FILE" ]; then
             echo 'Copying image...'
             cp "$IMAGE_FILE" /output/${deviceConfig.deviceName}.img
@@ -474,7 +583,7 @@ in
           fi
         fi
       done
-      
+
       echo 'Error: Could not find image file' >&2
       exit 1
     `;
@@ -536,18 +645,6 @@ in
     console.log(`${colors.green}📁 Output:${colors.reset} ${outputImage}`);
     console.log("");
 
-    // Show git repo setup reminder
-    const gitRepo = process.env.GIT_REPO || "reesemclean/musicbox";
-    if (gitRepo === "reesemclean/musicbox") {
-      console.log(`${colors.yellow}⚠️  IMPORTANT:${colors.reset}`);
-      console.log(`   Set GIT_REPO environment variable before building:`);
-      console.log(`   export GIT_REPO="reesemclean/musicbox"`);
-      console.log("");
-      console.log(`   This allows the Pi to fetch updates from your Git repo`);
-      console.log(`   without reflashing the SD card!`);
-      console.log("");
-    }
-
     console.log(`${colors.blue}Next steps:${colors.reset}`);
     console.log("  1. Find your SD card:");
     console.log("     diskutil list");
@@ -563,15 +660,19 @@ in
     console.log("  4. Insert into Raspberry Pi and power on!");
     console.log("");
     console.log(
-      `${colors.green}🔄 Future updates (no reflashing needed!):${colors.reset}`
+      `${colors.green}🔄 Enable Git-based updates (optional - no reflashing needed!):${colors.reset}`
     );
-    console.log(`   1. Make changes to player code`);
-    console.log(`   2. Build bundle: npm run build:bundle`);
-    console.log(`   3. Commit and push: git commit && git push`);
+    console.log(`   1. SSH to Pi: ssh root@musicbox-${deviceConfig.deviceName}.local`);
+    console.log(`   2. Run: sudo /etc/nixos/enable-git-updates.sh`);
+    console.log(`   3. Future updates: Just push to Git and run nixos-rebuild!`);
+    console.log("");
+    console.log(`${colors.blue}💡 Tip:${colors.reset}`);
     console.log(
-      `   4. SSH to Pi: ssh root@musicbox-${deviceConfig.deviceName}.local`
+      `   You can flash this same image to multiple Pis.`
     );
-    console.log(`   5. Update: nixos-rebuild switch`);
+    console.log(
+      `   Enable Git updates after first boot to get updates without reflashing.`
+    );
     console.log("");
   } finally {
     // Cleanup
