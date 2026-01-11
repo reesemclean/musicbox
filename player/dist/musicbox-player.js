@@ -183,7 +183,9 @@ var AudioEngine = class {
     switch (this.volumeMethod) {
       case "pactl":
         try {
-          execSync(`pactl set-sink-volume @DEFAULT_SINK@ ${percent}%`, { stdio: "pipe" });
+          execSync(`pactl set-sink-volume @DEFAULT_SINK@ ${percent}%`, {
+            stdio: "pipe"
+          });
           console.log(`\u{1F50A} Volume: ${percent}%`);
         } catch (err) {
           console.log(`\u26A0\uFE0F  pactl volume failed, trying amixer`);

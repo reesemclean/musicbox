@@ -73,8 +73,12 @@ function showUsage() {
   console.log('  "serverUrl": "http://192.168.1.100:3000"');
   console.log("}");
   console.log("");
-  console.log("Note: Image includes a script to enable Git-based updates after first boot.");
-  console.log("Run 'sudo /etc/nixos/enable-git-updates.sh' on the Pi to activate.");
+  console.log(
+    "Note: Image includes a script to enable Git-based updates after first boot."
+  );
+  console.log(
+    "Run 'sudo /etc/nixos/enable-git-updates.sh' on the Pi to activate."
+  );
   process.exit(1);
 }
 
@@ -662,14 +666,16 @@ fi
     console.log(
       `${colors.green}🔄 Enable Git-based updates (optional - no reflashing needed!):${colors.reset}`
     );
-    console.log(`   1. SSH to Pi: ssh root@musicbox-${deviceConfig.deviceName}.local`);
+    console.log(
+      `   1. SSH to Pi: ssh root@musicbox-${deviceConfig.deviceName}.local`
+    );
     console.log(`   2. Run: sudo /etc/nixos/enable-git-updates.sh`);
-    console.log(`   3. Future updates: Just push to Git and run nixos-rebuild!`);
+    console.log(
+      `   3. Future updates: Just push to Git and run nixos-rebuild!`
+    );
     console.log("");
     console.log(`${colors.blue}💡 Tip:${colors.reset}`);
-    console.log(
-      `   You can flash this same image to multiple Pis.`
-    );
+    console.log(`   You can flash this same image to multiple Pis.`);
     console.log(
       `   Enable Git updates after first boot to get updates without reflashing.`
     );

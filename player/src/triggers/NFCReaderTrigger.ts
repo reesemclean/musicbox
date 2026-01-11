@@ -266,7 +266,7 @@ export class NFCReaderTrigger implements Trigger {
 
       // Wait for response to be ready
       await this.sleep(50);
-      
+
       ready = false;
       for (let i = 0; i < 20; i++) {
         try {

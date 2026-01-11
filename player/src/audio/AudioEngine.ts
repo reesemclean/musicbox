@@ -47,7 +47,7 @@ export class AudioEngine {
    * Priority: pactl (PipeWire/PulseAudio) > amixer (ALSA)
    */
   private volumeMethod: "pactl" | "amixer" | "none" = "none";
-  
+
   private detectVolumeControl(): void {
     try {
       // Try pactl first (works with PipeWire's PulseAudio compatibility)
@@ -244,7 +244,9 @@ export class AudioEngine {
         try {
           // Set all sinks to the specified volume (PipeWire/PulseAudio)
           // This affects audio in real-time
-          execSync(`pactl set-sink-volume @DEFAULT_SINK@ ${percent}%`, { stdio: "pipe" });
+          execSync(`pactl set-sink-volume @DEFAULT_SINK@ ${percent}%`, {
+            stdio: "pipe",
+          });
           console.log(`🔊 Volume: ${percent}%`);
         } catch (err) {
           console.log(`⚠️  pactl volume failed, trying amixer`);
@@ -268,7 +270,7 @@ export class AudioEngine {
   private tryAmixerVolume(percent: number): void {
     // Try common mixer control names
     const controls = ["PCM", "Master", "Speaker", "Headphone"];
-    
+
     for (const control of controls) {
       try {
         execSync(`amixer -q sset ${control} ${percent}%`, { stdio: "pipe" });
