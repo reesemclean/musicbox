@@ -1,0 +1,7 @@
+{
+  "deviceId": 1,
+  "deviceName": "docker-test",
+  "deviceSecret": "00000000-0000-0000-0000-000000000000",
+  "serverUrl": "http://host.docker.internal:3000",
+  "httpPort": 8080
+}

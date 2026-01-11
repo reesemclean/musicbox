@@ -13,6 +13,7 @@
     "dev:player": "npm run dev --workspace=player",
     "build:server": "npm run build --workspace=server",
     "build:player": "npm run build --workspace=player",
+    "build:image": "npm run build:image --workspace=player -- ./device-configs/test-player.config.json --wifi ./device-configs/wifi-config.json --ssh ./device-configs/ssh-config.json",
     "lint": "npm run lint --workspaces",
     "format": "npm run format --workspaces"
   },

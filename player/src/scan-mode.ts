@@ -1,4 +1,3 @@
-#!/usr/bin/env tsx
 /**
  * Interactive NFC Scan Mode
  *

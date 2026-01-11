@@ -7,6 +7,8 @@
     "dev": "node --watch --experimental-transform-types src/index.ts",
     "dev:nowatch": "node --experimental-transform-types src/index.ts",
     "build": "tsc",
+    "build:bundle": "node --experimental-transform-types bundle.ts",
+    "build:image": "node --experimental-transform-types image-building/build-image.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {
@@ -14,7 +16,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "tsx": "^4.19.2",
+    "esbuild": "^0.24.2",
     "typescript": "^5.7.3"
   }
 }

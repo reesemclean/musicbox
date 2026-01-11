@@ -267,4 +267,36 @@ export class PlayerCore {
       }
     }
   }
+
+  /**
+   * Set volume level
+   * @param percent - Volume level 0-100
+   */
+  setVolume(percent: number): void {
+    this.audioEngine.setVolume(percent);
+  }
+
+  /**
+   * Get current volume level
+   * @returns Volume percentage 0-100
+   */
+  getVolume(): number {
+    return this.audioEngine.getVolume();
+  }
+
+  /**
+   * Increase volume
+   * @param amount - Amount to increase (default: 10)
+   */
+  volumeUp(amount?: number): void {
+    this.audioEngine.volumeUp(amount);
+  }
+
+  /**
+   * Decrease volume
+   * @param amount - Amount to decrease (default: 10)
+   */
+  volumeDown(amount?: number): void {
+    this.audioEngine.volumeDown(amount);
+  }
 }

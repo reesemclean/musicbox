@@ -1,4 +1,3 @@
-#!/usr/bin/env tsx
 /**
  * NFC Scan Simulator CLI
  *

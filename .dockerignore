@@ -1,0 +1,56 @@
+# Dependencies
+**/node_modules
+
+# Build outputs (rebuilt in Docker)
+**/.output
+**/dist
+player/bundle
+
+# Development files
+**/.env.local
+**/.env
+**/*.db
+**/*.db-journal
+
+# Player-specific (not needed for server build)
+player/images
+player/image-building
+
+# IDE
+.vscode
+.idea
+**/*.swp
+**/*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+**/__tests__
+**/coverage
+
+# Git
+.git
+.gitignore
+
+# Logs
+**/*.log
+**/npm-debug.log*
+
+# TanStack dev files
+**/.tanstack
+
+# Docs
+docs
+*.md
+
+# Nix
+result
+*.nix
+flake.lock
+
+# Config examples
+**/*.example.*

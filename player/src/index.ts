@@ -1,4 +1,3 @@
-#!/usr/bin/env tsx
 /**
  * MusicBox Player - Main Entry Point
  *
@@ -19,9 +18,19 @@ import { ServerClient } from "./api/ServerClient.ts";
 import { KeyboardTrigger } from "./triggers/KeyboardTrigger.ts";
 import { HTTPTrigger } from "./triggers/HTTPTrigger.ts";
 import { NFCReaderTrigger } from "./triggers/NFCReaderTrigger.ts";
+import { ButtonTrigger } from "./triggers/ButtonTrigger.ts";
 import { HeartbeatService } from "./services/HeartbeatService.ts";
 import { loadConfig } from "./config/PlayerConfig.ts";
 import type { Trigger } from "./triggers/TriggerInterface.ts";
+
+// Prevent process from exiting on unhandled errors
+process.on("uncaughtException", (error) => {
+  console.error("❌ Uncaught exception:", error);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("❌ Unhandled rejection at:", promise, "reason:", reason);
+});
 
 async function main() {
   console.log("🎵 MusicBox Player");
@@ -70,6 +79,10 @@ async function main() {
     triggers.push(new NFCReaderTrigger(config.triggers.nfc.i2cBus));
   }
 
+  if (config.triggers.buttons.enabled) {
+    triggers.push(new ButtonTrigger());
+  }
+
   if (triggers.length === 0) {
     console.error("❌ No triggers enabled!");
     console.error("   Enable at least one trigger via environment variables:");
@@ -90,6 +103,11 @@ async function main() {
   }
   console.log(""); // Add spacing after all triggers started
 
+  // Keep process alive - prevents exit if all triggers fail to initialize
+  const keepalive = setInterval(() => {
+    // This interval ensures the event loop stays active
+  }, 60000);
+
   // Handle shutdown - be forceful
   let isShuttingDown = false;
   const shutdown = () => {
@@ -101,7 +119,8 @@ async function main() {
 
     console.log("\n\n👋 Shutting down...");
 
-    // Cleanup synchronously
+    // Cleanup
+    clearInterval(keepalive);
     heartbeatService?.stop();
     playerCore.stop();
 

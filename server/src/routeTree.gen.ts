@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LibraryRouteImport } from './routes/_library'
 import { Route as LibraryIndexRouteImport } from './routes/_library/index'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as LibraryDownloadsRouteImport } from './routes/_library/downloads'
 import { Route as LibraryDevicesRouteImport } from './routes/_library/devices'
 import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
@@ -28,6 +29,11 @@ const LibraryIndexRoute = LibraryIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => LibraryRoute,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const LibraryDownloadsRoute = LibraryDownloadsRouteImport.update({
   id: '/downloads',
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/cards': typeof LibraryCardsRoute
   '/devices': typeof LibraryDevicesRoute
   '/downloads': typeof LibraryDownloadsRoute
+  '/api/health': typeof ApiHealthRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/cards': typeof LibraryCardsRoute
   '/devices': typeof LibraryDevicesRoute
   '/downloads': typeof LibraryDownloadsRoute
+  '/api/health': typeof ApiHealthRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
@@ -99,6 +107,7 @@ export interface FileRoutesById {
   '/_library/cards': typeof LibraryCardsRoute
   '/_library/devices': typeof LibraryDevicesRoute
   '/_library/downloads': typeof LibraryDownloadsRoute
+  '/api/health': typeof ApiHealthRoute
   '/_library/': typeof LibraryIndexRoute
   '/_library/playlist/$id': typeof LibraryPlaylistIdRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
@@ -112,6 +121,7 @@ export interface FileRouteTypes {
     | '/cards'
     | '/devices'
     | '/downloads'
+    | '/api/health'
     | '/'
     | '/playlist/$id'
     | '/api/devices/heartbeat'
@@ -123,6 +133,7 @@ export interface FileRouteTypes {
     | '/cards'
     | '/devices'
     | '/downloads'
+    | '/api/health'
     | '/'
     | '/playlist/$id'
     | '/api/devices/heartbeat'
@@ -135,6 +146,7 @@ export interface FileRouteTypes {
     | '/_library/cards'
     | '/_library/devices'
     | '/_library/downloads'
+    | '/api/health'
     | '/_library/'
     | '/_library/playlist/$id'
     | '/api/devices/heartbeat'
@@ -145,6 +157,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   LibraryRoute: typeof LibraryRouteWithChildren
+  ApiHealthRoute: typeof ApiHealthRoute
   ApiDevicesHeartbeatRoute: typeof ApiDevicesHeartbeatRoute
   ApiNfcScanRoute: typeof ApiNfcScanRoute
   ApiStreamSongIdRoute: typeof ApiStreamSongIdRoute
@@ -166,6 +179,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof LibraryIndexRouteImport
       parentRoute: typeof LibraryRoute
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_library/downloads': {
       id: '/_library/downloads'
@@ -247,6 +267,7 @@ const LibraryRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   LibraryRoute: LibraryRouteWithChildren,
+  ApiHealthRoute: ApiHealthRoute,
   ApiDevicesHeartbeatRoute: ApiDevicesHeartbeatRoute,
   ApiNfcScanRoute: ApiNfcScanRoute,
   ApiStreamSongIdRoute: ApiStreamSongIdRoute,

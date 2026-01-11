@@ -13,6 +13,10 @@ build/
 .vercel/
 .vinxi/
 
+# Exception: Keep player bundle (needed for Nix packaging)
+!player/dist/
+!player/dist/**
+
 # Misc
 .DS_Store
 *.pem
@@ -50,4 +54,6 @@ result-*
 .direnv/
 
 # Player config
-player.config.json
+device-configs/
+
+outputs/

@@ -1,4 +1,3 @@
-#!/usr/bin/env tsx
 /**
  * MusicBox Player - Long-running player service
  *

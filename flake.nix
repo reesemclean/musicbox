@@ -36,7 +36,16 @@
           mpg123
         ];
         
+        # Player package
+        musicbox-player = pkgs.callPackage ./player/package.nix {};
+        
       in {
+        # Packages
+        packages = {
+          player = musicbox-player;
+          default = musicbox-player;
+        };
+        
         # Development shells
         devShells = {
           # Default: Everything for full-stack development
@@ -87,5 +96,8 @@
           };
         };
       }
-    );
+    ) // {
+      # NixOS module (not system-specific)
+      nixosModules.musicbox-player = import ./player/image-building/nixos-module.nix;
+    };
 }

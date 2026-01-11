@@ -3,7 +3,8 @@
  *
  * Config file locations (tried in order):
  * - ./player.config.json (development)
- * - /etc/musicbox/player.config.json (NixOS deployment)
+ * - /run/musicbox/player.config.json (NixOS deployment)
+ * - /etc/musicbox/player.config.json (NixOS deployment - legacy)
  *
  * Environment variables (fallback if no config file):
  * - DEVICE_NAME: Unique identifier for this player device
@@ -37,6 +38,9 @@ export interface PlayerConfig {
       enabled: boolean;
       i2cBus: number;
     };
+    buttons: {
+      enabled: boolean;
+    };
   };
 }
 
@@ -44,7 +48,8 @@ export function loadConfig(): PlayerConfig {
   // Try to load from config file first
   const configPaths = [
     "./player.config.json",
-    "/etc/musicbox/player.config.json", // NixOS location
+    "/run/musicbox/player.config.json", // NixOS location (runtime)
+    "/etc/musicbox/player.config.json", // NixOS location (legacy)
     join(process.cwd(), "player.config.json"),
   ];
 
@@ -71,6 +76,9 @@ export function loadConfig(): PlayerConfig {
             enabled: process.env.TRIGGER_NFC === "true",
             i2cBus: parseInt(process.env.NFC_I2C_BUS || "1", 10),
           },
+          buttons: {
+            enabled: process.env.TRIGGER_BUTTONS === "true",
+          },
         },
       };
     }
@@ -95,6 +103,9 @@ export function loadConfig(): PlayerConfig {
       nfc: {
         enabled: process.env.TRIGGER_NFC === "true",
         i2cBus: parseInt(process.env.NFC_I2C_BUS || "1", 10),
+      },
+      buttons: {
+        enabled: process.env.TRIGGER_BUTTONS === "true",
       },
     },
   };

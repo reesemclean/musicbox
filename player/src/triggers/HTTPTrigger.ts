@@ -81,10 +81,38 @@ export class HTTPTrigger implements Trigger {
           this.playerCore?.stop();
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
+        } else if (req.method === "POST" && url.pathname === "/volume") {
+          const body = await this.readBody(req);
+          const { level } = JSON.parse(body);
+
+          if (level === undefined || typeof level !== "number") {
+            res.writeHead(400);
+            res.end(
+              JSON.stringify({
+                error: "Missing or invalid level parameter (0-100)",
+              })
+            );
+            return;
+          }
+
+          this.playerCore?.setVolume(level);
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, volume: level }));
+        } else if (req.method === "POST" && url.pathname === "/volume/up") {
+          this.playerCore?.volumeUp();
+          const volume = this.playerCore?.getVolume();
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, volume }));
+        } else if (req.method === "POST" && url.pathname === "/volume/down") {
+          this.playerCore?.volumeDown();
+          const volume = this.playerCore?.getVolume();
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, volume }));
         } else if (req.method === "GET" && url.pathname === "/status") {
           const status = this.playerCore?.getStatus();
+          const volume = this.playerCore?.getVolume();
           res.writeHead(200);
-          res.end(JSON.stringify(status));
+          res.end(JSON.stringify({ ...status, volume }));
         } else {
           res.writeHead(404);
           res.end(JSON.stringify({ error: "Not found" }));
@@ -122,6 +150,9 @@ export class HTTPTrigger implements Trigger {
         console.log(`   - POST http://localhost:${this.port}/next`);
         console.log(`   - POST http://localhost:${this.port}/previous`);
         console.log(`   - POST http://localhost:${this.port}/stop`);
+        console.log(`   - POST http://localhost:${this.port}/volume`);
+        console.log(`   - POST http://localhost:${this.port}/volume/up`);
+        console.log(`   - POST http://localhost:${this.port}/volume/down`);
         console.log(`   - GET  http://localhost:${this.port}/status`);
         resolve();
       });
