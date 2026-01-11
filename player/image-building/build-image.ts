@@ -288,10 +288,18 @@ async function main() {
 
 let
   secrets = import ./secrets.nix;
+
+  # Fetch MusicBox code from Git (allows updates without reflashing!)
+  musicbox = builtins.fetchGit {
+    url = "https://github.com/${process.env.GIT_REPO || "reesemclean/musicbox"}";
+    ref = "main";
+    # Uncomment to pin to specific commit (more stable):
+    # rev = "abc123...";
+  };
 in
 {
   imports = [
-    ./nixos-module.nix
+    "\${musicbox}/player/image-building/nixos-module.nix"
   ];
 
   # Boot configuration for Raspberry Pi
@@ -385,7 +393,9 @@ in
     writeFileSync(join(buildDir, "configuration.nix"), configNix);
     writeFileSync(join(buildDir, "secrets.nix"), secretsNix);
 
-    // Copy required files
+    // Copy required files for INITIAL build
+    // Note: After deployment, the Pi will fetch these from Git for updates
+    // Make sure to commit dist/ to your git repo!
     cpSync(
       join(__dirname, "nixos-module.nix"),
       join(buildDir, "nixos-module.nix")
@@ -525,6 +535,19 @@ in
     console.log("");
     console.log(`${colors.green}📁 Output:${colors.reset} ${outputImage}`);
     console.log("");
+
+    // Show git repo setup reminder
+    const gitRepo = process.env.GIT_REPO || "reesemclean/musicbox";
+    if (gitRepo === "reesemclean/musicbox") {
+      console.log(`${colors.yellow}⚠️  IMPORTANT:${colors.reset}`);
+      console.log(`   Set GIT_REPO environment variable before building:`);
+      console.log(`   export GIT_REPO="reesemclean/musicbox"`);
+      console.log("");
+      console.log(`   This allows the Pi to fetch updates from your Git repo`);
+      console.log(`   without reflashing the SD card!`);
+      console.log("");
+    }
+
     console.log(`${colors.blue}Next steps:${colors.reset}`);
     console.log("  1. Find your SD card:");
     console.log("     diskutil list");
@@ -538,6 +561,17 @@ in
     console.log("     diskutil eject /dev/diskX");
     console.log("");
     console.log("  4. Insert into Raspberry Pi and power on!");
+    console.log("");
+    console.log(
+      `${colors.green}🔄 Future updates (no reflashing needed!):${colors.reset}`
+    );
+    console.log(`   1. Make changes to player code`);
+    console.log(`   2. Build bundle: npm run build:bundle`);
+    console.log(`   3. Commit and push: git commit && git push`);
+    console.log(
+      `   4. SSH to Pi: ssh root@musicbox-${deviceConfig.deviceName}.local`
+    );
+    console.log(`   5. Update: nixos-rebuild switch`);
     console.log("");
   } finally {
     // Cleanup

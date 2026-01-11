@@ -64,7 +64,7 @@ EOF
 
   meta = with pkgs.lib; {
     description = "MusicBox Player - NFC-based music player for Raspberry Pi";
-    homepage = "https://github.com/yourusername/musicbox";
+    homepage = "https://github.com/reesemclean/musicbox";
     license = licenses.mit;
     platforms = platforms.unix;
   };
