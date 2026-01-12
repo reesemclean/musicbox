@@ -67,22 +67,27 @@ in {
     # AUDIO: MAX98357A I2S Configuration
     # ========================================================================
 
+    # Note: We use the default kernel (not linux_rpi3) for cross-compilation compatibility
+    # The device tree overlay approach works with the mainline kernel
+    
     # Enable I2S audio hardware for MAX98357A amplifier
-    # Uses device tree overlay to configure GPIO pins 18, 19, 21 for I2S
+    # This overlay enables I2S and creates the audio card
     hardware.deviceTree = {
       enable = true;
       overlays = [
+        # MAX98357A / HiFiBerry DAC compatible overlay
+        # Uses target-path for compatibility with mainline kernel DTB
         {
-          name = "i2s-max98357a";
+          name = "max98357a-audio-overlay";
           dtsText = ''
             /dts-v1/;
             /plugin/;
 
             / {
-              compatible = "brcm,bcm2835";
+              compatible = "brcm,bcm2837", "brcm,bcm2836", "brcm,bcm2835";
 
               fragment@0 {
-                target = <&i2s>;
+                target-path = "/soc/i2s@7e203000";
                 __overlay__ {
                   status = "okay";
                 };
@@ -91,29 +96,10 @@ in {
               fragment@1 {
                 target-path = "/";
                 __overlay__ {
-                  pcm5102a-codec {
+                  pcm5102a: pcm5102a-codec {
                     #sound-dai-cells = <0>;
                     compatible = "ti,pcm5102a";
                     status = "okay";
-                  };
-                };
-              };
-
-              fragment@2 {
-                target = <&sound>;
-                __overlay__ {
-                  compatible = "simple-audio-card";
-                  simple-audio-card,name = "MAX98357A";
-                  simple-audio-card,format = "i2s";
-                  simple-audio-card,bitclock-master = <&dailink0_master>;
-                  simple-audio-card,frame-master = <&dailink0_master>;
-
-                  dailink0_master: simple-audio-card,cpu {
-                    sound-dai = <&i2s>;
-                  };
-
-                  simple-audio-card,codec {
-                    sound-dai = <&pcm5102a>;
                   };
                 };
               };
@@ -122,6 +108,9 @@ in {
         }
       ];
     };
+
+    # Load I2S sound modules
+    boot.kernelModules = [ "snd-soc-bcm2835-i2s" "snd-soc-pcm5102a" ];
 
     # PipeWire audio server (modern replacement for PulseAudio/JACK)
     security.rtkit.enable = true;
@@ -132,20 +121,55 @@ in {
       pulse.enable = true;  # PulseAudio compatibility (for pactl)
     };
 
-    # ALSA configuration for MAX98357A I2S card
-    # The I2S card will be card 0 (with onboard audio disabled)
+    # ALSA configuration for MAX98357A I2S card with software volume control
+    # Based on Adafruit's recommended configuration
+    # https://learn.adafruit.com/adafruit-max98357-i2s-class-d-mono-amp/raspberry-pi-usage
     environment.etc."asound.conf".text = ''
-      # Use card 0 as default (I2S MAX98357A)
-      defaults.pcm.card 0
-      defaults.ctl.card 0
-
-      # Default PCM device
-      pcm.!default {
-        type plug
-        slave.pcm "hw:0,0"
+      # Hardware PCM for the I2S DAC
+      pcm.speakerbonnet {
+        type hw
+        card 0
       }
 
-      # Default control device
+      # Software mixer with dmix for shared access
+      pcm.dmixer {
+        type dmix
+        ipc_key 1024
+        ipc_perm 0666
+        slave {
+          pcm "speakerbonnet"
+          period_time 0
+          period_size 1024
+          buffer_size 8192
+          rate 44100
+          channels 2
+        }
+      }
+
+      ctl.dmixer {
+        type hw
+        card 0
+      }
+
+      # Software volume control
+      pcm.softvol {
+        type softvol
+        slave.pcm "dmixer"
+        control.name "PCM"
+        control.card 0
+      }
+
+      ctl.softvol {
+        type hw
+        card 0
+      }
+
+      # Default output goes through software volume
+      pcm.!default {
+        type plug
+        slave.pcm "softvol"
+      }
+
       ctl.!default {
         type hw
         card 0

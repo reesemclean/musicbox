@@ -99,5 +99,8 @@
     ) // {
       # NixOS module (not system-specific)
       nixosModules.musicbox-player = import ./player/image-building/nixos-module.nix;
+
+      # Note: SD card images are built via player/image-building/build-image.ts
+      # which uses nixos-generate in Docker for cross-compilation
     };
 }
