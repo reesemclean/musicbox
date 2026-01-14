@@ -11,6 +11,8 @@ var AudioEngine = class {
   gpioAvailable = false;
   currentVolume = 10;
   // Default volume percentage (0-100)
+  isPaused = false;
+  currentMetadata = null;
   constructor() {
     this.initializeGPIO();
     this.initializeVolume();
@@ -93,24 +95,40 @@ var AudioEngine = class {
    */
   async enableAmplifierAndPlay(streamUrl, metadata) {
     this.setAmplifier(true);
-    await this.sleep(50);
+    await this.sleep(150);
     console.log(`   \u{1F50A} Streaming audio... (volume: ${this.currentVolume}%)`);
     const ffplayArgs = [
       "-nodisp",
       "-autoexit",
       "-loglevel",
       "quiet",
+      // Low-latency flags
       "-fflags",
-      "nobuffer"
+      "nobuffer+fastseek",
+      "-flags",
+      "low_delay",
+      "-probesize",
+      "32",
+      // Minimal probe (bytes) - faster format detection
+      "-analyzeduration",
+      "0",
+      // Don't analyze - start immediately
+      "-sync",
+      "audio",
+      // Sync to audio clock
+      "-framedrop"
+      // Drop frames if behind (irrelevant for audio-only but doesn't hurt)
     ];
     if (!this.volumeAvailable) {
       const volumeMultiplier = this.currentVolume / 100;
       ffplayArgs.push("-af", `volume=${volumeMultiplier}`);
     }
     ffplayArgs.push(streamUrl);
+    this.currentMetadata = metadata;
+    this.isPaused = false;
     try {
       this.audioProcess = spawn("ffplay", ffplayArgs, {
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
         detached: false
       });
       this.audioProcess.on("error", (err) => {
@@ -118,16 +136,20 @@ var AudioEngine = class {
         console.log(`      Install ffmpeg for audio playback`);
       });
       this.audioProcess.on("exit", (code) => {
-        if (this.audioProcess) {
-          this.audioProcess = null;
+        const wasPlaying = this.audioProcess !== null;
+        const title = this.currentMetadata?.title || "Unknown";
+        this.audioProcess = null;
+        this.currentMetadata = null;
+        this.isPaused = false;
+        if (wasPlaying) {
           setTimeout(() => {
             if (!this.audioProcess) {
               this.setAmplifier(false);
             }
-          }, 50);
+          }, 100);
           if (code === 0) {
             console.log(`
-\u2705 Finished playing: ${metadata.title}`);
+\u2705 Finished playing: ${title}`);
             this.completionCallbacks.forEach((cb) => cb());
           }
         }
@@ -158,10 +180,40 @@ var AudioEngine = class {
     }
   }
   /**
-   * Check if audio is currently playing
+   * Check if audio is currently playing (not paused)
    */
   isPlaying() {
-    return this.audioProcess !== null;
+    return this.audioProcess !== null && !this.isPaused;
+  }
+  /**
+   * Pause playback (keeps position)
+   */
+  pause() {
+    if (this.audioProcess && !this.isPaused) {
+      try {
+        this.audioProcess.stdin?.write("p");
+        this.isPaused = true;
+      } catch (err) {
+      }
+    }
+  }
+  /**
+   * Resume playback from paused state
+   */
+  resume() {
+    if (this.audioProcess && this.isPaused) {
+      try {
+        this.audioProcess.stdin?.write("p");
+        this.isPaused = false;
+      } catch (err) {
+      }
+    }
+  }
+  /**
+   * Check if audio is paused
+   */
+  isPausedState() {
+    return this.isPaused;
   }
   /**
    * Register a callback to be called when audio playback completes
@@ -397,9 +449,13 @@ var PlayerCore = class {
    * Play or resume playback
    */
   play() {
-    if (this.state.currentSong && !this.state.isPlaying) {
+    if (this.state.currentSong && this.audioEngine.isPausedState()) {
       this.state.isPlaying = true;
+      this.audioEngine.resume();
       console.log(`   \u25B6\uFE0F  Resumed: ${this.state.currentSong.title}`);
+    } else if (this.state.currentSong && !this.state.isPlaying) {
+      this.state.isPlaying = true;
+      console.log(`   \u25B6\uFE0F  Playing: ${this.state.currentSong.title}`);
       this.audioEngine.play(this.state.currentSong.streamUrl, {
         title: this.state.currentSong.title,
         artist: this.state.currentSong.artist
@@ -411,12 +467,12 @@ var PlayerCore = class {
     }
   }
   /**
-   * Pause playback
+   * Pause playback (keeps position)
    */
   pause() {
     if (this.state.isPlaying) {
       this.state.isPlaying = false;
-      this.audioEngine.stop();
+      this.audioEngine.pause();
       console.log(`   \u23F8\uFE0F  Paused`);
     }
   }
@@ -1119,8 +1175,8 @@ var ButtonTrigger = class {
   ];
   monitorProcess;
   lastPressTime = /* @__PURE__ */ new Map();
-  debounceMs = 200;
-  // Debounce delay
+  debounceMs = 500;
+  // Debounce delay (500ms prevents accidental double-press)
   gpiochip = "gpiochip0";
   // Default GPIO chip
   async start(playerCore) {

@@ -33,7 +33,7 @@ export class ButtonTrigger implements Trigger {
   ];
   private monitorProcess?: ChildProcess;
   private lastPressTime = new Map<number, number>();
-  private readonly debounceMs = 200; // Debounce delay
+  private readonly debounceMs = 500; // Debounce delay (500ms prevents accidental double-press)
   private gpiochip = "gpiochip0"; // Default GPIO chip
 
   async start(playerCore: PlayerCore): Promise<void> {

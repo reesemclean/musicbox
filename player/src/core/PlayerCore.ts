@@ -163,9 +163,15 @@ export class PlayerCore {
    * Play or resume playback
    */
   play(): void {
-    if (this.state.currentSong && !this.state.isPlaying) {
+    // If paused, just resume
+    if (this.state.currentSong && this.audioEngine.isPausedState()) {
       this.state.isPlaying = true;
+      this.audioEngine.resume();
       console.log(`   ▶️  Resumed: ${this.state.currentSong.title}`);
+    } else if (this.state.currentSong && !this.state.isPlaying) {
+      // Start fresh playback
+      this.state.isPlaying = true;
+      console.log(`   ▶️  Playing: ${this.state.currentSong.title}`);
       this.audioEngine.play(this.state.currentSong.streamUrl, {
         title: this.state.currentSong.title,
         artist: this.state.currentSong.artist,
@@ -178,12 +184,12 @@ export class PlayerCore {
   }
 
   /**
-   * Pause playback
+   * Pause playback (keeps position)
    */
   pause(): void {
     if (this.state.isPlaying) {
       this.state.isPlaying = false;
-      this.audioEngine.stop();
+      this.audioEngine.pause();
       console.log(`   ⏸️  Paused`);
     }
   }

@@ -21,6 +21,8 @@ export class AudioEngine {
   private readonly amplifierPin = 22; // GPIO 22 for MAX98357A SD pin
   private gpioAvailable = false;
   private currentVolume = 10; // Default volume percentage (0-100)
+  private isPaused = false;
+  private currentMetadata: SongMetadata | null = null;
 
   constructor() {
     this.initializeGPIO();
@@ -130,18 +132,29 @@ export class AudioEngine {
     this.setAmplifier(true);
 
     // Wait for amplifier to stabilize (prevents click/pop sound)
-    await this.sleep(50);
+    // MAX98357A needs ~100-150ms to fully stabilize
+    await this.sleep(150);
 
     console.log(`   🔊 Streaming audio... (volume: ${this.currentVolume}%)`);
 
-    // Build ffplay args - use system volume control when available
+    // Build ffplay args - optimized for low latency streaming
     const ffplayArgs = [
       "-nodisp",
       "-autoexit",
       "-loglevel",
       "quiet",
+      // Low-latency flags
       "-fflags",
-      "nobuffer",
+      "nobuffer+fastseek",
+      "-flags",
+      "low_delay",
+      "-probesize",
+      "32",           // Minimal probe (bytes) - faster format detection
+      "-analyzeduration",
+      "0",            // Don't analyze - start immediately
+      "-sync",
+      "audio",        // Sync to audio clock
+      "-framedrop",   // Drop frames if behind (irrelevant for audio-only but doesn't hurt)
     ];
 
     // Only use ffplay volume filter as fallback when no system control
@@ -152,10 +165,15 @@ export class AudioEngine {
 
     ffplayArgs.push(streamUrl);
 
+    // Store metadata for logging
+    this.currentMetadata = metadata;
+    this.isPaused = false;
+
     // Use ffplay from ffmpeg for audio playback
+    // Use pipe for stdin so we can send pause command
     try {
       this.audioProcess = spawn("ffplay", ffplayArgs, {
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
         detached: false,
       });
 
@@ -165,16 +183,21 @@ export class AudioEngine {
       });
 
       this.audioProcess.on("exit", (code) => {
-        if (this.audioProcess) {
-          this.audioProcess = null;
-          // Small delay before disabling amp to prevent click on stop
+        const wasPlaying = this.audioProcess !== null;
+        const title = this.currentMetadata?.title || "Unknown";
+        this.audioProcess = null;
+        this.currentMetadata = null;
+        this.isPaused = false;
+        
+        if (wasPlaying) {
+          // Delay before disabling amp to prevent click on stop
           setTimeout(() => {
             if (!this.audioProcess) {
               this.setAmplifier(false);
             }
-          }, 50);
+          }, 100);
           if (code === 0) {
-            console.log(`\n✅ Finished playing: ${metadata.title}`);
+            console.log(`\n✅ Finished playing: ${title}`);
             // Notify all completion callbacks
             this.completionCallbacks.forEach((cb) => cb());
           }
@@ -212,10 +235,47 @@ export class AudioEngine {
   }
 
   /**
-   * Check if audio is currently playing
+   * Check if audio is currently playing (not paused)
    */
   isPlaying(): boolean {
-    return this.audioProcess !== null;
+    return this.audioProcess !== null && !this.isPaused;
+  }
+
+  /**
+   * Pause playback (keeps position)
+   */
+  pause(): void {
+    if (this.audioProcess && !this.isPaused) {
+      // Send 'p' to ffplay stdin to toggle pause
+      try {
+        this.audioProcess.stdin?.write("p");
+        this.isPaused = true;
+      } catch (err) {
+        // Process might be dead
+      }
+    }
+  }
+
+  /**
+   * Resume playback from paused state
+   */
+  resume(): void {
+    if (this.audioProcess && this.isPaused) {
+      // Send 'p' to ffplay stdin to toggle pause (unpause)
+      try {
+        this.audioProcess.stdin?.write("p");
+        this.isPaused = false;
+      } catch (err) {
+        // Process might be dead
+      }
+    }
+  }
+
+  /**
+   * Check if audio is paused
+   */
+  isPausedState(): boolean {
+    return this.isPaused;
   }
 
   /**
