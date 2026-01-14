@@ -41,7 +41,7 @@ COPY --from=builder /app/server/drizzle ./drizzle
 COPY --from=builder /app/server/package.json ./package.json
 
 # Create directories for data persistence
-RUN mkdir -p /app/data /app/library && \
+RUN mkdir -p /app/data && \
     chown -R nodejs:nodejs /app
 
 USER nodejs

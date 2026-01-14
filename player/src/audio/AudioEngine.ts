@@ -149,12 +149,12 @@ export class AudioEngine {
       "-flags",
       "low_delay",
       "-probesize",
-      "32",           // Minimal probe (bytes) - faster format detection
+      "32", // Minimal probe (bytes) - faster format detection
       "-analyzeduration",
-      "0",            // Don't analyze - start immediately
+      "0", // Don't analyze - start immediately
       "-sync",
-      "audio",        // Sync to audio clock
-      "-framedrop",   // Drop frames if behind (irrelevant for audio-only but doesn't hurt)
+      "audio", // Sync to audio clock
+      "-framedrop", // Drop frames if behind (irrelevant for audio-only but doesn't hurt)
     ];
 
     // Only use ffplay volume filter as fallback when no system control
@@ -188,7 +188,7 @@ export class AudioEngine {
         this.audioProcess = null;
         this.currentMetadata = null;
         this.isPaused = false;
-        
+
         if (wasPlaying) {
           // Delay before disabling amp to prevent click on stop
           setTimeout(() => {

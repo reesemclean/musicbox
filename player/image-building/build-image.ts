@@ -374,8 +374,21 @@ in
     htop
     i2c-tools    # For NFC reader communication
     alsa-utils   # For audio control (amixer, aplay)
-    pulseaudio   # For pactl volume control (works with PipeWire)
   ];
+
+  # Copy configuration files to /etc/nixos for Git updates
+  environment.etc."nixos/configuration.nix".source = ./configuration.nix;
+  environment.etc."nixos/secrets.nix".source = ./secrets.nix;
+  environment.etc."nixos/nixos-module.nix".source = ./nixos-module.nix;
+  environment.etc."nixos/package.nix".source = ./package.nix;
+  environment.etc."nixos/dist" = {
+    source = ./dist;
+    mode = "0755";
+  };
+  environment.etc."nixos/enable-git-updates.sh" = {
+    source = ./enable-git-updates.sh;
+    mode = "0755";
+  };
 
   system.stateVersion = "24.05";
 }
