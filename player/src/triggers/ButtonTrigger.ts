@@ -33,7 +33,10 @@ export class ButtonTrigger implements Trigger {
   ];
   private monitorProcess?: ChildProcess;
   private lastPressTime = new Map<number, number>();
-  private readonly debounceMs = 500; // Debounce delay (500ms prevents accidental double-press)
+  private readonly debounceMs = 200; // Shorter debounce to allow rapid presses for restart
+  private restartPresses: number[] = []; // Timestamps of rapid Volume Down presses
+  private readonly restartPressesNeeded = 5; // Press Volume Down 5 times rapidly to restart
+  private readonly restartWindowMs = 3000; // Within 3 seconds
   private gpiochip = "gpiochip0"; // Default GPIO chip
 
   async start(playerCore: PlayerCore): Promise<void> {
@@ -67,9 +70,9 @@ export class ButtonTrigger implements Trigger {
     // Build list of pin offsets as positional arguments
     const pinArgs = this.buttons.map((b) => String(b.pin));
 
-    // Start gpiomon to watch all button pins for falling edges (button press)
+    // Start gpiomon to watch all button pins for both edges (press and release)
     // libgpiod v2 syntax:
-    //   gpiomon -c <chip> -b pull-up -e falling <line> [<line>...]
+    //   gpiomon -c <chip> -b pull-up -e both <line> [<line>...]
     try {
       this.monitorProcess = spawn(
         "gpiomon",
@@ -79,7 +82,7 @@ export class ButtonTrigger implements Trigger {
           "-b",
           "pull-up", // --bias
           "-e",
-          "falling", // --edges
+          "both", // --edges (both falling=press and rising=release)
           ...pinArgs, // line offsets as positional args
         ],
         { stdio: ["ignore", "pipe", "pipe"] }
@@ -122,22 +125,75 @@ export class ButtonTrigger implements Trigger {
     for (const line of lines) {
       if (!line.trim()) continue;
 
-      // Parse the event - try to extract the GPIO offset/line number
+      // Parse the event - try to extract the GPIO offset/line number and event type
       const parts = line.trim().split(/\s+/);
       let pin: number | undefined;
+      let isFalling = false;
+      let isRising = false;
 
-      // Try to find the pin number - it's usually the first or second number
+      // Try to find the pin number and event type
       for (const part of parts) {
         const num = parseInt(part, 10);
         if (!isNaN(num) && this.buttons.some((b) => b.pin === num)) {
           pin = num;
-          break;
+        }
+        if (part.toLowerCase() === "falling") {
+          isFalling = true;
+        }
+        if (part.toLowerCase() === "rising") {
+          isRising = true;
         }
       }
 
-      if (pin !== undefined) {
+      if (pin !== undefined && isFalling) {
         this.handleButtonPress(pin);
       }
+      // Rising edge (button release) - we don't need to track it for rapid press
+    }
+  }
+
+  /**
+   * Trigger a service restart
+   */
+  private triggerRestart(): void {
+    console.log("🔄 Restarting musicbox-player service...");
+    try {
+      // Use systemctl to restart the service
+      execSync("systemctl restart musicbox-player", { stdio: "inherit" });
+    } catch (err) {
+      console.error("⚠️  Failed to restart service:", err);
+      // Fallback: exit process (systemd will restart it)
+      process.exit(1);
+    }
+  }
+
+  /**
+   * Check if volume down was pressed rapidly for restart
+   */
+  private checkRestartCombo(pin: number, now: number): void {
+    const volumeDownPin = 13; // Volume down button
+    if (pin !== volumeDownPin) {
+      // Any other button resets the restart tracking
+      this.restartPresses = [];
+      return;
+    }
+
+    // Add this press timestamp
+    this.restartPresses.push(now);
+
+    // Remove presses outside the time window
+    this.restartPresses = this.restartPresses.filter(
+      (t) => now - t < this.restartWindowMs
+    );
+
+    if (this.restartPresses.length >= this.restartPressesNeeded) {
+      this.restartPresses = [];
+      this.triggerRestart();
+    } else if (this.restartPresses.length >= 3) {
+      // Start giving feedback after 3 presses
+      console.log(
+        `🔄 Restart: ${this.restartPresses.length}/${this.restartPressesNeeded} presses...`
+      );
     }
   }
 
@@ -154,6 +210,9 @@ export class ButtonTrigger implements Trigger {
     }
 
     this.lastPressTime.set(pin, now);
+
+    // Check for restart combo (rapid volume down presses)
+    this.checkRestartCombo(pin, now);
 
     const button = this.buttons.find((b) => b.pin === pin);
     if (!button) return;

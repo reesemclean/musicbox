@@ -49,6 +49,9 @@ export class PlayerCore {
    * @param nfcId - The NFC card ID that was scanned
    */
   async handleCardScan(nfcId: string): Promise<void> {
+    // Play confirmation beep immediately (don't await - let it play while we fetch)
+    this.audioEngine.playCardBeep();
+
     try {
       console.log(`\n🔍 Scanning card: ${nfcId}`);
 
@@ -71,9 +74,14 @@ export class PlayerCore {
         const action = result.content.action;
         console.log(`⚡ Action: ${action.toUpperCase()}`);
         this.executeAction(action);
+      } else {
+        // Unknown card - play error beep
+        console.log(`⚠️  Card not recognized`);
+        this.audioEngine.playErrorBeep();
       }
     } catch (error) {
-      // Error already logged by ServerClient
+      // Error already logged by ServerClient - play error beep
+      this.audioEngine.playErrorBeep();
     }
   }
 

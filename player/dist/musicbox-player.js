@@ -71,14 +71,26 @@ var AudioEngine = class {
   }
   /**
    * Control MAX98357A shutdown pin using libgpiod
+   * Uses -z (daemonize) to hold the GPIO state
    * @param enabled - true = amplifier on (SD HIGH), false = amplifier off (SD LOW)
    */
   setAmplifier(enabled) {
     if (!this.gpioAvailable) return;
     try {
+      try {
+        execSync(`pkill -f 'gpioset.*${this.amplifierPin}='`, {
+          stdio: "pipe"
+        });
+      } catch {
+      }
       const value = enabled ? "1" : "0";
-      execSync(`gpioset -c 0 -t 0 ${this.amplifierPin}=${value}`);
+      execSync(`gpioset -z -c 0 ${this.amplifierPin}=${value}`, {
+        stdio: "pipe"
+      });
     } catch (err) {
+      console.error(
+        `   \u26A0\uFE0F  Failed to set amplifier ${enabled ? "ON" : "OFF"}: ${err}`
+      );
     }
   }
   /**
@@ -92,10 +104,9 @@ var AudioEngine = class {
   }
   /**
    * Enable amplifier with stabilization delay, then start playback
+   * Strategy: Start audio first (silent), then enable amp to avoid pop
    */
   async enableAmplifierAndPlay(streamUrl, metadata) {
-    this.setAmplifier(true);
-    await this.sleep(150);
     console.log(`   \u{1F50A} Streaming audio... (volume: ${this.currentVolume}%)`);
     const ffplayArgs = [
       "-nodisp",
@@ -131,6 +142,13 @@ var AudioEngine = class {
         stdio: ["pipe", "pipe", "pipe"],
         detached: false
       });
+      if (this.gpioAvailable) {
+        setTimeout(() => {
+          if (this.audioProcess) {
+            this.setAmplifier(true);
+          }
+        }, 100);
+      }
       this.audioProcess.on("error", (err) => {
         console.log(`   \u26A0\uFE0F  ffplay error: ${err.message}`);
         console.log(`      Install ffmpeg for audio playback`);
@@ -142,11 +160,6 @@ var AudioEngine = class {
         this.currentMetadata = null;
         this.isPaused = false;
         if (wasPlaying) {
-          setTimeout(() => {
-            if (!this.audioProcess) {
-              this.setAmplifier(false);
-            }
-          }, 100);
           if (code === 0) {
             console.log(`
 \u2705 Finished playing: ${title}`);
@@ -162,17 +175,18 @@ var AudioEngine = class {
   }
   /**
    * Stop the currently playing audio
+   * Disables amp first to avoid pop, then kills ffplay
    */
   stop() {
     if (this.audioProcess) {
-      try {
-        this.audioProcess.kill("SIGKILL");
-      } catch (err) {
-      }
-      this.audioProcess = null;
+      this.setAmplifier(false);
       setTimeout(() => {
-        if (!this.audioProcess) {
-          this.setAmplifier(false);
+        if (this.audioProcess) {
+          try {
+            this.audioProcess.kill("SIGKILL");
+          } catch (err) {
+          }
+          this.audioProcess = null;
         }
       }, 50);
     } else {
@@ -274,11 +288,49 @@ var AudioEngine = class {
     this.setVolume(this.currentVolume - amount);
   }
   /**
+   * Play a quick confirmation beep when a card is recognized
+   * Short and distinct so user knows the card was read
+   */
+  async playCardBeep() {
+    if (this.audioProcess) return;
+    try {
+      const tonePromise = this.playTone(880, 80);
+      await this.sleep(20);
+      this.setAmplifier(true);
+      await tonePromise;
+      await this.sleep(50);
+      await this.playTone(1100, 80);
+      await this.sleep(30);
+    } catch (err) {
+    }
+    if (!this.audioProcess) {
+      this.setAmplifier(false);
+    }
+  }
+  /**
+   * Play an error beep when something goes wrong
+   */
+  async playErrorBeep() {
+    if (this.audioProcess) return;
+    try {
+      const tonePromise = this.playTone(400, 150);
+      await this.sleep(20);
+      this.setAmplifier(true);
+      await tonePromise;
+      await this.sleep(50);
+      await this.playTone(300, 200);
+      await this.sleep(30);
+    } catch (err) {
+    }
+    if (!this.audioProcess) {
+      this.setAmplifier(false);
+    }
+  }
+  /**
    * Play a startup chime to indicate the player is ready
    * Uses speaker-test to generate a pleasant ascending arpeggio
    */
   async playStartupChime() {
-    this.setAmplifier(true);
     const notes = [
       { freq: 523, duration: 120 },
       // C5
@@ -290,8 +342,13 @@ var AudioEngine = class {
       // C6 (hold longer)
     ];
     try {
-      for (const note of notes) {
-        await this.playTone(note.freq, note.duration);
+      const firstTone = this.playTone(notes[0].freq, notes[0].duration);
+      await this.sleep(20);
+      this.setAmplifier(true);
+      await firstTone;
+      await this.sleep(30);
+      for (let i = 1; i < notes.length; i++) {
+        await this.playTone(notes[i].freq, notes[i].duration);
         await this.sleep(30);
       }
       this.setVolume(this.currentVolume);
@@ -359,6 +416,7 @@ var PlayerCore = class {
    * @param nfcId - The NFC card ID that was scanned
    */
   async handleCardScan(nfcId) {
+    this.audioEngine.playCardBeep();
     try {
       console.log(`
 \u{1F50D} Scanning card: ${nfcId}`);
@@ -378,8 +436,12 @@ var PlayerCore = class {
         const action = result.content.action;
         console.log(`\u26A1 Action: ${action.toUpperCase()}`);
         this.executeAction(action);
+      } else {
+        console.log(`\u26A0\uFE0F  Card not recognized`);
+        this.audioEngine.playErrorBeep();
       }
     } catch (error) {
+      this.audioEngine.playErrorBeep();
     }
   }
   /**
@@ -1175,8 +1237,14 @@ var ButtonTrigger = class {
   ];
   monitorProcess;
   lastPressTime = /* @__PURE__ */ new Map();
-  debounceMs = 500;
-  // Debounce delay (500ms prevents accidental double-press)
+  debounceMs = 200;
+  // Shorter debounce to allow rapid presses for restart
+  restartPresses = [];
+  // Timestamps of rapid Volume Down presses
+  restartPressesNeeded = 5;
+  // Press Volume Down 5 times rapidly to restart
+  restartWindowMs = 3e3;
+  // Within 3 seconds
   gpiochip = "gpiochip0";
   // Default GPIO chip
   async start(playerCore) {
@@ -1211,8 +1279,8 @@ var ButtonTrigger = class {
           "pull-up",
           // --bias
           "-e",
-          "falling",
-          // --edges
+          "both",
+          // --edges (both falling=press and rising=release)
           ...pinArgs
           // line offsets as positional args
         ],
@@ -1251,16 +1319,57 @@ var ButtonTrigger = class {
       if (!line.trim()) continue;
       const parts = line.trim().split(/\s+/);
       let pin;
+      let isFalling = false;
+      let isRising = false;
       for (const part of parts) {
         const num = parseInt(part, 10);
         if (!isNaN(num) && this.buttons.some((b) => b.pin === num)) {
           pin = num;
-          break;
+        }
+        if (part.toLowerCase() === "falling") {
+          isFalling = true;
+        }
+        if (part.toLowerCase() === "rising") {
+          isRising = true;
         }
       }
-      if (pin !== void 0) {
+      if (pin !== void 0 && isFalling) {
         this.handleButtonPress(pin);
       }
+    }
+  }
+  /**
+   * Trigger a service restart
+   */
+  triggerRestart() {
+    console.log("\u{1F504} Restarting musicbox-player service...");
+    try {
+      execSync3("systemctl restart musicbox-player", { stdio: "inherit" });
+    } catch (err) {
+      console.error("\u26A0\uFE0F  Failed to restart service:", err);
+      process.exit(1);
+    }
+  }
+  /**
+   * Check if volume down was pressed rapidly for restart
+   */
+  checkRestartCombo(pin, now) {
+    const volumeDownPin = 13;
+    if (pin !== volumeDownPin) {
+      this.restartPresses = [];
+      return;
+    }
+    this.restartPresses.push(now);
+    this.restartPresses = this.restartPresses.filter(
+      (t) => now - t < this.restartWindowMs
+    );
+    if (this.restartPresses.length >= this.restartPressesNeeded) {
+      this.restartPresses = [];
+      this.triggerRestart();
+    } else if (this.restartPresses.length >= 3) {
+      console.log(
+        `\u{1F504} Restart: ${this.restartPresses.length}/${this.restartPressesNeeded} presses...`
+      );
     }
   }
   /**
@@ -1273,6 +1382,7 @@ var ButtonTrigger = class {
       return;
     }
     this.lastPressTime.set(pin, now);
+    this.checkRestartCombo(pin, now);
     const button = this.buttons.find((b) => b.pin === pin);
     if (!button) return;
     console.log(`\u{1F3AE} Button pressed: ${button.label}`);
@@ -1322,10 +1432,15 @@ var HeartbeatService = class {
   serverUrl;
   deviceSecret;
   playerCore;
+  consecutiveFailures = 0;
+  maxBackoffMs = 3e5;
+  // Max 5 minutes between retries
+  baseIntervalMs;
   constructor(serverUrl, deviceSecret, playerCore) {
     this.serverUrl = serverUrl;
     this.deviceSecret = deviceSecret;
     this.playerCore = playerCore;
+    this.baseIntervalMs = 3e4;
   }
   /**
    * Start sending heartbeats
@@ -1333,18 +1448,30 @@ var HeartbeatService = class {
    */
   start(intervalMs = 3e4) {
     this.sendHeartbeat();
-    this.interval = setInterval(() => {
-      this.sendHeartbeat();
-    }, intervalMs);
-    this.interval.unref();
+    this.scheduleNextHeartbeat(intervalMs);
     console.log(`\u{1F493} Heartbeat service started (every ${intervalMs / 1e3}s)`);
+  }
+  /**
+   * Schedule the next heartbeat with exponential backoff on failures
+   */
+  scheduleNextHeartbeat(baseInterval) {
+    const backoffMultiplier = Math.min(
+      Math.pow(2, this.consecutiveFailures),
+      10
+    );
+    const delay = Math.min(baseInterval * backoffMultiplier, this.maxBackoffMs);
+    this.interval = setTimeout(() => {
+      this.sendHeartbeat();
+      this.scheduleNextHeartbeat(baseInterval);
+    }, delay);
+    this.interval.unref();
   }
   /**
    * Stop sending heartbeats
    */
   stop() {
     if (this.interval) {
-      clearInterval(this.interval);
+      clearTimeout(this.interval);
       this.interval = void 0;
       console.log("\u{1F493} Heartbeat service stopped");
     }
@@ -1367,16 +1494,35 @@ var HeartbeatService = class {
           isPlaying: status.isPlaying
         };
       }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5e3);
       const response = await fetch(`${this.serverUrl}/api/devices/heartbeat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       if (!response.ok) {
-        console.error(`\u274C Heartbeat failed: ${response.status}`);
+        this.consecutiveFailures++;
+        if (this.consecutiveFailures === 1) {
+          console.error(`\u274C Heartbeat failed: ${response.status}`);
+        }
+      } else {
+        if (this.consecutiveFailures > 0) {
+          console.log(`\u{1F493} Server connection restored`);
+        }
+        this.consecutiveFailures = 0;
       }
     } catch (error) {
-      console.error("\u274C Heartbeat error:", error);
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures === 1) {
+        console.error(`\u274C Server unreachable: ${this.serverUrl}`);
+      } else if (this.consecutiveFailures % 10 === 0) {
+        console.error(
+          `\u274C Server still unreachable (${this.consecutiveFailures} failures)`
+        );
+      }
     }
   }
   /**

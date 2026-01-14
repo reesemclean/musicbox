@@ -96,17 +96,32 @@ export class AudioEngine {
 
   /**
    * Control MAX98357A shutdown pin using libgpiod
+   * Uses -z (daemonize) to hold the GPIO state
    * @param enabled - true = amplifier on (SD HIGH), false = amplifier off (SD LOW)
    */
   private setAmplifier(enabled: boolean): void {
     if (!this.gpioAvailable) return;
 
     try {
+      // Kill any existing gpioset process holding this pin
+      try {
+        execSync(`pkill -f 'gpioset.*${this.amplifierPin}='`, {
+          stdio: "pipe",
+        });
+      } catch {
+        // No process to kill, that's fine
+      }
+
       const value = enabled ? "1" : "0";
-      // libgpiod v2.x: -c for chip, -t 0 to set value and exit immediately
-      execSync(`gpioset -c 0 -t 0 ${this.amplifierPin}=${value}`);
+      // libgpiod v2.x: -z daemonizes to hold the line state
+      execSync(`gpioset -z -c 0 ${this.amplifierPin}=${value}`, {
+        stdio: "pipe",
+      });
     } catch (err) {
-      // Ignore errors
+      // Log error for debugging
+      console.error(
+        `   ⚠️  Failed to set amplifier ${enabled ? "ON" : "OFF"}: ${err}`
+      );
     }
   }
 
@@ -124,17 +139,12 @@ export class AudioEngine {
 
   /**
    * Enable amplifier with stabilization delay, then start playback
+   * Strategy: Start audio first (silent), then enable amp to avoid pop
    */
   private async enableAmplifierAndPlay(
     streamUrl: string,
     metadata: SongMetadata
   ): Promise<void> {
-    this.setAmplifier(true);
-
-    // Wait for amplifier to stabilize (prevents click/pop sound)
-    // MAX98357A needs ~100-150ms to fully stabilize
-    await this.sleep(150);
-
     console.log(`   🔊 Streaming audio... (volume: ${this.currentVolume}%)`);
 
     // Build ffplay args - optimized for low latency streaming
@@ -177,6 +187,16 @@ export class AudioEngine {
         detached: false,
       });
 
+      // Enable amplifier AFTER starting ffplay to avoid pop
+      // The audio stream takes a moment to start, so the amp enables during silence
+      if (this.gpioAvailable) {
+        setTimeout(() => {
+          if (this.audioProcess) {
+            this.setAmplifier(true);
+          }
+        }, 100); // 100ms delay - audio is buffering, amp enables during silence
+      }
+
       this.audioProcess.on("error", (err) => {
         console.log(`   ⚠️  ffplay error: ${err.message}`);
         console.log(`      Install ffmpeg for audio playback`);
@@ -190,12 +210,7 @@ export class AudioEngine {
         this.isPaused = false;
 
         if (wasPlaying) {
-          // Delay before disabling amp to prevent click on stop
-          setTimeout(() => {
-            if (!this.audioProcess) {
-              this.setAmplifier(false);
-            }
-          }, 100);
+          // Amp is disabled in stop() before killing ffplay, so no delay needed here
           if (code === 0) {
             console.log(`\n✅ Finished playing: ${title}`);
             // Notify all completion callbacks
@@ -212,24 +227,26 @@ export class AudioEngine {
 
   /**
    * Stop the currently playing audio
+   * Disables amp first to avoid pop, then kills ffplay
    */
   stop(): void {
     if (this.audioProcess) {
-      try {
-        // Kill forcefully with SIGKILL
-        this.audioProcess.kill("SIGKILL");
-      } catch (err) {
-        // Process might already be dead
-      }
-      this.audioProcess = null;
-      // Delay before disabling amp to prevent click (async, fire-and-forget)
+      // Disable amp first (while audio is still "playing" silently)
+      this.setAmplifier(false);
+
+      // Small delay to let amp shutdown complete before killing audio
       setTimeout(() => {
-        if (!this.audioProcess) {
-          this.setAmplifier(false);
+        if (this.audioProcess) {
+          try {
+            this.audioProcess.kill("SIGKILL");
+          } catch (err) {
+            // Process might already be dead
+          }
+          this.audioProcess = null;
         }
       }, 50);
     } else {
-      // No process running, disable amp immediately
+      // No process running, just ensure amp is off
       this.setAmplifier(false);
     }
   }
@@ -348,13 +365,72 @@ export class AudioEngine {
   }
 
   /**
+   * Play a quick confirmation beep when a card is recognized
+   * Short and distinct so user knows the card was read
+   */
+  async playCardBeep(): Promise<void> {
+    // Don't interrupt current playback
+    if (this.audioProcess) return;
+
+    try {
+      // Quick double-beep: high-pitched, short
+      // Start first tone (silent until amp enables)
+      const tonePromise = this.playTone(880, 80); // A5
+
+      // Enable amp after tiny delay (tone is already generating)
+      await this.sleep(20);
+      this.setAmplifier(true);
+
+      await tonePromise;
+      await this.sleep(50);
+      await this.playTone(1100, 80); // C#6
+
+      // Disable amp before tone fully ends
+      await this.sleep(30);
+    } catch (err) {
+      // Beep failed, not critical
+    }
+
+    if (!this.audioProcess) {
+      this.setAmplifier(false);
+    }
+  }
+
+  /**
+   * Play an error beep when something goes wrong
+   */
+  async playErrorBeep(): Promise<void> {
+    // Don't interrupt current playback
+    if (this.audioProcess) return;
+
+    try {
+      // Low descending tone indicates error
+      // Start first tone (silent until amp enables)
+      const tonePromise = this.playTone(400, 150);
+
+      // Enable amp after tiny delay
+      await this.sleep(20);
+      this.setAmplifier(true);
+
+      await tonePromise;
+      await this.sleep(50);
+      await this.playTone(300, 200);
+
+      await this.sleep(30);
+    } catch (err) {
+      // Beep failed, not critical
+    }
+
+    if (!this.audioProcess) {
+      this.setAmplifier(false);
+    }
+  }
+
+  /**
    * Play a startup chime to indicate the player is ready
    * Uses speaker-test to generate a pleasant ascending arpeggio
    */
   async playStartupChime(): Promise<void> {
-    // Enable amplifier for the chime
-    this.setAmplifier(true);
-
     // C major arpeggio: C5, E5, G5, C6 (ascending, cheerful)
     const notes = [
       { freq: 523, duration: 120 }, // C5
@@ -364,9 +440,19 @@ export class AudioEngine {
     ];
 
     try {
-      for (const note of notes) {
-        await this.playTone(note.freq, note.duration);
-        // Small gap between notes
+      // Start first tone (silent until amp enables)
+      const firstTone = this.playTone(notes[0].freq, notes[0].duration);
+
+      // Enable amp after tiny delay
+      await this.sleep(20);
+      this.setAmplifier(true);
+
+      await firstTone;
+      await this.sleep(30);
+
+      // Play remaining notes
+      for (let i = 1; i < notes.length; i++) {
+        await this.playTone(notes[i].freq, notes[i].duration);
         await this.sleep(30);
       }
 
