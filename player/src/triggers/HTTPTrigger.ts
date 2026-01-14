@@ -62,10 +62,12 @@ export class HTTPTrigger implements Trigger {
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
         } else if (req.method === "POST" && url.pathname === "/play") {
+          console.log(`🌐 HTTP: /play`);
           this.playerCore?.play();
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
         } else if (req.method === "POST" && url.pathname === "/pause") {
+          console.log(`🌐 HTTP: /pause`);
           this.playerCore?.pause();
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
@@ -78,6 +80,7 @@ export class HTTPTrigger implements Trigger {
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
         } else if (req.method === "POST" && url.pathname === "/stop") {
+          console.log(`🌐 HTTP: /stop`);
           this.playerCore?.stop();
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));

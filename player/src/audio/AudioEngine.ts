@@ -34,8 +34,8 @@ export class AudioEngine {
     try {
       // Check what volume control method is available
       this.detectVolumeControl();
-      // Set initial volume
-      this.setVolume(this.currentVolume);
+      // Try to set initial volume (may fail silently if softvol not created yet)
+      this.tryAmixerVolume(this.currentVolume, true);
       console.log(`   🔊 Volume control initialized (${this.currentVolume}%)`);
     } catch (err) {
       console.log(`   ⚠️  Volume control not available`);
@@ -44,29 +44,19 @@ export class AudioEngine {
 
   /**
    * Detect available volume control method
-   * Priority: pactl (PipeWire/PulseAudio) > amixer (ALSA)
+   * Uses ALSA amixer (softvol) for embedded systems
    */
-  private volumeMethod: "pactl" | "amixer" | "none" = "none";
+  private volumeAvailable = false;
 
   private detectVolumeControl(): void {
     try {
-      // Try pactl first (works with PipeWire's PulseAudio compatibility)
-      execSync("pactl --version", { stdio: "pipe" });
-      this.volumeMethod = "pactl";
-      console.log(`   🔊 Using PipeWire/PulseAudio volume control`);
-      return;
-    } catch {}
-
-    try {
-      // Fall back to amixer
       execSync("amixer --version", { stdio: "pipe" });
-      this.volumeMethod = "amixer";
+      this.volumeAvailable = true;
       console.log(`   🔊 Using ALSA volume control`);
-      return;
-    } catch {}
-
-    this.volumeMethod = "none";
-    console.log(`   ⚠️  No system volume control found, using ffplay filter`);
+    } catch {
+      console.log(`   ⚠️  Volume control unavailable - amixer not found`);
+      console.log(`      Install alsa-utils for volume control`);
+    }
   }
 
   /**
@@ -111,8 +101,8 @@ export class AudioEngine {
 
     try {
       const value = enabled ? "1" : "0";
-      // Use gpioset from libgpiod - it sets the pin and exits
-      execSync(`gpioset gpiochip0 ${this.amplifierPin}=${value}`);
+      // libgpiod v2.x: -c for chip, -t 0 to set value and exit immediately
+      execSync(`gpioset -c 0 -t 0 ${this.amplifierPin}=${value}`);
     } catch (err) {
       // Ignore errors
     }
@@ -126,8 +116,21 @@ export class AudioEngine {
   play(streamUrl: string, metadata: SongMetadata): void {
     this.stop();
 
-    // Enable amplifier before playing
+    // Enable amplifier before playing, with delay to prevent click/pop
+    this.enableAmplifierAndPlay(streamUrl, metadata);
+  }
+
+  /**
+   * Enable amplifier with stabilization delay, then start playback
+   */
+  private async enableAmplifierAndPlay(
+    streamUrl: string,
+    metadata: SongMetadata
+  ): Promise<void> {
     this.setAmplifier(true);
+
+    // Wait for amplifier to stabilize (prevents click/pop sound)
+    await this.sleep(50);
 
     console.log(`   🔊 Streaming audio... (volume: ${this.currentVolume}%)`);
 
@@ -142,58 +145,45 @@ export class AudioEngine {
     ];
 
     // Only use ffplay volume filter as fallback when no system control
-    if (this.volumeMethod === "none") {
+    if (!this.volumeAvailable) {
       const volumeMultiplier = this.currentVolume / 100;
       ffplayArgs.push("-af", `volume=${volumeMultiplier}`);
     }
 
     ffplayArgs.push(streamUrl);
 
-    // Try ffplay first (comes with ffmpeg), fall back to mpg123
-    const players = [
-      { cmd: "ffplay", args: ffplayArgs },
-      { cmd: "mpg123", args: ["-q", streamUrl] },
-    ];
+    // Use ffplay from ffmpeg for audio playback
+    try {
+      this.audioProcess = spawn("ffplay", ffplayArgs, {
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: false,
+      });
 
-    let playerStarted = false;
+      this.audioProcess.on("error", (err) => {
+        console.log(`   ⚠️  ffplay error: ${err.message}`);
+        console.log(`      Install ffmpeg for audio playback`);
+      });
 
-    for (const player of players) {
-      try {
-        this.audioProcess = spawn(player.cmd, player.args, {
-          stdio: ["ignore", "pipe", "pipe"],
-          detached: false, // Keep attached to this process
-        });
-
-        this.audioProcess.on("error", (err) => {
-          // Try next player
-        });
-
-        this.audioProcess.on("exit", (code) => {
-          if (this.audioProcess) {
-            this.audioProcess = null;
-            // Disable amplifier when playback stops
-            this.setAmplifier(false);
-            if (code === 0) {
-              console.log(`\n✅ Finished playing: ${metadata.title}`);
-              // Notify all completion callbacks
-              this.completionCallbacks.forEach((cb) => cb());
+      this.audioProcess.on("exit", (code) => {
+        if (this.audioProcess) {
+          this.audioProcess = null;
+          // Small delay before disabling amp to prevent click on stop
+          setTimeout(() => {
+            if (!this.audioProcess) {
+              this.setAmplifier(false);
             }
+          }, 50);
+          if (code === 0) {
+            console.log(`\n✅ Finished playing: ${metadata.title}`);
+            // Notify all completion callbacks
+            this.completionCallbacks.forEach((cb) => cb());
           }
-        });
-
-        playerStarted = true;
-        break;
-      } catch (err) {
-        // Try next player
-        continue;
-      }
-    }
-
-    if (!playerStarted) {
-      console.log(
-        `   ⚠️  No audio player found (tried ffplay, mpg123, afplay)`
-      );
-      console.log(`   Install: brew install ffmpeg  (or mpg123)`);
+        }
+      });
+    } catch (err) {
+      console.log(`   ⚠️  Failed to start ffplay`);
+      console.log(`      Install ffmpeg for audio playback`);
+      this.setAmplifier(false);
     }
   }
 
@@ -209,9 +199,16 @@ export class AudioEngine {
         // Process might already be dead
       }
       this.audioProcess = null;
+      // Delay before disabling amp to prevent click (async, fire-and-forget)
+      setTimeout(() => {
+        if (!this.audioProcess) {
+          this.setAmplifier(false);
+        }
+      }, 50);
+    } else {
+      // No process running, disable amp immediately
+      this.setAmplifier(false);
     }
-    // Disable amplifier when stopped
-    this.setAmplifier(false);
   }
 
   /**
@@ -238,47 +235,32 @@ export class AudioEngine {
     percent = Math.max(0, Math.min(100, percent));
     this.currentVolume = percent;
 
-    // Apply volume immediately using system volume control
-    switch (this.volumeMethod) {
-      case "pactl":
-        try {
-          // Set all sinks to the specified volume (PipeWire/PulseAudio)
-          // This affects audio in real-time
-          execSync(`pactl set-sink-volume @DEFAULT_SINK@ ${percent}%`, {
-            stdio: "pipe",
-          });
-          console.log(`🔊 Volume: ${percent}%`);
-        } catch (err) {
-          console.log(`⚠️  pactl volume failed, trying amixer`);
-          this.tryAmixerVolume(percent);
-        }
-        break;
-
-      case "amixer":
-        this.tryAmixerVolume(percent);
-        break;
-
-      default:
-        // No system control - volume applied via ffplay filter on next play
-        console.log(`🔊 Volume set to ${percent}% (applies on next song)`);
+    if (this.volumeAvailable) {
+      this.tryAmixerVolume(percent);
     }
   }
 
   /**
    * Try setting volume via ALSA amixer
    */
-  private tryAmixerVolume(percent: number): void {
-    // Try common mixer control names
-    const controls = ["PCM", "Master", "Speaker", "Headphone"];
+  private tryAmixerVolume(percent: number, silent = false): void {
+    // softvol "Master" control is created on first audio playback
+    // Try known control names
+    const controls = ["Master", "PCM", "Speaker", "Headphone"];
 
     for (const control of controls) {
       try {
         execSync(`amixer -q sset ${control} ${percent}%`, { stdio: "pipe" });
-        console.log(`🔊 Volume: ${percent}%`);
+        if (!silent) {
+          console.log(`🔊 Volume: ${percent}%`);
+        }
         return;
       } catch {}
     }
-    console.log(`⚠️  ALSA volume control failed`);
+    // Only log failure if not in silent mode (initial setup before audio plays)
+    if (!silent) {
+      console.log(`⚠️  ALSA volume control failed`);
+    }
   }
 
   /**
@@ -303,5 +285,70 @@ export class AudioEngine {
    */
   volumeDown(amount: number = 10): void {
     this.setVolume(this.currentVolume - amount);
+  }
+
+  /**
+   * Play a startup chime to indicate the player is ready
+   * Uses speaker-test to generate a pleasant ascending arpeggio
+   */
+  async playStartupChime(): Promise<void> {
+    // Enable amplifier for the chime
+    this.setAmplifier(true);
+
+    // C major arpeggio: C5, E5, G5, C6 (ascending, cheerful)
+    const notes = [
+      { freq: 523, duration: 120 }, // C5
+      { freq: 659, duration: 120 }, // E5
+      { freq: 784, duration: 120 }, // G5
+      { freq: 1047, duration: 200 }, // C6 (hold longer)
+    ];
+
+    try {
+      for (const note of notes) {
+        await this.playTone(note.freq, note.duration);
+        // Small gap between notes
+        await this.sleep(30);
+      }
+
+      // After first audio plays, softvol control exists - set the actual volume
+      this.setVolume(this.currentVolume);
+    } catch (err) {
+      // Chime failed, not critical
+      console.log(`   ⚠️  Startup chime failed`);
+    }
+
+    // Disable amplifier after chime (unless something else is playing)
+    if (!this.isPlaying()) {
+      this.setAmplifier(false);
+    }
+  }
+
+  /**
+   * Play a single tone using speaker-test
+   */
+  private playTone(frequency: number, durationMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      const proc = spawn(
+        "speaker-test",
+        ["-t", "sine", "-f", frequency.toString(), "-c", "2", "-l", "1"],
+        { stdio: "ignore" }
+      );
+
+      // Kill after duration
+      setTimeout(() => {
+        proc.kill("SIGTERM");
+        resolve();
+      }, durationMs);
+
+      proc.on("exit", () => resolve());
+      proc.on("error", () => resolve());
+    });
+  }
+
+  /**
+   * Simple sleep helper
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

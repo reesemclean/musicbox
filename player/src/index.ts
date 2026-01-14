@@ -48,6 +48,9 @@ async function main() {
   // Initialize player core
   const playerCore = new PlayerCore(serverClient);
 
+  // Play startup chime to indicate player is ready
+  await playerCore.initialize();
+
   // Start heartbeat service (if device secret is configured)
   let heartbeatService: HeartbeatService | undefined;
   if (config.deviceSecret) {

@@ -21,7 +21,7 @@ var AudioEngine = class {
   initializeVolume() {
     try {
       this.detectVolumeControl();
-      this.setVolume(this.currentVolume);
+      this.tryAmixerVolume(this.currentVolume, true);
       console.log(`   \u{1F50A} Volume control initialized (${this.currentVolume}%)`);
     } catch (err) {
       console.log(`   \u26A0\uFE0F  Volume control not available`);
@@ -29,26 +29,18 @@ var AudioEngine = class {
   }
   /**
    * Detect available volume control method
-   * Priority: pactl (PipeWire/PulseAudio) > amixer (ALSA)
+   * Uses ALSA amixer (softvol) for embedded systems
    */
-  volumeMethod = "none";
+  volumeAvailable = false;
   detectVolumeControl() {
     try {
-      execSync("pactl --version", { stdio: "pipe" });
-      this.volumeMethod = "pactl";
-      console.log(`   \u{1F50A} Using PipeWire/PulseAudio volume control`);
-      return;
-    } catch {
-    }
-    try {
       execSync("amixer --version", { stdio: "pipe" });
-      this.volumeMethod = "amixer";
+      this.volumeAvailable = true;
       console.log(`   \u{1F50A} Using ALSA volume control`);
-      return;
     } catch {
+      console.log(`   \u26A0\uFE0F  Volume control unavailable - amixer not found`);
+      console.log(`      Install alsa-utils for volume control`);
     }
-    this.volumeMethod = "none";
-    console.log(`   \u26A0\uFE0F  No system volume control found, using ffplay filter`);
   }
   /**
    * Initialize GPIO control for MAX98357A shutdown pin
@@ -83,7 +75,7 @@ var AudioEngine = class {
     if (!this.gpioAvailable) return;
     try {
       const value = enabled ? "1" : "0";
-      execSync(`gpioset gpiochip0 ${this.amplifierPin}=${value}`);
+      execSync(`gpioset -c 0 -t 0 ${this.amplifierPin}=${value}`);
     } catch (err) {
     }
   }
@@ -94,7 +86,14 @@ var AudioEngine = class {
    */
   play(streamUrl, metadata) {
     this.stop();
+    this.enableAmplifierAndPlay(streamUrl, metadata);
+  }
+  /**
+   * Enable amplifier with stabilization delay, then start playback
+   */
+  async enableAmplifierAndPlay(streamUrl, metadata) {
     this.setAmplifier(true);
+    await this.sleep(50);
     console.log(`   \u{1F50A} Streaming audio... (volume: ${this.currentVolume}%)`);
     const ffplayArgs = [
       "-nodisp",
@@ -104,47 +103,39 @@ var AudioEngine = class {
       "-fflags",
       "nobuffer"
     ];
-    if (this.volumeMethod === "none") {
+    if (!this.volumeAvailable) {
       const volumeMultiplier = this.currentVolume / 100;
       ffplayArgs.push("-af", `volume=${volumeMultiplier}`);
     }
     ffplayArgs.push(streamUrl);
-    const players = [
-      { cmd: "ffplay", args: ffplayArgs },
-      { cmd: "mpg123", args: ["-q", streamUrl] }
-    ];
-    let playerStarted = false;
-    for (const player of players) {
-      try {
-        this.audioProcess = spawn(player.cmd, player.args, {
-          stdio: ["ignore", "pipe", "pipe"],
-          detached: false
-          // Keep attached to this process
-        });
-        this.audioProcess.on("error", (err) => {
-        });
-        this.audioProcess.on("exit", (code) => {
-          if (this.audioProcess) {
-            this.audioProcess = null;
-            this.setAmplifier(false);
-            if (code === 0) {
-              console.log(`
-\u2705 Finished playing: ${metadata.title}`);
-              this.completionCallbacks.forEach((cb) => cb());
+    try {
+      this.audioProcess = spawn("ffplay", ffplayArgs, {
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: false
+      });
+      this.audioProcess.on("error", (err) => {
+        console.log(`   \u26A0\uFE0F  ffplay error: ${err.message}`);
+        console.log(`      Install ffmpeg for audio playback`);
+      });
+      this.audioProcess.on("exit", (code) => {
+        if (this.audioProcess) {
+          this.audioProcess = null;
+          setTimeout(() => {
+            if (!this.audioProcess) {
+              this.setAmplifier(false);
             }
+          }, 50);
+          if (code === 0) {
+            console.log(`
+\u2705 Finished playing: ${metadata.title}`);
+            this.completionCallbacks.forEach((cb) => cb());
           }
-        });
-        playerStarted = true;
-        break;
-      } catch (err) {
-        continue;
-      }
-    }
-    if (!playerStarted) {
-      console.log(
-        `   \u26A0\uFE0F  No audio player found (tried ffplay, mpg123, afplay)`
-      );
-      console.log(`   Install: brew install ffmpeg  (or mpg123)`);
+        }
+      });
+    } catch (err) {
+      console.log(`   \u26A0\uFE0F  Failed to start ffplay`);
+      console.log(`      Install ffmpeg for audio playback`);
+      this.setAmplifier(false);
     }
   }
   /**
@@ -157,8 +148,14 @@ var AudioEngine = class {
       } catch (err) {
       }
       this.audioProcess = null;
+      setTimeout(() => {
+        if (!this.audioProcess) {
+          this.setAmplifier(false);
+        }
+      }, 50);
+    } else {
+      this.setAmplifier(false);
     }
-    this.setAmplifier(false);
   }
   /**
    * Check if audio is currently playing
@@ -180,39 +177,28 @@ var AudioEngine = class {
   setVolume(percent) {
     percent = Math.max(0, Math.min(100, percent));
     this.currentVolume = percent;
-    switch (this.volumeMethod) {
-      case "pactl":
-        try {
-          execSync(`pactl set-sink-volume @DEFAULT_SINK@ ${percent}%`, {
-            stdio: "pipe"
-          });
-          console.log(`\u{1F50A} Volume: ${percent}%`);
-        } catch (err) {
-          console.log(`\u26A0\uFE0F  pactl volume failed, trying amixer`);
-          this.tryAmixerVolume(percent);
-        }
-        break;
-      case "amixer":
-        this.tryAmixerVolume(percent);
-        break;
-      default:
-        console.log(`\u{1F50A} Volume set to ${percent}% (applies on next song)`);
+    if (this.volumeAvailable) {
+      this.tryAmixerVolume(percent);
     }
   }
   /**
    * Try setting volume via ALSA amixer
    */
-  tryAmixerVolume(percent) {
-    const controls = ["PCM", "Master", "Speaker", "Headphone"];
+  tryAmixerVolume(percent, silent = false) {
+    const controls = ["Master", "PCM", "Speaker", "Headphone"];
     for (const control of controls) {
       try {
         execSync(`amixer -q sset ${control} ${percent}%`, { stdio: "pipe" });
-        console.log(`\u{1F50A} Volume: ${percent}%`);
+        if (!silent) {
+          console.log(`\u{1F50A} Volume: ${percent}%`);
+        }
         return;
       } catch {
       }
     }
-    console.log(`\u26A0\uFE0F  ALSA volume control failed`);
+    if (!silent) {
+      console.log(`\u26A0\uFE0F  ALSA volume control failed`);
+    }
   }
   /**
    * Get current volume level
@@ -235,6 +221,59 @@ var AudioEngine = class {
   volumeDown(amount = 10) {
     this.setVolume(this.currentVolume - amount);
   }
+  /**
+   * Play a startup chime to indicate the player is ready
+   * Uses speaker-test to generate a pleasant ascending arpeggio
+   */
+  async playStartupChime() {
+    this.setAmplifier(true);
+    const notes = [
+      { freq: 523, duration: 120 },
+      // C5
+      { freq: 659, duration: 120 },
+      // E5
+      { freq: 784, duration: 120 },
+      // G5
+      { freq: 1047, duration: 200 }
+      // C6 (hold longer)
+    ];
+    try {
+      for (const note of notes) {
+        await this.playTone(note.freq, note.duration);
+        await this.sleep(30);
+      }
+      this.setVolume(this.currentVolume);
+    } catch (err) {
+      console.log(`   \u26A0\uFE0F  Startup chime failed`);
+    }
+    if (!this.isPlaying()) {
+      this.setAmplifier(false);
+    }
+  }
+  /**
+   * Play a single tone using speaker-test
+   */
+  playTone(frequency, durationMs) {
+    return new Promise((resolve) => {
+      const proc = spawn(
+        "speaker-test",
+        ["-t", "sine", "-f", frequency.toString(), "-c", "2", "-l", "1"],
+        { stdio: "ignore" }
+      );
+      setTimeout(() => {
+        proc.kill("SIGTERM");
+        resolve();
+      }, durationMs);
+      proc.on("exit", () => resolve());
+      proc.on("error", () => resolve());
+    });
+  }
+  /**
+   * Simple sleep helper
+   */
+  sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 };
 
 // src/core/PlayerCore.ts
@@ -247,6 +286,13 @@ var PlayerCore = class {
     this.audioEngine = audioEngine || new AudioEngine();
     this.state = this.initialState();
     this.audioEngine.onComplete(() => this.handleAudioComplete());
+  }
+  /**
+   * Initialize the player and play startup chime
+   */
+  async initialize() {
+    await this.audioEngine.playStartupChime();
+    console.log("\u{1F3B5} Player ready!");
   }
   initialState() {
     return {
@@ -666,10 +712,12 @@ var HTTPTrigger = class {
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
         } else if (req.method === "POST" && url.pathname === "/play") {
+          console.log(`\u{1F310} HTTP: /play`);
           this.playerCore?.play();
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
         } else if (req.method === "POST" && url.pathname === "/pause") {
+          console.log(`\u{1F310} HTTP: /pause`);
           this.playerCore?.pause();
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
@@ -682,6 +730,7 @@ var HTTPTrigger = class {
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
         } else if (req.method === "POST" && url.pathname === "/stop") {
+          console.log(`\u{1F310} HTTP: /stop`);
           this.playerCore?.stop();
           res.writeHead(200);
           res.end(JSON.stringify({ success: true }));
@@ -1377,6 +1426,7 @@ async function main() {
   console.log("\u2550".repeat(60));
   const serverClient = new ServerClient(config.serverUrl, config.deviceName);
   const playerCore = new PlayerCore(serverClient);
+  await playerCore.initialize();
   let heartbeatService;
   if (config.deviceSecret) {
     heartbeatService = new HeartbeatService(

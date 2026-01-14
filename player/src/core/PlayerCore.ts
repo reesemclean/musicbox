@@ -27,6 +27,14 @@ export class PlayerCore {
     this.audioEngine.onComplete(() => this.handleAudioComplete());
   }
 
+  /**
+   * Initialize the player and play startup chime
+   */
+  async initialize(): Promise<void> {
+    await this.audioEngine.playStartupChime();
+    console.log("🎵 Player ready!");
+  }
+
   private initialState(): PlayerState {
     return {
       currentSong: null,

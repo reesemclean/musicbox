@@ -67,40 +67,55 @@ in {
     # AUDIO: MAX98357A I2S Configuration
     # ========================================================================
 
-    # Note: We use the default kernel (not linux_rpi3) for cross-compilation compatibility
-    # The device tree overlay approach works with the mainline kernel
-    
-    # Enable I2S audio hardware for MAX98357A amplifier
-    # This overlay enables I2S and creates the audio card
+    # For I2S audio with MAX98357A on Pi Zero 2 W with mainline kernel:
+    # The mainline kernel has the I2S node but it's disabled by default.
+    # We need to enable it and add the MAX98357A codec with a sound card.
+    #
+    # The simplest approach is to use a single consolidated overlay.
+
     hardware.deviceTree = {
       enable = true;
+      filter = "bcm2837-rpi-zero-2*.dtb";
       overlays = [
-        # MAX98357A / HiFiBerry DAC compatible overlay
-        # Uses target-path for compatibility with mainline kernel DTB
         {
-          name = "max98357a-audio-overlay";
+          name = "i2s-max98357a";
+          # Combined I2S + MAX98357A + Sound Card overlay
           dtsText = ''
             /dts-v1/;
             /plugin/;
 
             / {
-              compatible = "brcm,bcm2837", "brcm,bcm2836", "brcm,bcm2835";
+              compatible = "raspberrypi,model-zero-2-w", "brcm,bcm2837";
+            };
 
-              fragment@0 {
-                target-path = "/soc/i2s@7e203000";
-                __overlay__ {
-                  status = "okay";
-                };
+            /* Enable I2S peripheral (has label 'i2s' in base DTB) */
+            &i2s {
+              #sound-dai-cells = <0>;
+              pinctrl-names = "default";
+              pinctrl-0 = <&pcm_gpio18>;
+              status = "okay";
+            };
+
+            /* Add MAX98357A codec and sound card at root */
+            &{/} {
+              max98357a: max98357a {
+                compatible = "maxim,max98357a";
+                #sound-dai-cells = <0>;
+                status = "okay";
               };
 
-              fragment@1 {
-                target-path = "/";
-                __overlay__ {
-                  pcm5102a: pcm5102a-codec {
-                    #sound-dai-cells = <0>;
-                    compatible = "ti,pcm5102a";
-                    status = "okay";
-                  };
+              sound: sound {
+                compatible = "simple-audio-card";
+                simple-audio-card,name = "MAX98357A";
+                simple-audio-card,format = "i2s";
+                status = "okay";
+
+                simple-audio-card,cpu {
+                  sound-dai = <&i2s>;
+                };
+
+                simple-audio-card,codec {
+                  sound-dai = <&max98357a>;
                 };
               };
             };
@@ -109,67 +124,36 @@ in {
       ];
     };
 
-    # Load I2S sound modules
-    boot.kernelModules = [ "snd-soc-bcm2835-i2s" "snd-soc-pcm5102a" ];
+    # Ensure the I2S and MAX98357A kernel modules are available
+    boot.kernelModules = [ "snd-soc-bcm2835-i2s" "snd-soc-max98357a" "snd-soc-simple-card" ];
 
-    # PipeWire audio server (modern replacement for PulseAudio/JACK)
-    security.rtkit.enable = true;
-    services.pipewire = {
-      enable = true;
-      alsa.enable = true;
-      alsa.support32Bit = false;  # Pi Zero 2 W is 64-bit
-      pulse.enable = true;  # PulseAudio compatibility (for pactl)
-    };
+    # Pure ALSA - no PipeWire needed for headless player
+    # This is simpler and lighter for embedded use
+    hardware.alsa.enable = true;
 
-    # ALSA configuration for MAX98357A I2S card with software volume control
-    # Based on Adafruit's recommended configuration
-    # https://learn.adafruit.com/adafruit-max98357-i2s-class-d-mono-amp/raspberry-pi-usage
+    # ALSA configuration for MAX98357A I2S card
+    # The I2S card will be card 0 (with onboard audio disabled)
+    # MAX98357A has no hardware volume control, so we use ALSA softvol plugin
     environment.etc."asound.conf".text = ''
-      # Hardware PCM for the I2S DAC
-      pcm.speakerbonnet {
-        type hw
-        card 0
-      }
-
-      # Software mixer with dmix for shared access
-      pcm.dmixer {
-        type dmix
-        ipc_key 1024
-        ipc_perm 0666
-        slave {
-          pcm "speakerbonnet"
-          period_time 0
-          period_size 1024
-          buffer_size 8192
-          rate 44100
-          channels 2
-        }
-      }
-
-      ctl.dmixer {
-        type hw
-        card 0
-      }
-
-      # Software volume control
+      # Software volume control for MAX98357A (no hardware mixer)
       pcm.softvol {
         type softvol
-        slave.pcm "dmixer"
-        control.name "PCM"
-        control.card 0
+        slave.pcm "hw:0,0"
+        control {
+          name "Master"
+          card 0
+        }
+        min_dB -51.0
+        max_dB 0.0
       }
 
-      ctl.softvol {
-        type hw
-        card 0
-      }
-
-      # Default output goes through software volume
+      # Default to softvol for volume control
       pcm.!default {
         type plug
         slave.pcm "softvol"
       }
 
+      # Default control device
       ctl.!default {
         type hw
         card 0
@@ -210,15 +194,13 @@ in {
     # Create systemd service
     systemd.services.musicbox-player = {
       description = "MusicBox Player - NFC music player";
-      after = [ "network-online.target" "sound.target" "pipewire.service" ];
-      wants = [ "network-online.target" ];
-      requires = [ "pipewire.service" ];  # Ensure PipeWire is running
+      after = [ "network-online.target" "sound.target" ];
+      wants = [ "network-online.target" "sound.target" ];
       wantedBy = [ "multi-user.target" ];
 
       # Add required tools to PATH
       path = with pkgs; [
         alsa-utils      # amixer (ALSA volume control)
-        pulseaudio      # pactl (PipeWire/PulseAudio compatibility)
         i2c-tools       # i2cdetect, i2cget (NFC reader)
         libgpiod        # gpioset, gpioget (GPIO control for amplifier)
         ffmpeg-full     # ffplay (audio playback)

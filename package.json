@@ -11,6 +11,7 @@
   "scripts": {
     "dev:server": "npm run dev --workspace=server",
     "dev:player": "npm run dev --workspace=player",
+    "build:all": "rm -f ./outputs/* && cd player && npm run build:bundle && cd .. && npm run build:image",
     "build:server": "npm run build --workspace=server",
     "build:player": "npm run build --workspace=player",
     "build:image": "npm run build:image --workspace=player -- ./device-configs/test-player.config.json --wifi ./device-configs/wifi-config.json --ssh ./device-configs/ssh-config.json",
