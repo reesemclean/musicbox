@@ -28,8 +28,8 @@ FROM node:22-alpine AS production
 
 WORKDIR /app
 
-# Install runtime dependencies for better-sqlite3
-RUN apk add --no-cache libstdc++
+# Install runtime dependencies for better-sqlite3 and curl for healthchecks
+RUN apk add --no-cache libstdc++ curl
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
