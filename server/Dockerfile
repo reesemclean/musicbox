@@ -28,8 +28,12 @@ FROM node:22-alpine AS production
 
 WORKDIR /app
 
-# Install runtime dependencies for better-sqlite3 and curl for healthchecks
-RUN apk add --no-cache libstdc++ curl
+# Install runtime dependencies:
+# - libstdc++: for better-sqlite3
+# - curl: for healthchecks
+# - python3 + py3-pip: for ytmusicapi (YouTube Music search)
+RUN apk add --no-cache libstdc++ curl python3 py3-pip && \
+    pip3 install --no-cache-dir --break-system-packages ytmusicapi
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
