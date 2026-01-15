@@ -32,7 +32,9 @@ WORKDIR /app
 # - libstdc++: for better-sqlite3
 # - curl: for healthchecks
 # - python3 + py3-pip: for ytmusicapi (YouTube Music search)
-RUN apk add --no-cache libstdc++ curl python3 py3-pip && \
+# - ffmpeg: for audio conversion (used by yt-dlp)
+# - yt-dlp: for downloading from YouTube Music
+RUN apk add --no-cache libstdc++ curl python3 py3-pip ffmpeg yt-dlp && \
     pip3 install --no-cache-dir --break-system-packages ytmusicapi
 
 # Create non-root user
