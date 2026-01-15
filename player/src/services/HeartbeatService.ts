@@ -77,7 +77,7 @@ export class HeartbeatService {
    */
   private async sendHeartbeat() {
     try {
-      const status = this.playerCore.getStatus();
+      const status = await this.playerCore.getStatus();
       const ipAddress = this.getLocalIPAddress();
 
       const payload: {

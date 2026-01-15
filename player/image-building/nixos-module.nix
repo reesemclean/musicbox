@@ -203,7 +203,7 @@ in {
         alsa-utils      # amixer (ALSA volume control)
         i2c-tools       # i2cdetect, i2cget (NFC reader)
         libgpiod        # gpioset, gpioget (GPIO control for amplifier)
-        ffmpeg-full     # ffplay (audio playback)
+        mpv             # mpv (audio playback with IPC control)
       ];
 
       serviceConfig = {

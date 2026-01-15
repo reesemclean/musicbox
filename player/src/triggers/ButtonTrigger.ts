@@ -224,19 +224,14 @@ export class ButtonTrigger implements Trigger {
   /**
    * Execute the button's action
    */
-  private executeAction(
+  private async executeAction(
     action: "play-pause" | "volume-up" | "volume-down" | "next" | "previous"
-  ): void {
+  ): Promise<void> {
     if (!this.playerCore) return;
 
     switch (action) {
       case "play-pause":
-        const status = this.playerCore.getStatus();
-        if (status.isPlaying) {
-          this.playerCore.pause();
-        } else {
-          this.playerCore.play();
-        }
+        await this.playerCore.togglePlayPause();
         break;
 
       case "volume-up":

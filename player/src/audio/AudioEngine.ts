@@ -1,476 +1,575 @@
 /**
- * AudioEngine - Platform-agnostic audio playback abstraction
+ * AudioEngine - Audio playback via mpv with IPC control
  *
- * Handles:
- * - Spawning audio player processes (ffplay, mpg123, afplay)
- * - Process lifecycle management
- * - Completion event notifications
- * - MAX98357A shutdown control via GPIO
+ * Uses mpv in idle mode with JSON IPC for:
+ * - Persistent audio process (no spawn/kill per song = no pops)
+ * - Native playlist management
+ * - Gapless playback between songs
+ * - Volume and pause control
+ * - Audio fade for smooth transitions
+ *
+ * Beeps/chimes use speaker-test separately so they can overlay with music.
+ *
+ * Architecture:
+ *   PlayerCore  ──JSON commands──>  mpv --idle --input-ipc-server
+ *              <──events/replies──
+ *
+ *   Beeps: speaker-test (separate process, can overlay)
  */
 
-import { spawn, execSync } from "child_process";
+import { spawn } from "child_process";
 import type { ChildProcess } from "child_process";
-import type { SongMetadata } from "../core/types.ts";
-import { existsSync } from "fs";
+import type { SongInfo, PlayerStatus } from "../core/types.ts";
+import { existsSync, unlinkSync } from "fs";
+import { createConnection } from "net";
+import type { Socket } from "net";
 
 type CompletionCallback = () => void;
 
+interface MpvResponse {
+  event?: string;
+  data?: unknown;
+  request_id?: number;
+  error?: string;
+  name?: string;
+  reason?: string;
+}
+
 export class AudioEngine {
-  private audioProcess: ChildProcess | null = null;
+  private mpvProcess: ChildProcess | null = null;
+  private ipcSocket: Socket | null = null;
+  private readonly ipcPath = "/tmp/musicbox-mpv.sock";
   private completionCallbacks: CompletionCallback[] = [];
-  private readonly amplifierPin = 22; // GPIO 22 for MAX98357A SD pin
-  private gpioAvailable = false;
   private currentVolume = 10; // Default volume percentage (0-100)
-  private isPaused = false;
-  private currentMetadata: SongMetadata | null = null;
+  private isInitialized = false;
+  private requestId = 0;
+  private pendingRequests = new Map<number, (response: MpvResponse) => void>();
+
+  /** Playlist metadata - mirrors what's loaded in mpv */
+  private playlist: SongInfo[] = [];
 
   constructor() {
-    this.initializeGPIO();
-    this.initializeVolume();
+    // No initialization needed - mpv starts on first play
   }
 
   /**
-   * Initialize volume control
+   * Initialize mpv process and IPC connection
+   * Call this before any playback operations
    */
-  private initializeVolume(): void {
-    try {
-      // Check what volume control method is available
-      this.detectVolumeControl();
-      // Try to set initial volume (may fail silently if softvol not created yet)
-      this.tryAmixerVolume(this.currentVolume, true);
-      console.log(`   🔊 Volume control initialized (${this.currentVolume}%)`);
-    } catch (err) {
-      console.log(`   ⚠️  Volume control not available`);
-    }
-  }
+  async initialize(): Promise<void> {
+    if (this.isInitialized) return;
 
-  /**
-   * Detect available volume control method
-   * Uses ALSA amixer (softvol) for embedded systems
-   */
-  private volumeAvailable = false;
-
-  private detectVolumeControl(): void {
-    try {
-      execSync("amixer --version", { stdio: "pipe" });
-      this.volumeAvailable = true;
-      console.log(`   🔊 Using ALSA volume control`);
-    } catch {
-      console.log(`   ⚠️  Volume control unavailable - amixer not found`);
-      console.log(`      Install alsa-utils for volume control`);
-    }
-  }
-
-  /**
-   * Initialize GPIO control for MAX98357A shutdown pin
-   * Uses libgpiod (gpioset) instead of deprecated sysfs interface
-   */
-  private initializeGPIO(): void {
-    try {
-      // Check if we're on a Raspberry Pi with GPIO character device
-      if (!existsSync("/dev/gpiochip0")) {
-        return;
-      }
-
-      // Check if gpioset is available by trying to run it
+    // Clean up any stale socket
+    if (existsSync(this.ipcPath)) {
       try {
-        execSync("gpioset --version", { stdio: "pipe" });
+        unlinkSync(this.ipcPath);
       } catch {
-        console.log(`   ⚠️  gpioset not found - amplifier control disabled`);
-        console.log(`   PATH: ${process.env.PATH}`);
-        return;
+        // Ignore
       }
-
-      // Start with amplifier off (SD pin LOW = shutdown)
-      this.setAmplifier(false);
-      this.gpioAvailable = true;
-
-      console.log(
-        `   🔌 MAX98357A shutdown control initialized (GPIO ${this.amplifierPin})`
-      );
-    } catch (err) {
-      // GPIO not available or no permissions - audio will still work
-      console.log(`   ⚠️  GPIO control not available - amplifier always on`);
     }
+
+    // Start mpv in idle mode with IPC socket
+    await this.startMpv();
+    this.isInitialized = true;
+
+    // Set initial volume
+    await this.setMpvVolume(this.currentVolume);
+
+    console.log("   🎵 mpv audio engine initialized");
   }
 
   /**
-   * Control MAX98357A shutdown pin using libgpiod
-   * Uses -z (daemonize) to hold the GPIO state
-   * @param enabled - true = amplifier on (SD HIGH), false = amplifier off (SD LOW)
+   * Start mpv process in idle mode
    */
-  private setAmplifier(enabled: boolean): void {
-    if (!this.gpioAvailable) return;
+  private startMpv(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const args = [
+        "--idle=yes", // Stay running, wait for commands
+        "--input-ipc-server=" + this.ipcPath, // IPC socket path
+        "--no-video", // Audio only
+        "--no-terminal", // No terminal output
+        "--really-quiet", // Minimal logging
+        "--audio-display=no", // No visualizations
+        "--gapless-audio=yes", // Gapless playback
+        "--prefetch-playlist=yes", // Prefetch next track
+        "--audio-buffer=0.2", // 200ms buffer (reasonable for streaming)
+        "--af=afade=t=in:st=0:d=0.1", // 100ms fade-in on all audio
+      ];
 
-    try {
-      // Kill any existing gpioset process holding this pin
-      try {
-        execSync(`pkill -f 'gpioset.*${this.amplifierPin}='`, {
-          stdio: "pipe",
-        });
-      } catch {
-        // No process to kill, that's fine
-      }
-
-      const value = enabled ? "1" : "0";
-      // libgpiod v2.x: -z daemonizes to hold the line state
-      execSync(`gpioset -z -c 0 ${this.amplifierPin}=${value}`, {
-        stdio: "pipe",
-      });
-    } catch (err) {
-      // Log error for debugging
-      console.error(
-        `   ⚠️  Failed to set amplifier ${enabled ? "ON" : "OFF"}: ${err}`
-      );
-    }
-  }
-
-  /**
-   * Play audio from a stream URL
-   * @param streamUrl - The URL to stream from
-   * @param metadata - Song metadata for logging
-   */
-  play(streamUrl: string, metadata: SongMetadata): void {
-    this.stop();
-
-    // Enable amplifier before playing, with delay to prevent click/pop
-    this.enableAmplifierAndPlay(streamUrl, metadata);
-  }
-
-  /**
-   * Enable amplifier with stabilization delay, then start playback
-   * Strategy: Start audio first (silent), then enable amp to avoid pop
-   */
-  private async enableAmplifierAndPlay(
-    streamUrl: string,
-    metadata: SongMetadata
-  ): Promise<void> {
-    console.log(`   🔊 Streaming audio... (volume: ${this.currentVolume}%)`);
-
-    // Build ffplay args - optimized for low latency streaming
-    const ffplayArgs = [
-      "-nodisp",
-      "-autoexit",
-      "-loglevel",
-      "quiet",
-      // Low-latency flags
-      "-fflags",
-      "nobuffer+fastseek",
-      "-flags",
-      "low_delay",
-      "-probesize",
-      "32", // Minimal probe (bytes) - faster format detection
-      "-analyzeduration",
-      "0", // Don't analyze - start immediately
-      "-sync",
-      "audio", // Sync to audio clock
-      "-framedrop", // Drop frames if behind (irrelevant for audio-only but doesn't hurt)
-    ];
-
-    // Only use ffplay volume filter as fallback when no system control
-    if (!this.volumeAvailable) {
-      const volumeMultiplier = this.currentVolume / 100;
-      ffplayArgs.push("-af", `volume=${volumeMultiplier}`);
-    }
-
-    ffplayArgs.push(streamUrl);
-
-    // Store metadata for logging
-    this.currentMetadata = metadata;
-    this.isPaused = false;
-
-    // Use ffplay from ffmpeg for audio playback
-    // Use pipe for stdin so we can send pause command
-    try {
-      this.audioProcess = spawn("ffplay", ffplayArgs, {
-        stdio: ["pipe", "pipe", "pipe"],
+      this.mpvProcess = spawn("mpv", args, {
+        stdio: ["ignore", "pipe", "pipe"],
         detached: false,
       });
 
-      // Enable amplifier AFTER starting ffplay to avoid pop
-      // The audio stream takes a moment to start, so the amp enables during silence
-      if (this.gpioAvailable) {
-        setTimeout(() => {
-          if (this.audioProcess) {
-            this.setAmplifier(true);
-          }
-        }, 100); // 100ms delay - audio is buffering, amp enables during silence
-      }
-
-      this.audioProcess.on("error", (err) => {
-        console.log(`   ⚠️  ffplay error: ${err.message}`);
-        console.log(`      Install ffmpeg for audio playback`);
+      this.mpvProcess.on("error", (err) => {
+        console.error("   ⚠️  mpv error: " + err.message);
+        console.error("      Is mpv installed?");
+        reject(err);
       });
 
-      this.audioProcess.on("exit", (code) => {
-        const wasPlaying = this.audioProcess !== null;
-        const title = this.currentMetadata?.title || "Unknown";
-        this.audioProcess = null;
-        this.currentMetadata = null;
-        this.isPaused = false;
+      this.mpvProcess.on("exit", (code) => {
+        console.log("   ⚠️  mpv exited with code " + code);
+        this.mpvProcess = null;
+        this.ipcSocket = null;
+        this.isInitialized = false;
+      });
 
-        if (wasPlaying) {
-          // Amp is disabled in stop() before killing ffplay, so no delay needed here
-          if (code === 0) {
-            console.log(`\n✅ Finished playing: ${title}`);
-            // Notify all completion callbacks
-            this.completionCallbacks.forEach((cb) => cb());
-          }
+      // Wait for IPC socket to be created, then connect
+      const checkSocket = () => {
+        if (existsSync(this.ipcPath)) {
+          this.connectIpc().then(resolve).catch(reject);
+        } else {
+          setTimeout(checkSocket, 50);
         }
-      });
-    } catch (err) {
-      console.log(`   ⚠️  Failed to start ffplay`);
-      console.log(`      Install ffmpeg for audio playback`);
-      this.setAmplifier(false);
-    }
-  }
+      };
 
-  /**
-   * Stop the currently playing audio
-   * Disables amp first to avoid pop, then kills ffplay
-   */
-  stop(): void {
-    if (this.audioProcess) {
-      // Disable amp first (while audio is still "playing" silently)
-      this.setAmplifier(false);
+      // Start checking after a brief delay
+      setTimeout(checkSocket, 100);
 
-      // Small delay to let amp shutdown complete before killing audio
+      // Timeout after 5 seconds
       setTimeout(() => {
-        if (this.audioProcess) {
-          try {
-            this.audioProcess.kill("SIGKILL");
-          } catch (err) {
-            // Process might already be dead
-          }
-          this.audioProcess = null;
+        if (!this.ipcSocket) {
+          reject(new Error("Timeout waiting for mpv IPC socket"));
         }
-      }, 50);
+      }, 5000);
+    });
+  }
+
+  /**
+   * Connect to mpv IPC socket
+   */
+  private connectIpc(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.ipcSocket = createConnection(this.ipcPath);
+
+      this.ipcSocket.on("connect", () => {
+        // Observe end-file events for track completion
+        this.sendCommand(["observe_property", 1, "eof-reached"]);
+        resolve();
+      });
+
+      this.ipcSocket.on("error", (err) => {
+        console.error("   ⚠️  IPC socket error: " + err.message);
+        reject(err);
+      });
+
+      this.ipcSocket.on("data", (data) => {
+        this.handleIpcData(data);
+      });
+
+      this.ipcSocket.on("close", () => {
+        this.ipcSocket = null;
+      });
+    });
+  }
+
+  /**
+   * Handle data from mpv IPC socket
+   */
+  private handleIpcData(data: Buffer): void {
+    const lines = data.toString().trim().split("\n");
+
+    for (const line of lines) {
+      if (!line) continue;
+
+      try {
+        const response: MpvResponse = JSON.parse(line);
+
+        // Handle property change events
+        if (
+          response.event === "property-change" &&
+          response.name === "eof-reached"
+        ) {
+          if (response.data === true) {
+            this.handleTrackEnd();
+          }
+        }
+
+        // Handle end-file event (more reliable for track completion)
+        if (response.event === "end-file") {
+          if (response.reason === "eof") {
+            this.handleTrackEnd();
+          }
+        }
+
+        // Handle responses to our commands
+        if (response.request_id !== undefined) {
+          const handler = this.pendingRequests.get(response.request_id);
+          if (handler) {
+            this.pendingRequests.delete(response.request_id);
+            handler(response);
+          }
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
+  }
+
+  /**
+   * Handle track completion - log progress and notify callbacks
+   */
+  private async handleTrackEnd(): Promise<void> {
+    const position = await this.getPlaylistPosition();
+
+    // Check if playlist is complete
+    if (position < 0 || position >= this.playlist.length) {
+      const lastSong = this.playlist[this.playlist.length - 1];
+      console.log(`\n✅ Finished playing: ${lastSong?.title || "Unknown"}`);
+      console.log(`🏁 Playlist complete`);
     } else {
-      // No process running, just ensure amp is off
-      this.setAmplifier(false);
+      // mpv auto-advanced to next song
+      const song = this.playlist[position];
+      console.log(`\n⏭️  Now playing: ${song.title}`);
     }
+
+    // Notify any external callbacks
+    this.completionCallbacks.forEach((cb) => cb());
   }
 
   /**
-   * Check if audio is currently playing (not paused)
+   * Send a command to mpv and optionally wait for response
    */
-  isPlaying(): boolean {
-    return this.audioProcess !== null && !this.isPaused;
-  }
-
-  /**
-   * Pause playback (keeps position)
-   */
-  pause(): void {
-    if (this.audioProcess && !this.isPaused) {
-      // Send 'p' to ffplay stdin to toggle pause
-      try {
-        this.audioProcess.stdin?.write("p");
-        this.isPaused = true;
-      } catch (err) {
-        // Process might be dead
+  private sendCommand(
+    command: unknown[],
+    waitForResponse = false
+  ): Promise<MpvResponse | null> {
+    return new Promise((resolve, reject) => {
+      if (!this.ipcSocket) {
+        reject(new Error("IPC socket not connected"));
+        return;
       }
-    }
-  }
 
-  /**
-   * Resume playback from paused state
-   */
-  resume(): void {
-    if (this.audioProcess && this.isPaused) {
-      // Send 'p' to ffplay stdin to toggle pause (unpause)
-      try {
-        this.audioProcess.stdin?.write("p");
-        this.isPaused = false;
-      } catch (err) {
-        // Process might be dead
+      const reqId = ++this.requestId;
+      const message = JSON.stringify({ command, request_id: reqId }) + "\n";
+
+      if (waitForResponse) {
+        this.pendingRequests.set(reqId, resolve);
+        setTimeout(() => {
+          if (this.pendingRequests.has(reqId)) {
+            this.pendingRequests.delete(reqId);
+            reject(new Error("Command timeout"));
+          }
+        }, 5000);
       }
+
+      this.ipcSocket.write(message, (err) => {
+        if (err) {
+          reject(err);
+        } else if (!waitForResponse) {
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  /**
+   * Play a single song (replaces current playlist)
+   */
+  async play(song: SongInfo): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    // Store as 1-item playlist
+    this.playlist = [song];
+
+    // Load and play immediately
+    await this.sendCommand(["loadfile", song.streamUrl, "replace"]);
+
+    console.log(
+      "   🔊 Streaming: " +
+        song.title +
+        " (volume: " +
+        this.currentVolume +
+        "%)"
+    );
+  }
+
+  /**
+   * Add a song to the playlist queue
+   */
+  async queueSong(song: SongInfo): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    this.playlist.push(song);
+    await this.sendCommand(["loadfile", song.streamUrl, "append"]);
+  }
+
+  /**
+   * Clear the playlist
+   */
+  async clearPlaylist(): Promise<void> {
+    this.playlist = [];
+    if (!this.isInitialized) return;
+    await this.sendCommand(["playlist-clear"]);
+  }
+
+  /**
+   * Load a playlist of songs - first song plays immediately, rest are queued
+   */
+  async loadPlaylist(songs: SongInfo[]): Promise<void> {
+    if (songs.length === 0) return;
+
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    // Store the full playlist
+    this.playlist = [...songs];
+
+    // First song replaces current (starts playing)
+    await this.sendCommand(["loadfile", songs[0].streamUrl, "replace"]);
+
+    // Rest get appended to queue
+    for (let i = 1; i < songs.length; i++) {
+      await this.sendCommand(["loadfile", songs[i].streamUrl, "append"]);
+    }
+
+    console.log(
+      "   🔊 Loaded playlist: " +
+        songs.length +
+        " songs (volume: " +
+        this.currentVolume +
+        "%)"
+    );
+  }
+
+  /**
+   * Get current song based on mpv's playlist position
+   */
+  async getCurrentSong(): Promise<SongInfo | null> {
+    if (this.playlist.length === 0) return null;
+    const position = await this.getPlaylistPosition();
+    if (position < 0 || position >= this.playlist.length) return null;
+    return this.playlist[position];
+  }
+
+  /**
+   * Get the full playlist
+   */
+  getPlaylist(): SongInfo[] {
+    return this.playlist;
+  }
+
+  /**
+   * Get current player status
+   */
+  async getStatus(): Promise<PlayerStatus> {
+    const position = await this.getPlaylistPosition();
+    const currentSong = await this.getCurrentSong();
+
+    return {
+      currentSong,
+      isPlaying: await this.isPlaying(),
+      playlistPosition:
+        this.playlist.length > 1
+          ? `${position + 1}/${this.playlist.length}`
+          : null,
+    };
+  }
+
+  /**
+   * Get current playlist position (0-indexed)
+   */
+  async getPlaylistPosition(): Promise<number> {
+    if (!this.isInitialized) return 0;
+    try {
+      const resp = await this.sendCommand(
+        ["get_property", "playlist-pos"],
+        true
+      );
+      return (resp as { data?: number })?.data ?? 0;
+    } catch {
+      return 0;
     }
   }
 
   /**
-   * Check if audio is paused
+   * Get playlist length
    */
-  isPausedState(): boolean {
-    return this.isPaused;
+  async getPlaylistLength(): Promise<number> {
+    if (!this.isInitialized) return 0;
+    try {
+      const resp = await this.sendCommand(
+        ["get_property", "playlist-count"],
+        true
+      );
+      return (resp as { data?: number })?.data ?? 0;
+    } catch {
+      return 0;
+    }
   }
 
   /**
-   * Register a callback to be called when audio playback completes
-   * @param callback - Function to call on completion
+   * Stop playback and clear playlist
+   */
+  async stop(): Promise<void> {
+    if (!this.isInitialized) return;
+    await this.sendCommand(["stop"]);
+    this.playlist = [];
+    console.log(`   ⏹️  Stopped`);
+  }
+
+  /**
+   * Query mpv to check if audio is currently playing (not idle, not paused)
+   */
+  async isPlaying(): Promise<boolean> {
+    if (!this.isInitialized) return false;
+    try {
+      const idleResp = await this.sendCommand(
+        ["get_property", "core-idle"],
+        true
+      );
+      const pauseResp = await this.sendCommand(["get_property", "pause"], true);
+      const isIdle = (idleResp as { data?: boolean })?.data ?? true;
+      const isPaused = (pauseResp as { data?: boolean })?.data ?? false;
+      return !isIdle && !isPaused;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Pause playback (if playing)
+   */
+  async pause(): Promise<void> {
+    if (!this.isInitialized) return;
+    const playing = await this.isPlaying();
+    if (playing) {
+      await this.sendCommand(["set_property", "pause", true]);
+      console.log(`   ⏸️  Paused`);
+    }
+  }
+
+  /**
+   * Resume playback (if paused and has content)
+   */
+  async resume(): Promise<void> {
+    if (!this.isInitialized) return;
+    const playing = await this.isPlaying();
+    const currentSong = await this.getCurrentSong();
+    if (currentSong && !playing) {
+      await this.sendCommand(["set_property", "pause", false]);
+      console.log(`   ▶️  Playing: ${currentSong.title}`);
+    } else if (playing) {
+      console.log(`   ⚠️  Already playing`);
+    } else {
+      console.log(`   ⚠️  No song to play`);
+    }
+  }
+
+  /**
+   * Toggle between play and pause
+   */
+  async togglePlayPause(): Promise<void> {
+    if (!this.isInitialized) return;
+    const playing = await this.isPlaying();
+    if (playing) {
+      await this.pause();
+    } else {
+      await this.resume();
+    }
+  }
+
+  /**
+   * Query mpv to check if paused
+   */
+  async isPausedState(): Promise<boolean> {
+    if (!this.isInitialized) return false;
+    try {
+      const resp = await this.sendCommand(["get_property", "pause"], true);
+      return (resp as { data?: boolean })?.data ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Skip to next track in playlist
+   */
+  async next(): Promise<void> {
+    if (!this.isInitialized) return;
+    if (this.playlist.length > 1) {
+      await this.sendCommand(["playlist-next"]);
+      const song = await this.getCurrentSong();
+      if (song) console.log(`   ⏭️  Next: ${song.title}`);
+    } else {
+      console.log(`   ⚠️  No playlist loaded`);
+    }
+  }
+
+  /**
+   * Go to previous track in playlist
+   */
+  async previous(): Promise<void> {
+    if (!this.isInitialized) return;
+    if (this.playlist.length > 1) {
+      await this.sendCommand(["playlist-prev"]);
+      const song = await this.getCurrentSong();
+      if (song) console.log(`   ⏮️  Previous: ${song.title}`);
+    } else {
+      console.log(`   ⚠️  No playlist loaded`);
+    }
+  }
+
+  /**
+   * Register completion callback
    */
   onComplete(callback: CompletionCallback): void {
     this.completionCallbacks.push(callback);
   }
 
   /**
-   * Set volume level - applies immediately to current and future playback
-   * @param percent - Volume level 0-100
+   * Set volume via mpv
    */
-  setVolume(percent: number): void {
-    // Clamp to 0-100
+  private async setMpvVolume(percent: number): Promise<void> {
+    if (!this.isInitialized) return;
+    await this.sendCommand(["set_property", "volume", percent]);
+  }
+
+  /**
+   * Set volume level
+   */
+  async setVolume(percent: number): Promise<void> {
     percent = Math.max(0, Math.min(100, percent));
     this.currentVolume = percent;
 
-    if (this.volumeAvailable) {
-      this.tryAmixerVolume(percent);
+    if (this.isInitialized) {
+      await this.setMpvVolume(percent);
+      console.log("🔊 Volume: " + percent + "%");
     }
   }
 
   /**
-   * Try setting volume via ALSA amixer
-   */
-  private tryAmixerVolume(percent: number, silent = false): void {
-    // softvol "Master" control is created on first audio playback
-    // Try known control names
-    const controls = ["Master", "PCM", "Speaker", "Headphone"];
-
-    for (const control of controls) {
-      try {
-        execSync(`amixer -q sset ${control} ${percent}%`, { stdio: "pipe" });
-        if (!silent) {
-          console.log(`🔊 Volume: ${percent}%`);
-        }
-        return;
-      } catch {}
-    }
-    // Only log failure if not in silent mode (initial setup before audio plays)
-    if (!silent) {
-      console.log(`⚠️  ALSA volume control failed`);
-    }
-  }
-
-  /**
-   * Get current volume level
-   * @returns Volume percentage 0-100
+   * Get current volume
    */
   getVolume(): number {
     return this.currentVolume;
   }
 
   /**
-   * Increase volume by amount
-   * @param amount - Amount to increase (default: 10)
+   * Increase volume
    */
-  volumeUp(amount: number = 10): void {
-    this.setVolume(this.currentVolume + amount);
+  async volumeUp(amount: number = 10): Promise<void> {
+    await this.setVolume(this.currentVolume + amount);
   }
 
   /**
-   * Decrease volume by amount
-   * @param amount - Amount to decrease (default: 10)
+   * Decrease volume
    */
-  volumeDown(amount: number = 10): void {
-    this.setVolume(this.currentVolume - amount);
+  async volumeDown(amount: number = 10): Promise<void> {
+    await this.setVolume(this.currentVolume - amount);
   }
 
-  /**
-   * Play a quick confirmation beep when a card is recognized
-   * Short and distinct so user knows the card was read
-   */
-  async playCardBeep(): Promise<void> {
-    // Don't interrupt current playback
-    if (this.audioProcess) return;
-
-    try {
-      // Quick double-beep: high-pitched, short
-      // Start first tone (silent until amp enables)
-      const tonePromise = this.playTone(880, 80); // A5
-
-      // Enable amp after tiny delay (tone is already generating)
-      await this.sleep(20);
-      this.setAmplifier(true);
-
-      await tonePromise;
-      await this.sleep(50);
-      await this.playTone(1100, 80); // C#6
-
-      // Disable amp before tone fully ends
-      await this.sleep(30);
-    } catch (err) {
-      // Beep failed, not critical
-    }
-
-    if (!this.audioProcess) {
-      this.setAmplifier(false);
-    }
-  }
+  // ========================================================================
+  // BEEPS & CHIMES - Use speaker-test so they can overlay with music
+  // ========================================================================
 
   /**
-   * Play an error beep when something goes wrong
-   */
-  async playErrorBeep(): Promise<void> {
-    // Don't interrupt current playback
-    if (this.audioProcess) return;
-
-    try {
-      // Low descending tone indicates error
-      // Start first tone (silent until amp enables)
-      const tonePromise = this.playTone(400, 150);
-
-      // Enable amp after tiny delay
-      await this.sleep(20);
-      this.setAmplifier(true);
-
-      await tonePromise;
-      await this.sleep(50);
-      await this.playTone(300, 200);
-
-      await this.sleep(30);
-    } catch (err) {
-      // Beep failed, not critical
-    }
-
-    if (!this.audioProcess) {
-      this.setAmplifier(false);
-    }
-  }
-
-  /**
-   * Play a startup chime to indicate the player is ready
-   * Uses speaker-test to generate a pleasant ascending arpeggio
-   */
-  async playStartupChime(): Promise<void> {
-    // C major arpeggio: C5, E5, G5, C6 (ascending, cheerful)
-    const notes = [
-      { freq: 523, duration: 120 }, // C5
-      { freq: 659, duration: 120 }, // E5
-      { freq: 784, duration: 120 }, // G5
-      { freq: 1047, duration: 200 }, // C6 (hold longer)
-    ];
-
-    try {
-      // Start first tone (silent until amp enables)
-      const firstTone = this.playTone(notes[0].freq, notes[0].duration);
-
-      // Enable amp after tiny delay
-      await this.sleep(20);
-      this.setAmplifier(true);
-
-      await firstTone;
-      await this.sleep(30);
-
-      // Play remaining notes
-      for (let i = 1; i < notes.length; i++) {
-        await this.playTone(notes[i].freq, notes[i].duration);
-        await this.sleep(30);
-      }
-
-      // After first audio plays, softvol control exists - set the actual volume
-      this.setVolume(this.currentVolume);
-    } catch (err) {
-      // Chime failed, not critical
-      console.log(`   ⚠️  Startup chime failed`);
-    }
-
-    // Disable amplifier after chime (unless something else is playing)
-    if (!this.isPlaying()) {
-      this.setAmplifier(false);
-    }
-  }
-
-  /**
-   * Play a single tone using speaker-test
+   * Play a single tone using speaker-test (overlays with mpv audio)
    */
   private playTone(frequency: number, durationMs: number): Promise<void> {
     return new Promise((resolve) => {
@@ -492,7 +591,96 @@ export class AudioEngine {
   }
 
   /**
-   * Simple sleep helper
+   * Play startup chime (can overlay if something is playing)
+   * C major arpeggio: C5, E5, G5, C6
+   */
+  async playStartupChime(): Promise<void> {
+    // Initialize mpv in the background
+    this.initialize().catch(() => {
+      console.log("   ⚠️  mpv initialization failed");
+    });
+
+    const notes = [
+      { freq: 523, duration: 120 }, // C5
+      { freq: 659, duration: 120 }, // E5
+      { freq: 784, duration: 120 }, // G5
+      { freq: 1047, duration: 200 }, // C6 (hold longer)
+    ];
+
+    try {
+      for (const note of notes) {
+        await this.playTone(note.freq, note.duration);
+        await this.sleep(30);
+      }
+    } catch {
+      console.log("   ⚠️  Startup chime failed");
+    }
+  }
+
+  /**
+   * Play card recognition beep (can overlay with music)
+   * Quick double-beep: high-pitched, short
+   */
+  async playCardBeep(): Promise<void> {
+    try {
+      await this.playTone(880, 80); // A5
+      await this.sleep(50);
+      await this.playTone(1100, 80); // C#6
+    } catch {
+      // Beep failed, not critical
+    }
+  }
+
+  /**
+   * Play error beep (can overlay with music)
+   * Low descending tone indicates error
+   */
+  async playErrorBeep(): Promise<void> {
+    try {
+      await this.playTone(400, 150);
+      await this.sleep(50);
+      await this.playTone(300, 200);
+    } catch {
+      // Beep failed, not critical
+    }
+  }
+
+  // ========================================================================
+  // CLEANUP
+  // ========================================================================
+
+  /**
+   * Shutdown mpv and cleanup
+   */
+  async shutdown(): Promise<void> {
+    if (this.ipcSocket) {
+      try {
+        await this.sendCommand(["quit"]);
+      } catch {
+        // Ignore
+      }
+      this.ipcSocket.destroy();
+      this.ipcSocket = null;
+    }
+
+    if (this.mpvProcess) {
+      this.mpvProcess.kill("SIGTERM");
+      this.mpvProcess = null;
+    }
+
+    if (existsSync(this.ipcPath)) {
+      try {
+        unlinkSync(this.ipcPath);
+      } catch {
+        // Ignore
+      }
+    }
+
+    this.isInitialized = false;
+  }
+
+  /**
+   * Sleep helper
    */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

@@ -29,7 +29,7 @@ pkgs.stdenv.mkDerivation rec {
   # Runtime dependencies
   buildInputs = [
     pkgs.nodejs_22  # Node.js runtime
-    pkgs.ffmpeg     # Provides ffplay for audio playback
+    pkgs.mpv        # mpv for audio playback with IPC control
   ];
 
   installPhase = ''

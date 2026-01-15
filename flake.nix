@@ -33,7 +33,7 @@
         
         # Player-specific dependencies
         playerDeps = with pkgs; [
-          mpg123
+          mpv       # Audio playback with IPC control
         ];
         
         # Player package

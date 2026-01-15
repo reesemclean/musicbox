@@ -80,8 +80,8 @@ export class KeyboardTrigger implements Trigger {
     }
   }
 
-  private printStatus(): void {
-    const status = this.playerCore?.getStatus();
+  private async printStatus(): Promise<void> {
+    const status = await this.playerCore?.getStatus();
     if (!status) return;
 
     console.log("\n" + "═".repeat(60));
