@@ -1,9 +1,359 @@
 #!/usr/bin/env node
 
 // src/audio/AudioEngine.ts
-import { spawn } from "child_process";
-import { existsSync, unlinkSync } from "fs";
+import { spawn as spawn2 } from "child_process";
+import { existsSync as existsSync3, unlinkSync as unlinkSync2 } from "fs";
 import { createConnection } from "net";
+
+// src/audio/ToneGenerator.ts
+import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { spawn } from "child_process";
+var SAMPLE_RATE = 44100;
+var FADE_MS = 10;
+var TONE_DIR = "/tmp/musicbox-tones";
+var ToneGenerator = class {
+  tones = /* @__PURE__ */ new Map();
+  // name -> file path
+  initialized = false;
+  /**
+   * Generate all tone WAV files
+   */
+  async initialize() {
+    if (this.initialized) return;
+    if (!existsSync(TONE_DIR)) {
+      mkdirSync(TONE_DIR, { recursive: true });
+    }
+    const toneSpecs = [
+      {
+        name: "startup",
+        // C major arpeggio: C5, E5, G5, C6
+        frequencies: [523, 659, 784, 1047],
+        durations: [120, 120, 120, 200],
+        gaps: [30, 30, 30, 0],
+        volume: 0.1
+      },
+      {
+        name: "card",
+        // Quick double-beep: A5, C#6
+        frequencies: [880, 1100],
+        durations: [80, 80],
+        gaps: [50, 0],
+        volume: 0.1
+      },
+      {
+        name: "error",
+        // Low descending: ~400Hz, ~300Hz
+        frequencies: [400, 300],
+        durations: [150, 200],
+        gaps: [50, 0],
+        volume: 0.1
+      }
+    ];
+    for (const spec of toneSpecs) {
+      const filePath = `${TONE_DIR}/${spec.name}.wav`;
+      this.generateToneSequence(spec, filePath);
+      this.tones.set(spec.name, filePath);
+    }
+    this.initialized = true;
+    console.log("   \u{1F514} Tone files generated");
+  }
+  /**
+   * Generate a WAV file with a sequence of tones
+   */
+  generateToneSequence(spec, filePath) {
+    const samples = [];
+    for (let i = 0; i < spec.frequencies.length; i++) {
+      const freq = spec.frequencies[i];
+      const durationMs = spec.durations[i];
+      const gapMs = spec.gaps[i];
+      const toneSamples = this.generateTone(freq, durationMs, spec.volume);
+      samples.push(...toneSamples);
+      if (gapMs > 0) {
+        const gapSamples = Math.floor(gapMs / 1e3 * SAMPLE_RATE);
+        for (let j = 0; j < gapSamples; j++) {
+          samples.push(0);
+        }
+      }
+    }
+    this.writeWav(filePath, samples);
+  }
+  /**
+   * Generate a single tone with fade envelope
+   */
+  generateTone(frequency, durationMs, volume) {
+    const numSamples = Math.floor(durationMs / 1e3 * SAMPLE_RATE);
+    const fadeSamples = Math.floor(FADE_MS / 1e3 * SAMPLE_RATE);
+    const samples = [];
+    for (let i = 0; i < numSamples; i++) {
+      const t = i / SAMPLE_RATE;
+      let sample = Math.sin(2 * Math.PI * frequency * t) * volume;
+      if (i < fadeSamples) {
+        sample *= i / fadeSamples;
+      } else if (i > numSamples - fadeSamples) {
+        sample *= (numSamples - i) / fadeSamples;
+      }
+      samples.push(sample);
+    }
+    return samples;
+  }
+  /**
+   * Write samples to a WAV file (16-bit mono)
+   */
+  writeWav(filePath, samples) {
+    const numSamples = samples.length;
+    const byteRate = SAMPLE_RATE * 2;
+    const dataSize = numSamples * 2;
+    const fileSize = 36 + dataSize;
+    const buffer = Buffer.alloc(44 + dataSize);
+    let offset = 0;
+    buffer.write("RIFF", offset);
+    offset += 4;
+    buffer.writeUInt32LE(fileSize, offset);
+    offset += 4;
+    buffer.write("WAVE", offset);
+    offset += 4;
+    buffer.write("fmt ", offset);
+    offset += 4;
+    buffer.writeUInt32LE(16, offset);
+    offset += 4;
+    buffer.writeUInt16LE(1, offset);
+    offset += 2;
+    buffer.writeUInt16LE(1, offset);
+    offset += 2;
+    buffer.writeUInt32LE(SAMPLE_RATE, offset);
+    offset += 4;
+    buffer.writeUInt32LE(byteRate, offset);
+    offset += 4;
+    buffer.writeUInt16LE(2, offset);
+    offset += 2;
+    buffer.writeUInt16LE(16, offset);
+    offset += 2;
+    buffer.write("data", offset);
+    offset += 4;
+    buffer.writeUInt32LE(dataSize, offset);
+    offset += 4;
+    for (const sample of samples) {
+      const intSample = Math.max(-32768, Math.min(32767, Math.floor(sample * 32767)));
+      buffer.writeInt16LE(intSample, offset);
+      offset += 2;
+    }
+    writeFileSync(filePath, buffer);
+  }
+  /**
+   * Play a pre-generated tone using aplay
+   */
+  play(name) {
+    const filePath = this.tones.get(name);
+    if (!filePath) {
+      console.log(`   \u26A0\uFE0F  Unknown tone: ${name}`);
+      return;
+    }
+    const proc = spawn("aplay", ["-q", filePath], { stdio: "ignore" });
+    proc.on("error", () => {
+    });
+  }
+  /**
+   * Play startup chime
+   */
+  playStartup() {
+    this.play("startup");
+  }
+  /**
+   * Play card recognition beep
+   */
+  playCard() {
+    this.play("card");
+  }
+  /**
+   * Play error beep
+   */
+  playError() {
+    this.play("error");
+  }
+};
+
+// src/audio/AudioCache.ts
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, createWriteStream, unlinkSync, readdirSync, statSync } from "fs";
+import { join } from "path";
+import { pipeline } from "stream/promises";
+import { Readable } from "stream";
+var CACHE_DIR = "/var/cache/musicbox";
+var MAX_CACHE_SIZE_MB = 5e3;
+var AudioCache = class {
+  cache = /* @__PURE__ */ new Map();
+  initialized = false;
+  /**
+   * Initialize the cache directory
+   */
+  async initialize() {
+    if (this.initialized) return;
+    if (!existsSync2(CACHE_DIR)) {
+      try {
+        mkdirSync2(CACHE_DIR, { recursive: true });
+      } catch (err) {
+        console.log(`   \u26A0\uFE0F  Could not create cache directory: ${err}`);
+        return;
+      }
+    }
+    try {
+      const files = readdirSync(CACHE_DIR);
+      for (const file of files) {
+        if (file.endsWith(".mp3") || file.endsWith(".m4a") || file.endsWith(".opus")) {
+          const songId = parseInt(file.split(".")[0], 10);
+          if (!isNaN(songId)) {
+            this.cache.set(songId, {
+              songId,
+              filePath: join(CACHE_DIR, file),
+              downloading: false
+            });
+          }
+        }
+      }
+      console.log(`   \u{1F4BE} Audio cache initialized (${this.cache.size} songs cached)`);
+    } catch (err) {
+      console.log(`   \u26A0\uFE0F  Could not scan cache directory: ${err}`);
+    }
+    this.initialized = true;
+  }
+  /**
+   * Get the local path for a song, downloading if necessary
+   * @param songId - The song's database ID
+   * @param streamUrl - The URL to download from
+   * @returns Local file path, or null if download failed
+   */
+  async getLocalPath(songId, streamUrl) {
+    await this.initialize();
+    const entry = this.cache.get(songId);
+    if (entry && !entry.downloading && existsSync2(entry.filePath)) {
+      return entry.filePath;
+    }
+    if (entry?.downloading && entry.downloadPromise) {
+      return entry.downloadPromise;
+    }
+    return this.download(songId, streamUrl);
+  }
+  /**
+   * Check if a song is cached (without downloading)
+   */
+  isCached(songId) {
+    const entry = this.cache.get(songId);
+    return !!entry && !entry.downloading && existsSync2(entry.filePath);
+  }
+  /**
+   * Get the cached file path for a song (sync - returns null if not cached)
+   */
+  getCachedPath(songId) {
+    const entry = this.cache.get(songId);
+    if (entry && !entry.downloading && existsSync2(entry.filePath)) {
+      return entry.filePath;
+    }
+    return null;
+  }
+  /**
+   * Prefetch songs in the background
+   * @param songs - Array of {songId, streamUrl} to prefetch
+   */
+  prefetch(songs) {
+    for (const song of songs) {
+      if (!this.isCached(song.songId)) {
+        this.download(song.songId, song.streamUrl).catch(() => {
+        });
+      }
+    }
+  }
+  /**
+   * Download a song to the cache
+   */
+  async download(songId, streamUrl) {
+    let ext = ".opus";
+    if (streamUrl.includes(".mp3")) ext = ".mp3";
+    else if (streamUrl.includes(".m4a")) ext = ".m4a";
+    const filePath = join(CACHE_DIR, `${songId}${ext}`);
+    const entry = {
+      songId,
+      filePath,
+      downloading: true
+    };
+    const downloadPromise = this.doDownload(songId, streamUrl, filePath, entry);
+    entry.downloadPromise = downloadPromise;
+    this.cache.set(songId, entry);
+    return downloadPromise;
+  }
+  /**
+   * Perform the actual download
+   */
+  async doDownload(songId, streamUrl, filePath, entry) {
+    const tempPath = `${filePath}.tmp`;
+    try {
+      console.log(`   \u{1F4E5} Caching song ${songId}...`);
+      const response = await fetch(streamUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      if (!response.body) {
+        throw new Error("No response body");
+      }
+      const writeStream = createWriteStream(tempPath);
+      await pipeline(Readable.fromWeb(response.body), writeStream);
+      const { renameSync } = await import("fs");
+      renameSync(tempPath, filePath);
+      entry.downloading = false;
+      entry.downloadPromise = void 0;
+      console.log(`   \u2705 Cached song ${songId}`);
+      this.cleanup().catch(() => {
+      });
+      return filePath;
+    } catch (err) {
+      try {
+        if (existsSync2(tempPath)) unlinkSync(tempPath);
+      } catch {
+      }
+      entry.downloading = false;
+      entry.downloadPromise = void 0;
+      this.cache.delete(songId);
+      console.log(`   \u26A0\uFE0F  Failed to cache song ${songId}: ${err}`);
+      return null;
+    }
+  }
+  /**
+   * Clean up old cache entries if over size limit
+   */
+  async cleanup() {
+    if (!this.initialized) return;
+    try {
+      const files = readdirSync(CACHE_DIR);
+      let totalSize = 0;
+      const fileStats = [];
+      for (const file of files) {
+        const path = join(CACHE_DIR, file);
+        const stat = statSync(path);
+        totalSize += stat.size;
+        fileStats.push({ file, path, size: stat.size, mtime: stat.mtimeMs });
+      }
+      const maxBytes = MAX_CACHE_SIZE_MB * 1024 * 1024;
+      if (totalSize > maxBytes) {
+        fileStats.sort((a, b) => a.mtime - b.mtime);
+        for (const entry of fileStats) {
+          if (totalSize <= maxBytes * 0.8) break;
+          try {
+            unlinkSync(entry.path);
+            totalSize -= entry.size;
+            const songId = parseInt(entry.file.split(".")[0], 10);
+            if (!isNaN(songId)) {
+              this.cache.delete(songId);
+            }
+          } catch {
+          }
+        }
+        console.log(`   \u{1F9F9} Cache cleanup complete`);
+      }
+    } catch (err) {
+      console.log(`   \u26A0\uFE0F  Cache cleanup failed: ${err}`);
+    }
+  }
+};
+
+// src/audio/AudioEngine.ts
 var AudioEngine = class {
   mpvProcess = null;
   ipcSocket = null;
@@ -14,6 +364,8 @@ var AudioEngine = class {
   isInitialized = false;
   requestId = 0;
   pendingRequests = /* @__PURE__ */ new Map();
+  toneGenerator = new ToneGenerator();
+  audioCache = new AudioCache();
   /** Playlist metadata - mirrors what's loaded in mpv */
   playlist = [];
   constructor() {
@@ -24,9 +376,9 @@ var AudioEngine = class {
    */
   async initialize() {
     if (this.isInitialized) return;
-    if (existsSync(this.ipcPath)) {
+    if (existsSync3(this.ipcPath)) {
       try {
-        unlinkSync(this.ipcPath);
+        unlinkSync2(this.ipcPath);
       } catch {
       }
     }
@@ -59,10 +411,10 @@ var AudioEngine = class {
         // Prefetch next track
         "--audio-buffer=0.2",
         // 200ms buffer (reasonable for streaming)
-        "--af=afade=t=in:st=0:d=0.1"
-        // 100ms fade-in on all audio
+        "--audio-stream-silence=yes"
+        // Keep audio stream open with silence to prevent I2S DAC pops
       ];
-      this.mpvProcess = spawn("mpv", args, {
+      this.mpvProcess = spawn2("mpv", args, {
         stdio: ["ignore", "pipe", "pipe"],
         detached: false
       });
@@ -78,7 +430,7 @@ var AudioEngine = class {
         this.isInitialized = false;
       });
       const checkSocket = () => {
-        if (existsSync(this.ipcPath)) {
+        if (existsSync3(this.ipcPath)) {
           this.connectIpc().then(resolve).catch(reject);
         } else {
           setTimeout(checkSocket, 50);
@@ -191,16 +543,35 @@ var AudioEngine = class {
     });
   }
   /**
+   * Get the playback URL for a song - uses cache if available, otherwise streams
+   * and triggers background caching for next time
+   */
+  getPlaybackUrl(song) {
+    if (this.audioCache.isCached(song.id)) {
+      const cachedPath = this.audioCache.getCachedPath(song.id);
+      if (cachedPath) {
+        return { url: cachedPath, cached: true };
+      }
+    }
+    this.audioCache.prefetch([{ songId: song.id, streamUrl: song.streamUrl }]);
+    return { url: song.streamUrl, cached: false };
+  }
+  /**
    * Play a single song (replaces current playlist)
    */
   async play(song) {
     if (!this.isInitialized) {
       await this.initialize();
     }
+    if (await this.isPlaying()) {
+      await this.fadeVolume(this.currentVolume, 0, 50);
+    }
     this.playlist = [song];
-    await this.sendCommand(["loadfile", song.streamUrl, "replace"]);
+    const { url, cached } = this.getPlaybackUrl(song);
+    await this.sendCommand(["loadfile", url, "replace"]);
+    await this.fadeVolume(0, this.currentVolume, 50);
     console.log(
-      "   \u{1F50A} Streaming: " + song.title + " (volume: " + this.currentVolume + "%)"
+      `   \u{1F50A} ${cached ? "Playing" : "Streaming"}: ${song.title} (volume: ${this.currentVolume}%)`
     );
   }
   /**
@@ -211,7 +582,8 @@ var AudioEngine = class {
       await this.initialize();
     }
     this.playlist.push(song);
-    await this.sendCommand(["loadfile", song.streamUrl, "append"]);
+    const { url } = this.getPlaybackUrl(song);
+    await this.sendCommand(["loadfile", url, "append"]);
   }
   /**
    * Clear the playlist
@@ -229,13 +601,21 @@ var AudioEngine = class {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    this.playlist = [...songs];
-    await this.sendCommand(["loadfile", songs[0].streamUrl, "replace"]);
-    for (let i = 1; i < songs.length; i++) {
-      await this.sendCommand(["loadfile", songs[i].streamUrl, "append"]);
+    if (await this.isPlaying()) {
+      await this.fadeVolume(this.currentVolume, 0, 50);
     }
+    this.playlist = [...songs];
+    const { url: firstUrl, cached: firstCached } = this.getPlaybackUrl(songs[0]);
+    await this.sendCommand(["loadfile", firstUrl, "replace"]);
+    const toPrefetch = songs.map((s) => ({ songId: s.id, streamUrl: s.streamUrl }));
+    this.audioCache.prefetch(toPrefetch);
+    for (let i = 1; i < songs.length; i++) {
+      const { url } = this.getPlaybackUrl(songs[i]);
+      await this.sendCommand(["loadfile", url, "append"]);
+    }
+    await this.fadeVolume(0, this.currentVolume, 50);
     console.log(
-      "   \u{1F50A} Loaded playlist: " + songs.length + " songs (volume: " + this.currentVolume + "%)"
+      `   \u{1F50A} Loaded playlist: ${songs.length} songs ${firstCached ? "(cached)" : "(streaming)"} (volume: ${this.currentVolume}%)`
     );
   }
   /**
@@ -300,7 +680,11 @@ var AudioEngine = class {
    */
   async stop() {
     if (!this.isInitialized) return;
+    if (await this.isPlaying()) {
+      await this.fadeVolume(this.currentVolume, 0, 50);
+    }
     await this.sendCommand(["stop"]);
+    await this.sendCommand(["set_property", "volume", this.currentVolume]);
     this.playlist = [];
     console.log(`   \u23F9\uFE0F  Stopped`);
   }
@@ -310,11 +694,10 @@ var AudioEngine = class {
   async isPlaying() {
     if (!this.isInitialized) return false;
     try {
-      const idleResp = await this.sendCommand(
-        ["get_property", "core-idle"],
-        true
-      );
-      const pauseResp = await this.sendCommand(["get_property", "pause"], true);
+      const [idleResp, pauseResp] = await Promise.all([
+        this.sendCommand(["get_property", "core-idle"], true),
+        this.sendCommand(["get_property", "pause"], true)
+      ]);
       const isIdle = idleResp?.data ?? true;
       const isPaused = pauseResp?.data ?? false;
       return !isIdle && !isPaused;
@@ -323,30 +706,75 @@ var AudioEngine = class {
     }
   }
   /**
-   * Pause playback (if playing)
+   * Fade volume for smooth transitions (prevents I2S DAC pops)
+   */
+  async fadeVolume(fromPercent, toPercent, durationMs) {
+    const steps = 10;
+    const stepDuration = durationMs / steps;
+    const volumeStep = (toPercent - fromPercent) / steps;
+    for (let i = 1; i <= steps; i++) {
+      const volume = fromPercent + volumeStep * i;
+      await this.sendCommand(["set_property", "volume", volume]);
+      await new Promise((resolve) => setTimeout(resolve, stepDuration));
+    }
+  }
+  /**
+   * Pause playback (if playing) with fade-out to prevent DAC pops
    */
   async pause() {
     if (!this.isInitialized) return;
     const playing = await this.isPlaying();
     if (playing) {
-      await this.sendCommand(["set_property", "pause", true]);
-      console.log(`   \u23F8\uFE0F  Paused`);
+      await this.doPause();
     }
   }
   /**
-   * Resume playback (if paused and has content)
+   * Internal pause - assumes caller already checked state
+   */
+  async doPause() {
+    await this.fadeVolume(this.currentVolume, 0, 100);
+    await this.sendCommand(["set_property", "pause", true]);
+    console.log(`   \u23F8\uFE0F  Paused`);
+  }
+  /**
+   * Resume playback (if paused and has content) with fade-in
    */
   async resume() {
     if (!this.isInitialized) return;
     const playing = await this.isPlaying();
     const currentSong = await this.getCurrentSong();
     if (currentSong && !playing) {
-      await this.sendCommand(["set_property", "pause", false]);
-      console.log(`   \u25B6\uFE0F  Playing: ${currentSong.title}`);
+      await this.doResume(currentSong.title);
     } else if (playing) {
       console.log(`   \u26A0\uFE0F  Already playing`);
     } else {
       console.log(`   \u26A0\uFE0F  No song to play`);
+    }
+  }
+  /**
+   * Internal resume - assumes caller already checked state
+   */
+  async doResume(songTitle) {
+    await this.sendCommand(["set_property", "volume", 0]);
+    await this.sendCommand(["set_property", "pause", false]);
+    await this.fadeVolume(0, this.currentVolume, 100);
+    console.log(`   \u25B6\uFE0F  Playing: ${songTitle}`);
+  }
+  /**
+   * Toggle between play and pause
+   */
+  async togglePlayPause() {
+    if (!this.isInitialized) return;
+    const playing = await this.isPlaying();
+    if (playing) {
+      await this.doPause();
+    } else {
+      const currentSong = await this.getCurrentSong();
+      if (currentSong) {
+        await this.doResume(currentSong.title);
+      } else {
+        console.log(`   \u26A0\uFE0F  No song to play`);
+      }
     }
   }
   /**
@@ -430,76 +858,32 @@ var AudioEngine = class {
     await this.setVolume(this.currentVolume - amount);
   }
   // ========================================================================
-  // BEEPS & CHIMES - Use speaker-test so they can overlay with music
+  // BEEPS & CHIMES - Pre-generated WAVs played via aplay through ALSA dmix
   // ========================================================================
   /**
-   * Play a single tone using speaker-test (overlays with mpv audio)
-   */
-  playTone(frequency, durationMs) {
-    return new Promise((resolve) => {
-      const proc = spawn(
-        "speaker-test",
-        ["-t", "sine", "-f", frequency.toString(), "-c", "2", "-l", "1"],
-        { stdio: "ignore" }
-      );
-      setTimeout(() => {
-        proc.kill("SIGTERM");
-        resolve();
-      }, durationMs);
-      proc.on("exit", () => resolve());
-      proc.on("error", () => resolve());
-    });
-  }
-  /**
-   * Play startup chime (can overlay if something is playing)
-   * C major arpeggio: C5, E5, G5, C6
+   * Play startup chime
+   * Initializes mpv first (opens audio stream with silence), then plays chime
    */
   async playStartupChime() {
-    this.initialize().catch(() => {
-      console.log("   \u26A0\uFE0F  mpv initialization failed");
-    });
-    const notes = [
-      { freq: 523, duration: 120 },
-      // C5
-      { freq: 659, duration: 120 },
-      // E5
-      { freq: 784, duration: 120 },
-      // G5
-      { freq: 1047, duration: 200 }
-      // C6 (hold longer)
-    ];
     try {
-      for (const note of notes) {
-        await this.playTone(note.freq, note.duration);
-        await this.sleep(30);
-      }
+      await this.initialize();
     } catch {
-      console.log("   \u26A0\uFE0F  Startup chime failed");
+      console.log("   \u26A0\uFE0F  mpv initialization failed");
     }
+    await this.toneGenerator.initialize();
+    this.toneGenerator.playStartup();
   }
   /**
    * Play card recognition beep (can overlay with music)
-   * Quick double-beep: high-pitched, short
    */
-  async playCardBeep() {
-    try {
-      await this.playTone(880, 80);
-      await this.sleep(50);
-      await this.playTone(1100, 80);
-    } catch {
-    }
+  playCardBeep() {
+    this.toneGenerator.playCard();
   }
   /**
    * Play error beep (can overlay with music)
-   * Low descending tone indicates error
    */
-  async playErrorBeep() {
-    try {
-      await this.playTone(400, 150);
-      await this.sleep(50);
-      await this.playTone(300, 200);
-    } catch {
-    }
+  playErrorBeep() {
+    this.toneGenerator.playError();
   }
   // ========================================================================
   // CLEANUP
@@ -520,19 +904,13 @@ var AudioEngine = class {
       this.mpvProcess.kill("SIGTERM");
       this.mpvProcess = null;
     }
-    if (existsSync(this.ipcPath)) {
+    if (existsSync3(this.ipcPath)) {
       try {
-        unlinkSync(this.ipcPath);
+        unlinkSync2(this.ipcPath);
       } catch {
       }
     }
     this.isInitialized = false;
-  }
-  /**
-   * Sleep helper
-   */
-  sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 };
 
@@ -639,6 +1017,9 @@ var PlayerCore = class {
   }
   pause() {
     return this.audioEngine.pause();
+  }
+  togglePlayPause() {
+    return this.audioEngine.togglePlayPause();
   }
   next() {
     return this.audioEngine.next();
@@ -987,7 +1368,7 @@ var HTTPTrigger = class {
 
 // src/triggers/NFCReaderTrigger.ts
 import { execSync } from "child_process";
-import { existsSync as existsSync2 } from "fs";
+import { existsSync as existsSync4 } from "fs";
 var PN532_I2C_ADDRESS = 36;
 var PN532_COMMAND_GETFIRMWAREVERSION = 2;
 var PN532_COMMAND_SAMCONFIGURATION = 20;
@@ -1012,7 +1393,7 @@ var NFCReaderTrigger = class {
     this.playerCore = playerCore;
     this.running = true;
     const i2cPath = `/dev/i2c-${this.i2cBus}`;
-    if (!existsSync2(i2cPath)) {
+    if (!existsSync4(i2cPath)) {
       console.log(`\u26A0\uFE0F  NFC Reader: I2C bus not found (${i2cPath})`);
       console.log(`   Ensure I2C is enabled in NixOS configuration`);
       return;
@@ -1262,8 +1643,8 @@ var NFCReaderTrigger = class {
 };
 
 // src/triggers/ButtonTrigger.ts
-import { spawn as spawn2, execSync as execSync2 } from "child_process";
-import { existsSync as existsSync3 } from "fs";
+import { spawn as spawn3, execSync as execSync2 } from "child_process";
+import { existsSync as existsSync5 } from "fs";
 var ButtonTrigger = class {
   name = "buttons";
   playerCore;
@@ -1288,7 +1669,7 @@ var ButtonTrigger = class {
   // Default GPIO chip
   async start(playerCore) {
     this.playerCore = playerCore;
-    if (!existsSync3(`/dev/${this.gpiochip}`)) {
+    if (!existsSync5(`/dev/${this.gpiochip}`)) {
       console.log(
         `\u26A0\uFE0F  GPIO chip not found (/dev/${this.gpiochip}) - button trigger disabled`
       );
@@ -1308,7 +1689,7 @@ var ButtonTrigger = class {
     }
     const pinArgs = this.buttons.map((b) => String(b.pin));
     try {
-      this.monitorProcess = spawn2(
+      this.monitorProcess = spawn3(
         "gpiomon",
         [
           "-c",
@@ -1434,12 +1815,7 @@ var ButtonTrigger = class {
     if (!this.playerCore) return;
     switch (action) {
       case "play-pause":
-        const status = await this.playerCore.getStatus();
-        if (status.isPlaying) {
-          await this.playerCore.pause();
-        } else {
-          await this.playerCore.play();
-        }
+        await this.playerCore.togglePlayPause();
         break;
       case "volume-up":
         this.playerCore.volumeUp();
@@ -1584,8 +1960,8 @@ var HeartbeatService = class {
 };
 
 // src/config/PlayerConfig.ts
-import { readFileSync, existsSync as existsSync4 } from "fs";
-import { join } from "path";
+import { readFileSync, existsSync as existsSync6 } from "fs";
+import { join as join2 } from "path";
 function loadConfig() {
   const configPaths = [
     "./player.config.json",
@@ -1593,10 +1969,10 @@ function loadConfig() {
     // NixOS location (runtime)
     "/etc/musicbox/player.config.json",
     // NixOS location (legacy)
-    join(process.cwd(), "player.config.json")
+    join2(process.cwd(), "player.config.json")
   ];
   for (const configPath of configPaths) {
-    if (existsSync4(configPath)) {
+    if (existsSync6(configPath)) {
       console.log(`\u{1F4C4} Loading config from: ${configPath}`);
       const fileConfig = JSON.parse(readFileSync(configPath, "utf-8"));
       return {

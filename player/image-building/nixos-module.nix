@@ -133,12 +133,27 @@ in {
 
     # ALSA configuration for MAX98357A I2S card
     # The I2S card will be card 0 (with onboard audio disabled)
+    # Uses dmix for mixing multiple audio sources (music + tones)
     # MAX98357A has no hardware volume control, so we use ALSA softvol plugin
     environment.etc."asound.conf".text = ''
-      # Software volume control for MAX98357A (no hardware mixer)
+      # Hardware dmix - allows multiple apps to share the audio device
+      pcm.dmixer {
+        type dmix
+        ipc_key 1024
+        ipc_perm 0666
+        slave {
+          pcm "hw:0,0"
+          period_time 0
+          period_size 1024
+          buffer_size 4096
+          rate 44100
+        }
+      }
+
+      # Software volume control on top of dmix
       pcm.softvol {
         type softvol
-        slave.pcm "hw:0,0"
+        slave.pcm "dmixer"
         control {
           name "Master"
           card 0
@@ -147,7 +162,7 @@ in {
         max_dB 0.0
       }
 
-      # Default to softvol for volume control
+      # Default to softvol for volume control (goes through dmix)
       pcm.!default {
         type plug
         slave.pcm "softvol"
@@ -200,7 +215,7 @@ in {
 
       # Add required tools to PATH
       path = with pkgs; [
-        alsa-utils      # amixer (ALSA volume control)
+        alsa-utils      # aplay, amixer (ALSA playback and volume control)
         i2c-tools       # i2cdetect, i2cget (NFC reader)
         libgpiod        # gpioset, gpioget (GPIO control for amplifier)
         mpv             # mpv (audio playback with IPC control)
@@ -223,7 +238,7 @@ in {
         ProtectSystem = "full";   # "strict" breaks device access
         PrivateDevices = false;   # Need access to I2C, GPIO, sound devices
         ProtectHome = true;       # No need for home directory access
-        ReadWritePaths = [ "/tmp" "/run/musicbox" ];
+        ReadWritePaths = [ "/tmp" "/run/musicbox" "/var/cache/musicbox" ];
         
         # Environment - point to config in /run
         Environment = [
@@ -236,10 +251,11 @@ in {
       };
     };
 
-    # Create config file in /run (writable at runtime)
+    # Create directories (config in /run, cache in /var/cache)
     systemd.tmpfiles.rules = [
       "d /run/musicbox 0755 ${cfg.user} ${cfg.group} -"
       "L+ /run/musicbox/player.config.json - - - - ${configFile}"
+      "d /var/cache/musicbox 0755 ${cfg.user} ${cfg.group} -"
     ];
 
     # Open firewall port for HTTP API

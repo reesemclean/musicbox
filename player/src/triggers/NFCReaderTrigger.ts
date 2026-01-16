@@ -39,6 +39,8 @@ export class NFCReaderTrigger implements Trigger {
   private running = false;
   private playerCore?: PlayerCore;
   private lastCardId: string | null = null;
+  private lastCardTime: number = 0;
+  private readonly debounceMs = 2000; // Don't re-trigger same card within 2 seconds
   private pollInterval?: NodeJS.Timeout;
 
   constructor(i2cBus: number = 1) {
@@ -185,24 +187,22 @@ export class NFCReaderTrigger implements Trigger {
               .join("")
               .toUpperCase();
 
-            // Only trigger if it's a new card
-            if (cardId !== this.lastCardId) {
+            const now = Date.now();
+            const timeSinceLastScan = now - this.lastCardTime;
+
+            // Only trigger if it's a different card, or same card after debounce period
+            if (cardId !== this.lastCardId || timeSinceLastScan >= this.debounceMs) {
               this.lastCardId = cardId;
+              this.lastCardTime = now;
               console.log(`\n🎴 NFC Card detected: ${cardId}`);
               await this.playerCore?.handleCardScan(cardId);
             }
           }
-        } else {
-          // No card present
-          this.lastCardId = null;
         }
-      } else {
-        // No response
-        this.lastCardId = null;
+        // Don't reset lastCardId when no card - keep it for debounce comparison
       }
     } catch {
-      // Polling error - card may have been removed
-      this.lastCardId = null;
+      // Polling error - don't reset lastCardId
     }
   }
 

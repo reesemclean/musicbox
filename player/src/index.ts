@@ -45,10 +45,8 @@ async function main() {
   // Initialize server client
   const serverClient = new ServerClient(config.serverUrl, config.deviceName);
 
-  // Initialize player core
+  // Initialize player core (sets up audio engine and tone generator)
   const playerCore = new PlayerCore(serverClient);
-
-  // Play startup chime to indicate player is ready
   await playerCore.initialize();
 
   // Start heartbeat service (if device secret is configured)
@@ -104,7 +102,10 @@ async function main() {
       console.error(`❌ Failed to start ${trigger.name} trigger:`, error);
     }
   }
-  console.log(""); // Add spacing after all triggers started
+
+  // Play startup chime to indicate everything is ready
+  playerCore.playReadyChime();
+  console.log(""); // Add spacing after ready
 
   // Keep process alive - prevents exit if all triggers fail to initialize
   const keepalive = setInterval(() => {

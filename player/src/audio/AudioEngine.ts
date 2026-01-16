@@ -8,13 +8,13 @@
  * - Volume and pause control
  * - Audio fade for smooth transitions
  *
- * Beeps/chimes use speaker-test separately so they can overlay with music.
+ * Beeps/chimes use pre-generated WAV files played via aplay through ALSA dmix.
  *
  * Architecture:
  *   PlayerCore  ──JSON commands──>  mpv --idle --input-ipc-server
  *              <──events/replies──
  *
- *   Beeps: speaker-test (separate process, can overlay)
+ *   Beeps: aplay + pre-generated WAVs (overlays via ALSA dmix)
  */
 
 import { spawn } from "child_process";
@@ -23,6 +23,8 @@ import type { SongInfo, PlayerStatus } from "../core/types.ts";
 import { existsSync, unlinkSync } from "fs";
 import { createConnection } from "net";
 import type { Socket } from "net";
+import { ToneGenerator } from "./ToneGenerator.ts";
+import { AudioCache } from "./AudioCache.ts";
 
 type CompletionCallback = () => void;
 
@@ -44,6 +46,8 @@ export class AudioEngine {
   private isInitialized = false;
   private requestId = 0;
   private pendingRequests = new Map<number, (response: MpvResponse) => void>();
+  private toneGenerator = new ToneGenerator();
+  private audioCache = new AudioCache();
 
   /** Playlist metadata - mirrors what's loaded in mpv */
   private playlist: SongInfo[] = [];
@@ -93,7 +97,7 @@ export class AudioEngine {
         "--gapless-audio=yes", // Gapless playback
         "--prefetch-playlist=yes", // Prefetch next track
         "--audio-buffer=0.2", // 200ms buffer (reasonable for streaming)
-        "--af=afade=t=in:st=0:d=0.1", // 100ms fade-in on all audio
+        "--audio-stream-silence=yes", // Keep audio stream open with silence to prevent I2S DAC pops
       ];
 
       this.mpvProcess = spawn("mpv", args, {
@@ -264,6 +268,25 @@ export class AudioEngine {
   }
 
   /**
+   * Get the playback URL for a song - uses cache if available, otherwise streams
+   * and triggers background caching for next time
+   */
+  private getPlaybackUrl(song: SongInfo): { url: string; cached: boolean } {
+    // Check if already cached (sync check - no waiting)
+    if (this.audioCache.isCached(song.id)) {
+      // Get cached path synchronously since we know it exists
+      const cachedPath = this.audioCache.getCachedPath(song.id);
+      if (cachedPath) {
+        return { url: cachedPath, cached: true };
+      }
+    }
+
+    // Not cached - stream immediately and cache in background for next time
+    this.audioCache.prefetch([{ songId: song.id, streamUrl: song.streamUrl }]);
+    return { url: song.streamUrl, cached: false };
+  }
+
+  /**
    * Play a single song (replaces current playlist)
    */
   async play(song: SongInfo): Promise<void> {
@@ -271,18 +294,25 @@ export class AudioEngine {
       await this.initialize();
     }
 
+    // Fade out current audio if playing (prevents pop)
+    if (await this.isPlaying()) {
+      await this.fadeVolume(this.currentVolume, 0, 50); // Quick 50ms fade
+    }
+
     // Store as 1-item playlist
     this.playlist = [song];
 
-    // Load and play immediately
-    await this.sendCommand(["loadfile", song.streamUrl, "replace"]);
+    // Get playback URL (cached or streaming)
+    const { url, cached } = this.getPlaybackUrl(song);
+
+    // Load and play immediately (starts at volume 0)
+    await this.sendCommand(["loadfile", url, "replace"]);
+
+    // Fade in to target volume
+    await this.fadeVolume(0, this.currentVolume, 50);
 
     console.log(
-      "   🔊 Streaming: " +
-        song.title +
-        " (volume: " +
-        this.currentVolume +
-        "%)"
+      `   🔊 ${cached ? "Playing" : "Streaming"}: ${song.title} (volume: ${this.currentVolume}%)`
     );
   }
 
@@ -295,7 +325,10 @@ export class AudioEngine {
     }
 
     this.playlist.push(song);
-    await this.sendCommand(["loadfile", song.streamUrl, "append"]);
+
+    // Get playback URL (cached or streaming)
+    const { url } = this.getPlaybackUrl(song);
+    await this.sendCommand(["loadfile", url, "append"]);
   }
 
   /**
@@ -317,23 +350,35 @@ export class AudioEngine {
       await this.initialize();
     }
 
+    // Fade out current audio if playing (prevents pop)
+    if (await this.isPlaying()) {
+      await this.fadeVolume(this.currentVolume, 0, 50); // Quick 50ms fade
+    }
+
     // Store the full playlist
     this.playlist = [...songs];
 
-    // First song replaces current (starts playing)
-    await this.sendCommand(["loadfile", songs[0].streamUrl, "replace"]);
+    // Get first song's playback URL (uses cache if available, streams otherwise)
+    const { url: firstUrl, cached: firstCached } = this.getPlaybackUrl(songs[0]);
 
-    // Rest get appended to queue
+    // First song replaces current (starts at volume 0)
+    await this.sendCommand(["loadfile", firstUrl, "replace"]);
+
+    // Prefetch all songs in background (including first if it wasn't cached)
+    const toPrefetch = songs.map((s) => ({ songId: s.id, streamUrl: s.streamUrl }));
+    this.audioCache.prefetch(toPrefetch);
+
+    // Queue rest of playlist
     for (let i = 1; i < songs.length; i++) {
-      await this.sendCommand(["loadfile", songs[i].streamUrl, "append"]);
+      const { url } = this.getPlaybackUrl(songs[i]);
+      await this.sendCommand(["loadfile", url, "append"]);
     }
 
+    // Fade in to target volume
+    await this.fadeVolume(0, this.currentVolume, 50);
+
     console.log(
-      "   🔊 Loaded playlist: " +
-        songs.length +
-        " songs (volume: " +
-        this.currentVolume +
-        "%)"
+      `   🔊 Loaded playlist: ${songs.length} songs ${firstCached ? "(cached)" : "(streaming)"} (volume: ${this.currentVolume}%)`
     );
   }
 
@@ -408,7 +453,17 @@ export class AudioEngine {
    */
   async stop(): Promise<void> {
     if (!this.isInitialized) return;
+
+    // Fade out before stopping (prevents pop)
+    if (await this.isPlaying()) {
+      await this.fadeVolume(this.currentVolume, 0, 50);
+    }
+
     await this.sendCommand(["stop"]);
+
+    // Restore volume for next playback
+    await this.sendCommand(["set_property", "volume", this.currentVolume]);
+
     this.playlist = [];
     console.log(`   ⏹️  Stopped`);
   }
@@ -419,11 +474,11 @@ export class AudioEngine {
   async isPlaying(): Promise<boolean> {
     if (!this.isInitialized) return false;
     try {
-      const idleResp = await this.sendCommand(
-        ["get_property", "core-idle"],
-        true
-      );
-      const pauseResp = await this.sendCommand(["get_property", "pause"], true);
+      // Parallel IPC calls for faster response
+      const [idleResp, pauseResp] = await Promise.all([
+        this.sendCommand(["get_property", "core-idle"], true),
+        this.sendCommand(["get_property", "pause"], true),
+      ]);
       const isIdle = (idleResp as { data?: boolean })?.data ?? true;
       const isPaused = (pauseResp as { data?: boolean })?.data ?? false;
       return !isIdle && !isPaused;
@@ -433,32 +488,71 @@ export class AudioEngine {
   }
 
   /**
-   * Pause playback (if playing)
+   * Fade volume for smooth transitions (prevents I2S DAC pops)
+   */
+  private async fadeVolume(
+    fromPercent: number,
+    toPercent: number,
+    durationMs: number
+  ): Promise<void> {
+    const steps = 10;
+    const stepDuration = durationMs / steps;
+    const volumeStep = (toPercent - fromPercent) / steps;
+
+    for (let i = 1; i <= steps; i++) {
+      const volume = fromPercent + volumeStep * i;
+      await this.sendCommand(["set_property", "volume", volume]);
+      await new Promise((resolve) => setTimeout(resolve, stepDuration));
+    }
+  }
+
+  /**
+   * Pause playback (if playing) with fade-out to prevent DAC pops
    */
   async pause(): Promise<void> {
     if (!this.isInitialized) return;
     const playing = await this.isPlaying();
     if (playing) {
-      await this.sendCommand(["set_property", "pause", true]);
-      console.log(`   ⏸️  Paused`);
+      await this.doPause();
     }
   }
 
   /**
-   * Resume playback (if paused and has content)
+   * Internal pause - assumes caller already checked state
+   */
+  private async doPause(): Promise<void> {
+    // Fade out before pausing to prevent I2S DAC pop
+    await this.fadeVolume(this.currentVolume, 0, 100);
+    await this.sendCommand(["set_property", "pause", true]);
+    // Keep volume at 0 while paused to prevent static on I2S DAC
+    console.log(`   ⏸️  Paused`);
+  }
+
+  /**
+   * Resume playback (if paused and has content) with fade-in
    */
   async resume(): Promise<void> {
     if (!this.isInitialized) return;
     const playing = await this.isPlaying();
     const currentSong = await this.getCurrentSong();
     if (currentSong && !playing) {
-      await this.sendCommand(["set_property", "pause", false]);
-      console.log(`   ▶️  Playing: ${currentSong.title}`);
+      await this.doResume(currentSong.title);
     } else if (playing) {
       console.log(`   ⚠️  Already playing`);
     } else {
       console.log(`   ⚠️  No song to play`);
     }
+  }
+
+  /**
+   * Internal resume - assumes caller already checked state
+   */
+  private async doResume(songTitle: string): Promise<void> {
+    // Start at zero volume, then fade in to prevent I2S DAC pop
+    await this.sendCommand(["set_property", "volume", 0]);
+    await this.sendCommand(["set_property", "pause", false]);
+    await this.fadeVolume(0, this.currentVolume, 100);
+    console.log(`   ▶️  Playing: ${songTitle}`);
   }
 
   /**
@@ -468,9 +562,14 @@ export class AudioEngine {
     if (!this.isInitialized) return;
     const playing = await this.isPlaying();
     if (playing) {
-      await this.pause();
+      await this.doPause();
     } else {
-      await this.resume();
+      const currentSong = await this.getCurrentSong();
+      if (currentSong) {
+        await this.doResume(currentSong.title);
+      } else {
+        console.log(`   ⚠️  No song to play`);
+      }
     }
   }
 
@@ -565,84 +664,37 @@ export class AudioEngine {
   }
 
   // ========================================================================
-  // BEEPS & CHIMES - Use speaker-test so they can overlay with music
+  // BEEPS & CHIMES - Pre-generated WAVs played via aplay through ALSA dmix
   // ========================================================================
 
   /**
-   * Play a single tone using speaker-test (overlays with mpv audio)
+   * Initialize the tone generator (pre-generates WAV files)
+   * Call this during startup, before playing any tones
    */
-  private playTone(frequency: number, durationMs: number): Promise<void> {
-    return new Promise((resolve) => {
-      const proc = spawn(
-        "speaker-test",
-        ["-t", "sine", "-f", frequency.toString(), "-c", "2", "-l", "1"],
-        { stdio: "ignore" }
-      );
-
-      // Kill after duration
-      setTimeout(() => {
-        proc.kill("SIGTERM");
-        resolve();
-      }, durationMs);
-
-      proc.on("exit", () => resolve());
-      proc.on("error", () => resolve());
-    });
+  async initializeTones(): Promise<void> {
+    await this.toneGenerator.initialize();
   }
 
   /**
-   * Play startup chime (can overlay if something is playing)
-   * C major arpeggio: C5, E5, G5, C6
+   * Play startup chime to indicate player is ready
+   * Call this after all systems are initialized
    */
-  async playStartupChime(): Promise<void> {
-    // Initialize mpv in the background
-    this.initialize().catch(() => {
-      console.log("   ⚠️  mpv initialization failed");
-    });
-
-    const notes = [
-      { freq: 523, duration: 120 }, // C5
-      { freq: 659, duration: 120 }, // E5
-      { freq: 784, duration: 120 }, // G5
-      { freq: 1047, duration: 200 }, // C6 (hold longer)
-    ];
-
-    try {
-      for (const note of notes) {
-        await this.playTone(note.freq, note.duration);
-        await this.sleep(30);
-      }
-    } catch {
-      console.log("   ⚠️  Startup chime failed");
-    }
+  playStartupChime(): void {
+    this.toneGenerator.playStartup();
   }
 
   /**
    * Play card recognition beep (can overlay with music)
-   * Quick double-beep: high-pitched, short
    */
-  async playCardBeep(): Promise<void> {
-    try {
-      await this.playTone(880, 80); // A5
-      await this.sleep(50);
-      await this.playTone(1100, 80); // C#6
-    } catch {
-      // Beep failed, not critical
-    }
+  playCardBeep(): void {
+    this.toneGenerator.playCard();
   }
 
   /**
    * Play error beep (can overlay with music)
-   * Low descending tone indicates error
    */
-  async playErrorBeep(): Promise<void> {
-    try {
-      await this.playTone(400, 150);
-      await this.sleep(50);
-      await this.playTone(300, 200);
-    } catch {
-      // Beep failed, not critical
-    }
+  playErrorBeep(): void {
+    this.toneGenerator.playError();
   }
 
   // ========================================================================
@@ -677,12 +729,5 @@ export class AudioEngine {
     }
 
     this.isInitialized = false;
-  }
-
-  /**
-   * Sleep helper
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

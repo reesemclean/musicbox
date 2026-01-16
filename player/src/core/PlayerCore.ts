@@ -23,10 +23,20 @@ export class PlayerCore {
   }
 
   /**
-   * Initialize the player and play startup chime
+   * Initialize the audio engine (mpv + tone generator)
+   * Call this early so audio is ready, then call playReadyChime() when fully ready
    */
   async initialize(): Promise<void> {
-    await this.audioEngine.playStartupChime();
+    await this.audioEngine.initialize();
+    await this.audioEngine.initializeTones();
+  }
+
+  /**
+   * Play the startup chime to indicate player is fully ready
+   * Call this after all triggers are initialized
+   */
+  playReadyChime(): void {
+    this.audioEngine.playStartupChime();
     console.log("🎵 Player ready!");
   }
 
