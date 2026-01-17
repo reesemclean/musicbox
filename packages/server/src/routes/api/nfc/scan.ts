@@ -1,8 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { eq } from 'drizzle-orm'
 import { db } from '@/db'
-import { cards, playlistSongs, playlists, songs } from '@/db/schema'
+import { cards, playlistSongs, playlists, podcastFeeds, songs } from '@/db/schema'
 import { nfcQueue } from '@/lib/nfc-queue'
+import { getLatestEpisodeForFeed } from '@/services/podcastService'
 
 export const Route = createFileRoute('/api/nfc/scan')({
   server: {
@@ -115,6 +116,43 @@ export const Route = createFileRoute('/api/nfc/scan')({
             content = {
               type: 'action',
               action: card.action,
+            }
+          } else if (card.contentType === 'podcast' && card.contentPath) {
+            // Fetch podcast feed and latest episode
+            const feedId = parseInt(card.contentPath, 10)
+            const feedData = await db
+              .select()
+              .from(podcastFeeds)
+              .where(eq(podcastFeeds.id, feedId))
+              .limit(1)
+
+            if (feedData.length > 0) {
+              const feed = feedData[0]
+              const latestEpisode = await getLatestEpisodeForFeed(feedId)
+
+              content = {
+                type: 'podcast',
+                podcast: {
+                  id: feed.id,
+                  title: feed.title,
+                  description: feed.description,
+                  imageUrl: feed.imageUrl,
+                  author: feed.author,
+                  latestEpisode: latestEpisode
+                    ? {
+                        id: latestEpisode.id,
+                        feedId: latestEpisode.feedId,
+                        title: latestEpisode.title,
+                        description: latestEpisode.description,
+                        duration: latestEpisode.duration,
+                        publishedAt: latestEpisode.publishedAt,
+                        mimeType: latestEpisode.mimeType,
+                        fileSize: latestEpisode.fileSize,
+                        downloadStatus: latestEpisode.downloadStatus,
+                      }
+                    : null,
+                },
+              }
             }
           }
 

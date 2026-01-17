@@ -6,7 +6,7 @@ export const cards = sqliteTable('cards', {
   id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
   nfcId: text('nfc_id').notNull().unique(),
   contentType: text('content_type', {
-    enum: ['song', 'playlist', 'action'],
+    enum: ['song', 'playlist', 'action', 'podcast'],
   }).notNull(),
   contentPath: text('content_path'),
   action: text('action', {
@@ -178,3 +178,61 @@ export const deploymentRuns = sqliteTable('deployment_runs', {
 
 export type DeploymentRun = typeof deploymentRuns.$inferSelect
 export type NewDeploymentRun = typeof deploymentRuns.$inferInsert
+
+// Podcast feeds
+export const podcastFeeds = sqliteTable('podcast_feeds', {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  title: text('title').notNull(),
+  feedUrl: text('feed_url').notNull().unique(),
+  description: text('description'),
+  imageUrl: text('image_url'),
+  author: text('author'),
+  lastFetchedAt: integer('last_fetched_at', { mode: 'timestamp' }),
+  episodesToKeep: integer('episodes_to_keep').default(3),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(
+    sql`(unixepoch())`,
+  ),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(
+    sql`(unixepoch())`,
+  ),
+})
+
+export type PodcastFeed = typeof podcastFeeds.$inferSelect
+export type NewPodcastFeed = typeof podcastFeeds.$inferInsert
+
+// Podcast episode download status
+export const episodeDownloadStatus = [
+  'pending',
+  'downloading',
+  'complete',
+  'failed',
+] as const
+export type EpisodeDownloadStatus = (typeof episodeDownloadStatus)[number]
+
+// Podcast episodes
+export const podcastEpisodes = sqliteTable('podcast_episodes', {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  feedId: integer('feed_id')
+    .notNull()
+    .references(() => podcastFeeds.id, { onDelete: 'cascade' }),
+  guid: text('guid').notNull(), // RSS guid for deduplication
+  title: text('title').notNull(),
+  description: text('description'),
+  duration: integer('duration'), // in seconds
+  publishedAt: integer('published_at', { mode: 'timestamp' }),
+  fileData: blob('file_data', { mode: 'buffer' }), // null until downloaded
+  mimeType: text('mime_type'),
+  fileSize: integer('file_size'),
+  sourceUrl: text('source_url').notNull(),
+  downloadStatus: text('download_status', {
+    enum: episodeDownloadStatus,
+  }).default('pending'),
+  downloadError: text('download_error'),
+  listenedAt: integer('listened_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(
+    sql`(unixepoch())`,
+  ),
+})
+
+export type PodcastEpisode = typeof podcastEpisodes.$inferSelect
+export type NewPodcastEpisode = typeof podcastEpisodes.$inferInsert

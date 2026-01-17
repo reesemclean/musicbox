@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LibraryRouteImport } from './routes/_library'
 import { Route as LibraryIndexRouteImport } from './routes/_library/index'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as LibraryPodcastsRouteImport } from './routes/_library/podcasts'
 import { Route as LibraryDownloadsRouteImport } from './routes/_library/downloads'
 import { Route as LibraryDevicesRouteImport } from './routes/_library/devices'
 import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
@@ -22,6 +23,7 @@ import { Route as ApiNfcScanRouteImport } from './routes/api/nfc/scan'
 import { Route as ApiDevicesHeartbeatRouteImport } from './routes/api/devices/heartbeat'
 import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlist.$id'
 import { Route as ApiDevicesRegisterIndexRouteImport } from './routes/api/devices/register/index'
+import { Route as ApiStreamEpisodeEpisodeIdRouteImport } from './routes/api/stream/episode/$episodeId'
 import { Route as ApiDevicesRegisterDeviceIdStatusRouteImport } from './routes/api/devices/register/$deviceId/status'
 
 const LibraryRoute = LibraryRouteImport.update({
@@ -37,6 +39,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
+} as any)
+const LibraryPodcastsRoute = LibraryPodcastsRouteImport.update({
+  id: '/podcasts',
+  path: '/podcasts',
+  getParentRoute: () => LibraryRoute,
 } as any)
 const LibraryDownloadsRoute = LibraryDownloadsRouteImport.update({
   id: '/downloads',
@@ -88,6 +95,12 @@ const ApiDevicesRegisterIndexRoute = ApiDevicesRegisterIndexRouteImport.update({
   path: '/api/devices/register/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStreamEpisodeEpisodeIdRoute =
+  ApiStreamEpisodeEpisodeIdRouteImport.update({
+    id: '/api/stream/episode/$episodeId',
+    path: '/api/stream/episode/$episodeId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiDevicesRegisterDeviceIdStatusRoute =
   ApiDevicesRegisterDeviceIdStatusRouteImport.update({
     id: '/api/devices/register/$deviceId/status',
@@ -99,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/cards': typeof LibraryCardsRoute
   '/devices': typeof LibraryDevicesRoute
   '/downloads': typeof LibraryDownloadsRoute
+  '/podcasts': typeof LibraryPodcastsRoute
   '/api/health': typeof ApiHealthRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
@@ -107,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/api/player/download': typeof ApiPlayerDownloadRoute
   '/api/player/version': typeof ApiPlayerVersionRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
+  '/api/stream/episode/$episodeId': typeof ApiStreamEpisodeEpisodeIdRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
@@ -114,6 +129,7 @@ export interface FileRoutesByTo {
   '/cards': typeof LibraryCardsRoute
   '/devices': typeof LibraryDevicesRoute
   '/downloads': typeof LibraryDownloadsRoute
+  '/podcasts': typeof LibraryPodcastsRoute
   '/api/health': typeof ApiHealthRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
@@ -122,6 +138,7 @@ export interface FileRoutesByTo {
   '/api/player/download': typeof ApiPlayerDownloadRoute
   '/api/player/version': typeof ApiPlayerVersionRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
+  '/api/stream/episode/$episodeId': typeof ApiStreamEpisodeEpisodeIdRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
@@ -131,6 +148,7 @@ export interface FileRoutesById {
   '/_library/cards': typeof LibraryCardsRoute
   '/_library/devices': typeof LibraryDevicesRoute
   '/_library/downloads': typeof LibraryDownloadsRoute
+  '/_library/podcasts': typeof LibraryPodcastsRoute
   '/api/health': typeof ApiHealthRoute
   '/_library/': typeof LibraryIndexRoute
   '/_library/playlist/$id': typeof LibraryPlaylistIdRoute
@@ -139,6 +157,7 @@ export interface FileRoutesById {
   '/api/player/download': typeof ApiPlayerDownloadRoute
   '/api/player/version': typeof ApiPlayerVersionRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
+  '/api/stream/episode/$episodeId': typeof ApiStreamEpisodeEpisodeIdRoute
   '/api/devices/register/': typeof ApiDevicesRegisterIndexRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
@@ -148,6 +167,7 @@ export interface FileRouteTypes {
     | '/cards'
     | '/devices'
     | '/downloads'
+    | '/podcasts'
     | '/api/health'
     | '/'
     | '/playlist/$id'
@@ -156,6 +176,7 @@ export interface FileRouteTypes {
     | '/api/player/download'
     | '/api/player/version'
     | '/api/stream/$songId'
+    | '/api/stream/episode/$episodeId'
     | '/api/devices/register'
     | '/api/devices/register/$deviceId/status'
   fileRoutesByTo: FileRoutesByTo
@@ -163,6 +184,7 @@ export interface FileRouteTypes {
     | '/cards'
     | '/devices'
     | '/downloads'
+    | '/podcasts'
     | '/api/health'
     | '/'
     | '/playlist/$id'
@@ -171,6 +193,7 @@ export interface FileRouteTypes {
     | '/api/player/download'
     | '/api/player/version'
     | '/api/stream/$songId'
+    | '/api/stream/episode/$episodeId'
     | '/api/devices/register'
     | '/api/devices/register/$deviceId/status'
   id:
@@ -179,6 +202,7 @@ export interface FileRouteTypes {
     | '/_library/cards'
     | '/_library/devices'
     | '/_library/downloads'
+    | '/_library/podcasts'
     | '/api/health'
     | '/_library/'
     | '/_library/playlist/$id'
@@ -187,6 +211,7 @@ export interface FileRouteTypes {
     | '/api/player/download'
     | '/api/player/version'
     | '/api/stream/$songId'
+    | '/api/stream/episode/$episodeId'
     | '/api/devices/register/'
     | '/api/devices/register/$deviceId/status'
   fileRoutesById: FileRoutesById
@@ -199,6 +224,7 @@ export interface RootRouteChildren {
   ApiPlayerDownloadRoute: typeof ApiPlayerDownloadRoute
   ApiPlayerVersionRoute: typeof ApiPlayerVersionRoute
   ApiStreamSongIdRoute: typeof ApiStreamSongIdRoute
+  ApiStreamEpisodeEpisodeIdRoute: typeof ApiStreamEpisodeEpisodeIdRoute
   ApiDevicesRegisterIndexRoute: typeof ApiDevicesRegisterIndexRoute
   ApiDevicesRegisterDeviceIdStatusRoute: typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
@@ -225,6 +251,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_library/podcasts': {
+      id: '/_library/podcasts'
+      path: '/podcasts'
+      fullPath: '/podcasts'
+      preLoaderRoute: typeof LibraryPodcastsRouteImport
+      parentRoute: typeof LibraryRoute
     }
     '/_library/downloads': {
       id: '/_library/downloads'
@@ -296,6 +329,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDevicesRegisterIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/stream/episode/$episodeId': {
+      id: '/api/stream/episode/$episodeId'
+      path: '/api/stream/episode/$episodeId'
+      fullPath: '/api/stream/episode/$episodeId'
+      preLoaderRoute: typeof ApiStreamEpisodeEpisodeIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/devices/register/$deviceId/status': {
       id: '/api/devices/register/$deviceId/status'
       path: '/api/devices/register/$deviceId/status'
@@ -310,6 +350,7 @@ interface LibraryRouteChildren {
   LibraryCardsRoute: typeof LibraryCardsRoute
   LibraryDevicesRoute: typeof LibraryDevicesRoute
   LibraryDownloadsRoute: typeof LibraryDownloadsRoute
+  LibraryPodcastsRoute: typeof LibraryPodcastsRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
   LibraryPlaylistIdRoute: typeof LibraryPlaylistIdRoute
 }
@@ -318,6 +359,7 @@ const LibraryRouteChildren: LibraryRouteChildren = {
   LibraryCardsRoute: LibraryCardsRoute,
   LibraryDevicesRoute: LibraryDevicesRoute,
   LibraryDownloadsRoute: LibraryDownloadsRoute,
+  LibraryPodcastsRoute: LibraryPodcastsRoute,
   LibraryIndexRoute: LibraryIndexRoute,
   LibraryPlaylistIdRoute: LibraryPlaylistIdRoute,
 }
@@ -333,6 +375,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPlayerDownloadRoute: ApiPlayerDownloadRoute,
   ApiPlayerVersionRoute: ApiPlayerVersionRoute,
   ApiStreamSongIdRoute: ApiStreamSongIdRoute,
+  ApiStreamEpisodeEpisodeIdRoute: ApiStreamEpisodeEpisodeIdRoute,
   ApiDevicesRegisterIndexRoute: ApiDevicesRegisterIndexRoute,
   ApiDevicesRegisterDeviceIdStatusRoute: ApiDevicesRegisterDeviceIdStatusRoute,
 }

@@ -16,16 +16,27 @@ import {
 } from '@/components/ui/select'
 import { ContentPicker } from '@/components/ContentPicker'
 
+interface Podcast {
+  feed: {
+    id: number
+    title: string
+    author?: string | null
+  }
+  totalEpisodes: number
+  downloadedEpisodes: number
+}
+
 interface CardFormProps {
   mode: 'create' | 'update'
   isEditingExisting: boolean
   nfcId: string
-  contentType: 'song' | 'playlist' | 'action'
+  contentType: 'song' | 'playlist' | 'action' | 'podcast'
   contentValue: string | null
   songs: Array<any>
   playlists: Array<any>
+  podcasts?: Array<Podcast>
   isLoading: boolean
-  onContentTypeChange: (value: 'song' | 'playlist' | 'action') => void
+  onContentTypeChange: (value: 'song' | 'playlist' | 'action' | 'podcast') => void
   onContentValueChange: (value: string | null) => void
   onCancel: () => void
   onSave: () => void
@@ -39,6 +50,7 @@ export function CardForm({
   contentValue,
   songs,
   playlists,
+  podcasts = [],
   isLoading,
   onContentTypeChange,
   onContentValueChange,
@@ -74,13 +86,14 @@ export function CardForm({
         {/* Content Type Selector */}
         <div className="space-y-2">
           <Label htmlFor="content-type">Content Type</Label>
-          <Select value={contentType} onValueChange={onContentTypeChange}>
+          <Select value={contentType} onValueChange={onContentTypeChange as (value: string) => void}>
             <SelectTrigger id="content-type">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="song">Song</SelectItem>
               <SelectItem value="playlist">Playlist</SelectItem>
+              <SelectItem value="podcast">Podcast</SelectItem>
               <SelectItem value="action">Action</SelectItem>
             </SelectContent>
           </Select>
@@ -93,7 +106,9 @@ export function CardForm({
               ? 'Song'
               : contentType === 'playlist'
                 ? 'Playlist'
-                : 'Action'}
+                : contentType === 'podcast'
+                  ? 'Podcast'
+                  : 'Action'}
           </Label>
           <ContentPicker
             contentType={contentType}
@@ -101,6 +116,7 @@ export function CardForm({
             onChange={onContentValueChange}
             songs={songs}
             playlists={playlists}
+            podcasts={podcasts}
           />
         </div>
       </div>

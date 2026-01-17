@@ -6,9 +6,9 @@ install -m 644 files/config.txt "${ROOTFS_DIR}/boot/firmware/config.txt"
 # Copy ALSA config
 install -m 644 files/asound.conf "${ROOTFS_DIR}/etc/asound.conf"
 
-# Create musicbox user and group
+# Add musicbox user to required groups (user is created by pi-gen via FIRST_USER_NAME)
 on_chroot << EOF
-useradd -r -s /bin/false -G audio,i2c,gpio musicbox || true
+usermod -a -G audio,i2c,gpio musicbox || true
 EOF
 
 # Create directories

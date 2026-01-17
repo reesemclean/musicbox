@@ -70,6 +70,12 @@ export class PlayerCore {
         const action = result.content.action
         console.log(`⚡ Action: ${action.toUpperCase()}`)
         this.executeAction(action)
+      } else if (result.content?.type === 'podcast') {
+        const podcast = result.content.podcast
+        console.log(`🎙️ Playing podcast: ${podcast.title}`)
+        if (podcast.author) console.log(`   Author: ${podcast.author}`)
+
+        this.loadPodcast(podcast)
       } else {
         // Unknown card - play error beep
         console.log(`⚠️  Card not recognized`)
@@ -123,6 +129,42 @@ export class PlayerCore {
       // Load entire playlist into AudioEngine
       this.audioEngine.loadPlaylist(songs)
     }
+  }
+
+  /**
+   * Load and play the latest episode of a podcast
+   */
+  private loadPodcast(podcast: {
+    id: number
+    title: string
+    author?: string | null
+    latestEpisode: {
+      id: number
+      title: string
+      description?: string | null
+      duration?: number | null
+    } | null
+  }): void {
+    if (!podcast.latestEpisode) {
+      console.log(`   ⚠️  No episodes available for this podcast`)
+      this.audioEngine.playErrorBeep()
+      return
+    }
+
+    const episode = podcast.latestEpisode
+    console.log(`   ▶️  Playing episode: ${episode.title}`)
+    if (episode.duration) {
+      const minutes = Math.floor(episode.duration / 60)
+      console.log(`      Duration: ${minutes} min`)
+    }
+
+    // Play the episode using the episode stream URL
+    this.audioEngine.play({
+      id: episode.id,
+      title: episode.title,
+      artist: podcast.title, // Use podcast title as "artist"
+      streamUrl: this.serverClient.getEpisodeStreamUrl(episode.id),
+    })
   }
 
   /**

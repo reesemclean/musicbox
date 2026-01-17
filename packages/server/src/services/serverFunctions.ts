@@ -3,6 +3,7 @@ import { desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import * as devicesService from './devicesService.js'
 import * as ansibleService from './ansibleService.js'
+import * as podcastService from './podcastService.js'
 import { db } from '@/db'
 import { cards, downloadQueue, libraryVersion, playHistory } from '@/db/schema'
 import { nfcQueue } from '@/lib/nfc-queue'
@@ -52,7 +53,7 @@ export const getCard = createServerFn({ method: 'GET' })
 
 const CreateCardSchema = z.object({
   nfcId: z.string().min(1),
-  contentType: z.enum(['song', 'playlist', 'action']),
+  contentType: z.enum(['song', 'playlist', 'action', 'podcast']),
   contentPath: z.string().optional(),
   action: z.enum(['play', 'pause', 'next', 'previous', 'stop']).optional(),
 })
@@ -76,7 +77,7 @@ export const updateCard = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
       nfcId: z.string(),
-      contentType: z.enum(['song', 'playlist', 'action']).optional(),
+      contentType: z.enum(['song', 'playlist', 'action', 'podcast']).optional(),
       contentPath: z.string().optional(),
       action: z.enum(['play', 'pause', 'next', 'previous', 'stop']).optional(),
     }),
@@ -401,3 +402,127 @@ export const getDeployableDevices = createServerFn().handler(async () => {
   const devices = await ansibleService.getDeployableDevices()
   return { devices }
 })
+
+// ============================================================================
+// Podcast Management
+// ============================================================================
+
+/**
+ * Add a new podcast feed by URL
+ */
+export const addPodcastFeed = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      feedUrl: z.string().url(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const result = await podcastService.addPodcastFeed(data.feedUrl)
+    return result
+  })
+
+/**
+ * Get all podcast feeds with stats
+ */
+export const getAllPodcastFeeds = createServerFn().handler(async () => {
+  const feeds = await podcastService.getAllFeedsWithStats()
+  return feeds
+})
+
+/**
+ * Get a single podcast feed with details
+ */
+export const getPodcastFeed = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      feedId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const result = await podcastService.getFeedWithStats(data.feedId)
+    if (!result) {
+      throw new Error('Podcast feed not found')
+    }
+    return result
+  })
+
+/**
+ * Get episodes for a podcast feed
+ */
+export const getPodcastEpisodes = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      feedId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const episodes = await podcastService.getEpisodesByFeedId(data.feedId)
+    // Return episodes without file data for the list view
+    return episodes.map((ep) => ({
+      id: ep.id,
+      feedId: ep.feedId,
+      guid: ep.guid,
+      title: ep.title,
+      description: ep.description,
+      duration: ep.duration,
+      publishedAt: ep.publishedAt,
+      mimeType: ep.mimeType,
+      fileSize: ep.fileSize,
+      sourceUrl: ep.sourceUrl,
+      downloadStatus: ep.downloadStatus,
+      downloadError: ep.downloadError,
+      listenedAt: ep.listenedAt,
+      createdAt: ep.createdAt,
+    }))
+  })
+
+/**
+ * Delete a podcast feed
+ */
+export const deletePodcastFeed = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      feedId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await podcastService.deletePodcastFeed(data.feedId)
+    return { success: true }
+  })
+
+/**
+ * Manually refresh a podcast feed
+ */
+export const refreshPodcastFeed = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      feedId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const result = await podcastService.refreshFeed(data.feedId)
+    // Download any new episodes
+    if (result.newEpisodes > 0) {
+      await podcastService.downloadPendingEpisodes(data.feedId)
+    }
+    return result
+  })
+
+/**
+ * Update podcast feed settings
+ */
+export const updatePodcastFeed = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      feedId: z.number(),
+      episodesToKeep: z.number().min(1).max(50).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { feedId, ...updates } = data
+    const feed = await podcastService.updatePodcastFeed(feedId, updates)
+    if (!feed) {
+      throw new Error('Podcast feed not found')
+    }
+    return { feed }
+  })

@@ -12,14 +12,14 @@ import {
   useSuspenseQuery,
 } from '@tanstack/react-query'
 import { useServerFn } from '@tanstack/react-start'
-import { CreditCard, Download, Music, Plus, Smartphone } from 'lucide-react'
+import { CreditCard, Download, Mic, Music, Plus, Smartphone } from 'lucide-react'
 import { useState } from 'react'
 import {
   addPlaylist,
   getPlaylists,
   getSongs,
 } from '@/services/songsServerFunctions'
-import { getAllCards } from '@/services/serverFunctions'
+import { getAllCards, getAllPodcastFeeds } from '@/services/serverFunctions'
 import { getDownloadQueueStatus } from '@/services/ytmusicServerFunctions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,11 +41,17 @@ const cardsQueryOptions = queryOptions({
   queryFn: getAllCards,
 })
 
+const podcastsQueryOptions = queryOptions({
+  queryKey: ['podcasts'],
+  queryFn: getAllPodcastFeeds,
+})
+
 export const Route = createFileRoute('/_library')({
   loader: async ({ context }) => {
     await context.queryClient.ensureQueryData(songsQueryOptions)
     await context.queryClient.ensureQueryData(playlistsQueryOptions)
     await context.queryClient.ensureQueryData(cardsQueryOptions)
+    await context.queryClient.ensureQueryData(podcastsQueryOptions)
   },
   component: LibraryLayout,
 })
@@ -54,6 +60,7 @@ function LibraryLayout() {
   const { data: songs } = useSuspenseQuery(songsQueryOptions)
   const { data: playlists } = useSuspenseQuery(playlistsQueryOptions)
   const { data: cards } = useSuspenseQuery(cardsQueryOptions)
+  const { data: podcasts } = useSuspenseQuery(podcastsQueryOptions)
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false)
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const queryClient = useQueryClient()
@@ -133,6 +140,16 @@ function LibraryLayout() {
               <span>Cards</span>
               <span className="ml-auto text-xs text-muted-foreground">
                 {cards.length}
+              </span>
+            </Link>
+            <Link
+              to="/podcasts"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors [&.active]:bg-accent [&.active]:text-accent-foreground hover:bg-accent/50"
+            >
+              <Mic className="h-4 w-4" />
+              <span>Podcasts</span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {podcasts.length}
               </span>
             </Link>
             <Link

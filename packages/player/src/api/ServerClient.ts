@@ -82,6 +82,15 @@ export class ServerClient {
   }
 
   /**
+   * Construct the streaming URL for a podcast episode
+   * @param episodeId - The episode's database ID
+   * @returns The full URL for streaming the episode
+   */
+  getEpisodeStreamUrl(episodeId: number): string {
+    return `${this.serverUrl}/api/stream/episode/${episodeId}`
+  }
+
+  /**
    * Get the server URL
    */
   getServerUrl(): string {

@@ -22,3 +22,8 @@ const migrationsFolder =
 console.log(`[DB] Running migrations from: ${migrationsFolder}`)
 migrate(db, { migrationsFolder })
 console.log('[DB] Migrations applied successfully')
+
+// Start podcast scheduler after DB is ready
+import('@/lib/podcastScheduler').catch((err) => {
+  console.error('[DB] Failed to start podcast scheduler:', err)
+})

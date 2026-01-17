@@ -1,6 +1,6 @@
 // Shared types between server and player
 
-export type ContentType = 'song' | 'playlist' | 'action'
+export type ContentType = 'song' | 'playlist' | 'action' | 'podcast'
 
 export type Action = 'play' | 'pause' | 'next' | 'previous' | 'stop'
 
@@ -92,6 +92,29 @@ export interface PlaylistContent {
   }>
 }
 
+// Podcast episode content
+export interface EpisodeContent {
+  id: number
+  feedId: number
+  title: string
+  description?: string | null
+  duration?: number | null
+  publishedAt?: Date | null
+  mimeType?: string | null
+  fileSize?: number | null
+  downloadStatus: 'pending' | 'downloading' | 'complete' | 'failed'
+}
+
+// Podcast feed content
+export interface PodcastContent {
+  id: number
+  title: string
+  description?: string | null
+  imageUrl?: string | null
+  author?: string | null
+  latestEpisode: EpisodeContent | null
+}
+
 export interface NFCScanResponse {
   success: true
   nfcId: string
@@ -100,6 +123,7 @@ export interface NFCScanResponse {
     | { type: 'song'; song: SongContent }
     | { type: 'playlist'; playlist: PlaylistContent }
     | { type: 'action'; action: Action }
+    | { type: 'podcast'; podcast: PodcastContent }
     | null
 }
 

@@ -3,6 +3,7 @@ import {
   Music,
   Pause,
   Play,
+  Podcast,
   SkipBack,
   SkipForward,
   Square,
@@ -36,12 +37,23 @@ interface Playlist {
   name: string
 }
 
+interface PodcastFeed {
+  feed: {
+    id: number
+    title: string
+    author?: string | null
+  }
+  totalEpisodes: number
+  downloadedEpisodes: number
+}
+
 interface ContentPickerProps {
-  contentType: 'song' | 'playlist' | 'action'
+  contentType: 'song' | 'playlist' | 'action' | 'podcast'
   value: string | null
   onChange: (value: string) => void
   songs?: Array<Song>
   playlists?: Array<Playlist>
+  podcasts?: Array<PodcastFeed>
   disabled?: boolean
 }
 
@@ -59,6 +71,7 @@ export function ContentPicker({
   onChange,
   songs = [],
   playlists = [],
+  podcasts = [],
   disabled = false,
 }: ContentPickerProps) {
   // For action type, use a simple select dropdown
@@ -86,8 +99,21 @@ export function ContentPicker({
     )
   }
 
-  // For song and playlist types, render Command inline (not in Popover to avoid nesting issues)
-  const items = contentType === 'song' ? songs : playlists
+  // For song, playlist, and podcast types, render Command inline
+  const getItems = () => {
+    switch (contentType) {
+      case 'song':
+        return songs
+      case 'playlist':
+        return playlists
+      case 'podcast':
+        return podcasts
+      default:
+        return []
+    }
+  }
+
+  const items = getItems()
 
   return (
     <div className="space-y-2">
@@ -128,7 +154,7 @@ export function ContentPicker({
                     </div>
                   </CommandItem>
                 )
-              } else {
+              } else if (contentType === 'playlist') {
                 const playlist = item as Playlist
                 return (
                   <CommandItem
@@ -147,6 +173,38 @@ export function ContentPicker({
                       )}
                     />
                     <div className="font-medium truncate">{playlist.name}</div>
+                  </CommandItem>
+                )
+              } else {
+                // contentType === 'podcast'
+                const podcast = item as PodcastFeed
+                return (
+                  <CommandItem
+                    key={podcast.feed.id}
+                    value={`${podcast.feed.id}-${podcast.feed.title}-${podcast.feed.author || ''}`}
+                    onSelect={() => {
+                      onChange(podcast.feed.id.toString())
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-4 w-4',
+                        value === podcast.feed.id.toString()
+                          ? 'opacity-100'
+                          : 'opacity-0',
+                      )}
+                    />
+                    <Podcast className="h-4 w-4 mr-2 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">
+                        {podcast.feed.title}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {podcast.feed.author || 'Unknown author'} •{' '}
+                        {podcast.downloadedEpisodes}/{podcast.totalEpisodes}{' '}
+                        episodes
+                      </div>
+                    </div>
                   </CommandItem>
                 )
               }

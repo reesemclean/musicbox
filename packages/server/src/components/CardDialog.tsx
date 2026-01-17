@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import type { CardMapping } from 'shared'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { getPlaylists, getSongs } from '@/services/songsServerFunctions'
+import { getAllPodcastFeeds } from '@/services/serverFunctions'
 import { useNFCScanning } from '@/components/CardDialog/useNFCScanning'
 import { useCardMutations } from '@/components/CardDialog/useCardMutations'
 import { NFCScanWaiting } from '@/components/CardDialog/NFCScanWaiting'
@@ -31,14 +32,14 @@ export function CardDialog({
   )
   const [nfcId, setNfcId] = useState<string>(card?.nfcId || '')
   const [contentType, setContentType] = useState<
-    'song' | 'playlist' | 'action'
+    'song' | 'playlist' | 'action' | 'podcast'
   >(card?.contentType || 'song')
   const [contentValue, setContentValue] = useState<string | null>(
     card?.contentPath || card?.action || null,
   )
   const [isEditingExisting, setIsEditingExisting] = useState(false)
 
-  // Fetch songs and playlists
+  // Fetch songs, playlists, and podcasts
   const { data: songs = [] } = useSuspenseQuery({
     queryKey: ['songs'],
     queryFn: getSongs,
@@ -47,6 +48,11 @@ export function CardDialog({
   const { data: playlists = [] } = useSuspenseQuery({
     queryKey: ['playlists'],
     queryFn: getPlaylists,
+  })
+
+  const { data: podcasts = [] } = useSuspenseQuery({
+    queryKey: ['podcasts'],
+    queryFn: getAllPodcastFeeds,
   })
 
   // Handle NFC scan detection
@@ -156,6 +162,7 @@ export function CardDialog({
             contentValue={contentValue}
             songs={songs}
             playlists={playlists}
+            podcasts={podcasts}
             isLoading={isLoading}
             onContentTypeChange={setContentType}
             onContentValueChange={setContentValue}
