@@ -56,4 +56,7 @@ result-*
 # Player config
 device-configs/
 
+# Image builder
+image/build-config.json
+
 outputs/

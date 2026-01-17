@@ -1,0 +1,34 @@
+[Unit]
+Description=MusicBox Player
+After=network-online.target sound.target
+Wants=network-online.target sound.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /opt/musicbox/player/dist/musicbox-player.js
+User=musicbox
+Group=musicbox
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=NODE_ENV=production
+Environment=TRIGGER_KEYBOARD=false
+Environment=TRIGGER_HTTP=true
+Environment=TRIGGER_NFC=true
+Environment=TRIGGER_BUTTONS=true
+
+# Permissions for hardware access
+SupplementaryGroups=audio i2c gpio
+
+# Paths
+WorkingDirectory=/opt/musicbox/player
+ReadWritePaths=/var/cache/musicbox /tmp
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=musicbox-player
+
+[Install]
+WantedBy=multi-user.target

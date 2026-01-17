@@ -4,23 +4,29 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "server",
-    "player",
-    "shared"
+    "packages/server",
+    "packages/player",
+    "packages/shared",
+    "packages/image",
+    "packages/agent"
   ],
   "scripts": {
     "dev:server": "npm run dev --workspace=server",
     "dev:player": "npm run dev --workspace=player",
-    "build:all": "rm -f ./outputs/* && cd player && npm run build:bundle && cd .. && npm run build:image",
-    "build:server": "npm run build --workspace=server",
-    "build:bundle": "npm run build:bundle --workspace=player",
-    "build:player": "npm run build --workspace=player",
-    "build:image": "npm run build:image --workspace=player -- ./device-configs/test-player.config.json --wifi ./device-configs/wifi-config.json --ssh ./device-configs/ssh-config.json",
+    "build": "npm run build --workspaces --if-present",
+    "build:image": "npm run build --workspace=image",
     "lint": "npm run lint --workspaces",
-    "format": "npm run format --workspaces"
+    "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "format": "npm run format --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:generate": "npm run db:generate --workspace=server",
+    "db:migrate": "npm run db:migrate --workspace=server",
+    "db:push": "npm run db:push --workspace=server",
+    "db:studio": "npm run db:studio --workspace=server"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "prettier": "^3.4.2",
     "typescript": "^5.7.3"
   }
 }

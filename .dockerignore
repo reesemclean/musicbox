@@ -4,7 +4,7 @@
 # Build outputs (rebuilt in Docker)
 **/.output
 **/dist
-player/bundle
+packages/player/bundle
 
 # Development files
 **/.env.local
@@ -13,8 +13,8 @@ player/bundle
 **/*.db-journal
 
 # Player-specific (not needed for server build)
-player/images
-player/image-building
+packages/player/images
+packages/image/
 
 # IDE
 .vscode

@@ -1,0 +1,25 @@
+# MusicBox Device Configuration
+# Raspberry Pi OS Bookworm
+
+# Enable I2S audio output (MAX98357A DAC)
+dtoverlay=hifiberry-dac
+dtoverlay=i2s-mmap
+
+# Enable I2C for NFC reader (PN532)
+dtparam=i2c_arm=on
+dtparam=i2c_arm_baudrate=100000
+
+# Disable onboard audio (conflicts with I2S)
+dtparam=audio=off
+
+# GPU memory (minimum for headless)
+gpu_mem=16
+
+# Disable splash screen for faster boot
+disable_splash=1
+
+# Console settings
+enable_uart=1
+
+# Disable WiFi power management for reliability
+dtoverlay=disable-wifi-pwr-mgmt

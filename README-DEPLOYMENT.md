@@ -1,130 +1,43 @@
-# MusicBox Player Deployment
+# MusicBox Deployment
 
-Quick guide to deploying the MusicBox player to Raspberry Pi.
+Quick guide to deploying MusicBox to Raspberry Pi.
 
-## Recommended: Generic Image Workflow
-
-**Build once, use everywhere!**
-
-### 1. Build Generic Image
+## Build Image
 
 ```bash
-cd player && npm run build:bundle && cd ..
-git add player/dist && git commit -m "Build bundle" && git push
+# Build the player bundle
+cd packages/player && npm run build:bundle && cd ../..
 
-cd player/image-building
+# Build the Raspberry Pi image
+cd packages/image
+node --experimental-transform-types build-image.ts
 
-# Option A: No WiFi (setup wizard will prompt)
-node --experimental-transform-types build-generic-image.ts
-
-# Option B: WiFi pre-configured (connects automatically on boot)
-node --experimental-transform-types build-generic-image.ts \
-  --wifi-ssid "YourNetwork" \
-  --wifi-password "YourPassword"
+# Or interactive mode for WiFi/SSH setup
+node --experimental-transform-types build-image.ts --interactive
 ```
 
-### 2. Flash & Setup
+## Flash & Boot
 
 ```bash
-# Flash to SD card (reuse same image for all devices!)
-sudo dd if=outputs/musicbox-generic.img of=/dev/rdiskX bs=4m
+# Flash to SD card
+sudo dd if=../../outputs/musicbox-*.img of=/dev/rdiskX bs=4m status=progress
+diskutil eject /dev/diskX
 
-# Boot Pi, SSH in
-ssh root@musicbox.local
-
-# Run setup wizard
-/root/setup-musicbox.sh
+# Insert SD card in Pi and boot
+# SSH in (if SSH was configured)
+ssh pi@musicbox.local
 ```
-
-### 3. Update (No Reflashing!)
-
-```bash
-# On laptop
-cd player && npm run build:bundle && cd ..
-git add player/dist && git commit && git push
-
-# On Pi
-ssh root@musicbox-device.local
-sudo nixos-rebuild switch
-```
-
-**See full guide:** [`docs/GENERIC-IMAGE-GUIDE.md`](docs/GENERIC-IMAGE-GUIDE.md)
-
----
-
-## Alternative: Device-Specific Images
-
-For advanced use cases where you want pre-configured images:
-
-```bash
-cd player/image-building
-node --experimental-transform-types build-image.ts device-config.json
-```
-
-This builds a device-specific image with WiFi and device credentials embedded.
-
-**See:** [`docs/CUSTOM-IMAGE.md`](docs/CUSTOM-IMAGE.md)
-
----
-
-## Development Workflow
-
-```bash
-# Local development
-nix develop .#player
-cd player && npm run dev
-
-# Test in Docker
-npm run build:bundle
-cd .. && ./scripts/test-docker.sh
-
-# Deploy to Pi (after setup)
-git add player/dist && git commit && git push
-ssh root@musicbox-device.local "nixos-rebuild switch"
-```
-
-**See:** [`DEPLOYMENT.md`](DEPLOYMENT.md) for complete development guide
-
----
-
-## Audio Troubleshooting
-
-If MAX98357A audio isn't working:
-
-```bash
-# On Pi
-bash /path/to/diagnose-audio.sh
-
-# Or check manually
-aplay -l  # Should show I2S card
-speaker-test -t sine -f 1000
-```
-
-**See:** [`docs/MAX98357A-AUDIO-FIX.md`](docs/MAX98357A-AUDIO-FIX.md)
-
----
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
-| Build generic image (no WiFi) | `node build-generic-image.ts` |
-| Build generic image (with WiFi) | `node build-generic-image.ts --wifi-ssid "..." --wifi-password "..."` |
-| Flash SD card | `sudo dd if=image.img of=/dev/rdiskX bs=4m` |
-| Setup device | `/root/setup-musicbox.sh` |
-| Check status | `systemctl status musicbox-player` |
-| View logs | `journalctl -u musicbox-player -f` |
-| Update player | `nixos-rebuild switch` (after git push) |
-| Diagnose audio | `bash diagnose-audio.sh` |
-
----
+| Task                | Command                                                                   |
+| ------------------- | ------------------------------------------------------------------------- |
+| Build image         | `cd packages/image && node --experimental-transform-types build-image.ts` |
+| Flash SD card       | `sudo dd if=outputs/*.img of=/dev/rdiskX bs=4m`                           |
+| Check player status | `systemctl status musicbox-player`                                        |
+| View logs           | `journalctl -u musicbox-player -f`                                        |
 
 ## Documentation
 
-- **[Generic Image Guide](docs/GENERIC-IMAGE-GUIDE.md)** - Recommended workflow
-- **[WiFi Embedding](docs/WIFI-EMBEDDING.md)** - Pre-configure WiFi in images
-- **[Audio Troubleshooting](docs/MAX98357A-AUDIO-FIX.md)** - Fix audio issues
-- **[Update Without Reflashing](docs/UPDATE-WITHOUT-REFLASHING.md)** - Git updates
-- **[Custom Images](docs/CUSTOM-IMAGE.md)** - Device-specific images
-- **[Development](DEPLOYMENT.md)** - Full development guide
-- **[Quick Reference](docs/QUICK-REFERENCE.md)** - Command cheat sheet
+- [Hardware Wiring](docs/HARDWARE-WIRING.md) - NFC reader and audio setup
+- [Device Management](docs/device-management.md) - Managing devices from server

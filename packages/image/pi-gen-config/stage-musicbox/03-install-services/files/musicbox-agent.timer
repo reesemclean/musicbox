@@ -1,0 +1,10 @@
+[Unit]
+Description=Run MusicBox Config Agent periodically
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

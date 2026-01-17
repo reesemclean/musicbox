@@ -1,0 +1,18 @@
+[Unit]
+Description=MusicBox Config Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node /opt/musicbox/agent/dist/index.js
+User=root
+Environment=NODE_ENV=production
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=musicbox-agent
+
+[Install]
+WantedBy=multi-user.target

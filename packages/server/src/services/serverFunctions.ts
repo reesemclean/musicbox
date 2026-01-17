@@ -1,0 +1,400 @@
+import { createServerFn } from '@tanstack/react-start'
+import { desc, eq } from 'drizzle-orm'
+import { z } from 'zod'
+import * as devicesService from './devicesService.js'
+import { db } from '@/db'
+import { cards, downloadQueue, libraryVersion, playHistory } from '@/db/schema'
+import { nfcQueue } from '@/lib/nfc-queue'
+
+// ============================================================================
+// NFC Scanning
+// ============================================================================
+
+export const startNFCScanSession = createServerFn({ method: 'POST' }).handler(
+  () => {
+    const sessionId = nfcQueue.startSession()
+    return { sessionId }
+  },
+)
+
+export const stopNFCScanSession = createServerFn({ method: 'POST' })
+  .inputValidator((data: { sessionId: string }) => data)
+  .handler(({ data }) => {
+    nfcQueue.endSession(data.sessionId)
+    return { success: true }
+  })
+
+export const pollNFCScans = createServerFn({ method: 'GET' })
+  .inputValidator((data: { sessionId: string }) => data)
+  .handler(({ data }) => {
+    const scans = nfcQueue.getRecentScans(data.sessionId)
+    return { scans }
+  })
+
+// ============================================================================
+// Card Management
+// ============================================================================
+
+export const getAllCards = createServerFn().handler(async () => {
+  return db.select().from(cards)
+})
+
+export const getCard = createServerFn({ method: 'GET' })
+  .inputValidator((data: { nfcId: string }) => data)
+  .handler(async ({ data }) => {
+    const result = await db
+      .select()
+      .from(cards)
+      .where(eq(cards.nfcId, data.nfcId))
+    return result.length > 0 ? result[0] : null
+  })
+
+const CreateCardSchema = z.object({
+  nfcId: z.string().min(1),
+  contentType: z.enum(['song', 'playlist', 'action']),
+  contentPath: z.string().optional(),
+  action: z.enum(['play', 'pause', 'next', 'previous', 'stop']).optional(),
+})
+
+export const createCard = createServerFn({ method: 'POST' })
+  .inputValidator(CreateCardSchema)
+  .handler(async ({ data }) => {
+    const result = await db
+      .insert(cards)
+      .values({
+        nfcId: data.nfcId,
+        contentType: data.contentType,
+        contentPath: data.contentPath,
+        action: data.action,
+      })
+      .returning()
+    return result[0]
+  })
+
+export const updateCard = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      nfcId: z.string(),
+      contentType: z.enum(['song', 'playlist', 'action']).optional(),
+      contentPath: z.string().optional(),
+      action: z.enum(['play', 'pause', 'next', 'previous', 'stop']).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { nfcId, ...updates } = data
+    const result = await db
+      .update(cards)
+      .set(updates)
+      .where(eq(cards.nfcId, nfcId))
+      .returning()
+    return result[0]
+  })
+
+export const deleteCard = createServerFn({ method: 'POST' })
+  .inputValidator((data: { nfcId: string }) => data)
+  .handler(async ({ data }) => {
+    await db.delete(cards).where(eq(cards.nfcId, data.nfcId))
+    return { success: true }
+  })
+
+// ============================================================================
+// Library Version & Sync
+// ============================================================================
+
+export const getCurrentLibraryVersion = createServerFn().handler(async () => {
+  const result = await db
+    .select()
+    .from(libraryVersion)
+    .orderBy(desc(libraryVersion.version))
+    .limit(1)
+  return result[0]?.version || 0
+})
+
+export const incrementLibraryVersion = createServerFn({ method: 'POST' })
+  .inputValidator((data: { changeDescription?: string }) => data)
+  .handler(async ({ data }) => {
+    const currentVersion = await getCurrentLibraryVersion()
+    const newVersion = currentVersion + 1
+
+    const result = await db
+      .insert(libraryVersion)
+      .values({
+        version: newVersion,
+        changeDescription: data.changeDescription,
+      })
+      .returning()
+
+    return result[0]
+  })
+
+// ============================================================================
+// Play History
+// ============================================================================
+
+export const recordPlay = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      deviceId: z.number(),
+      songPath: z.string(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const result = await db
+      .insert(playHistory)
+      .values({
+        deviceId: data.deviceId,
+        songPath: data.songPath,
+        playedAt: new Date(),
+      })
+      .returning()
+    return result[0]
+  })
+
+export const getPlayHistory = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z
+      .object({
+        deviceId: z.number().optional(),
+        limit: z.number().optional().default(100),
+      })
+      .optional(),
+  )
+  .handler(async ({ data }) => {
+    let query = db.select().from(playHistory)
+
+    if (data?.deviceId) {
+      query = query.where(eq(playHistory.deviceId, data.deviceId)) as any
+    }
+
+    return query.orderBy(desc(playHistory.playedAt)).limit(data?.limit || 100)
+  })
+
+// ============================================================================
+// Download Queue
+// ============================================================================
+
+export const getDownloadQueue = createServerFn().handler(async () => {
+  return db.select().from(downloadQueue).orderBy(downloadQueue.addedAt)
+})
+
+export const addToDownloadQueue = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      videoId: z.string(),
+      title: z.string(),
+      artist: z.string().optional(),
+      album: z.string().optional(),
+      targetPath: z.string().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const result = await db
+      .insert(downloadQueue)
+      .values({
+        videoId: data.videoId,
+        title: data.title,
+        artist: data.artist,
+        album: data.album,
+        targetPath: data.targetPath,
+        status: 'pending',
+        progress: 0,
+      })
+      .returning()
+    return result[0]
+  })
+
+export const updateDownloadStatus = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      videoId: z.string(),
+      status: z.enum(['pending', 'downloading', 'complete', 'failed']),
+      progress: z.number().min(0).max(100).optional(),
+      error: z.string().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const updates: any = {
+      status: data.status,
+      progress: data.progress ?? 0,
+      error: data.error,
+    }
+
+    if (data.status === 'complete') {
+      updates.completedAt = new Date()
+    }
+
+    const result = await db
+      .update(downloadQueue)
+      .set(updates)
+      .where(eq(downloadQueue.videoId, data.videoId))
+      .returning()
+    return result[0]
+  })
+
+// ============================================================================
+// Device Management
+// ============================================================================
+
+/**
+ * Create a new device (admin)
+ */
+export const createDevice = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ name: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const device = await devicesService.createDevice(data.name)
+
+    // Generate downloadable config
+    const config = {
+      deviceId: device.id,
+      deviceName: device.name,
+      deviceSecret: device.secret,
+      serverUrl: process.env.PUBLIC_SERVER_URL || 'http://localhost:3000',
+      httpPort: 8080,
+    }
+
+    return { device, config }
+  })
+
+/**
+ * Get all devices
+ */
+export const getDevices = createServerFn().handler(async () => {
+  return await devicesService.getAllDevices()
+})
+
+/**
+ * Send command to device (HTTP proxy)
+ */
+export const sendDeviceCommand = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      deviceId: z.number(),
+      command: z.enum(['play', 'pause', 'next', 'previous', 'stop']),
+      nfcId: z.string().optional(), // For scan command
+    }),
+  )
+  .handler(async ({ data }) => {
+    const device = await devicesService.getDeviceById(data.deviceId)
+
+    if (!device || !device.ipAddress) {
+      throw new Error('Device not found or offline')
+    }
+
+    const playerUrl = `http://${device.ipAddress}:${device.httpPort}`
+
+    let endpoint: string
+    let body: string | undefined = undefined
+
+    if (data.nfcId) {
+      endpoint = '/scan'
+      body = JSON.stringify({ nfcId: data.nfcId })
+    } else {
+      endpoint = `/${data.command}`
+    }
+
+    const response = await fetch(`${playerUrl}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    })
+
+    if (!response.ok) {
+      throw new Error(`Player returned ${response.status}`)
+    }
+
+    return { success: true }
+  })
+
+/**
+ * Get all pending devices waiting for approval
+ */
+export const getPendingDevices = createServerFn().handler(async () => {
+  return await devicesService.getPendingDevices()
+})
+
+/**
+ * Approve a pending device
+ */
+export const approveDevice = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      deviceId: z.number(),
+      name: z.string().min(1),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const device = await devicesService.approveDevice(data.deviceId, data.name)
+
+    if (!device) {
+      throw new Error('Device not found or not pending')
+    }
+
+    return { device }
+  })
+
+/**
+ * Reject a pending device
+ */
+export const rejectDevice = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      deviceId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const device = await devicesService.rejectDevice(data.deviceId)
+
+    if (!device) {
+      throw new Error('Device not found or not pending')
+    }
+
+    return { device }
+  })
+
+/**
+ * Trigger update on a device
+ */
+export const triggerDeviceUpdate = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      deviceId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const device = await devicesService.getDeviceById(data.deviceId)
+
+    if (!device) {
+      throw new Error('Device not found')
+    }
+
+    if (!device.ipAddress) {
+      throw new Error('Device IP address unknown - wait for heartbeat')
+    }
+
+    const playerPort = device.httpPort || 8080
+
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+      const response = await fetch(
+        `http://${device.ipAddress}:${playerPort}/trigger-update`,
+        {
+          method: 'POST',
+          signal: controller.signal,
+        },
+      )
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        throw new Error(`Device returned ${response.status}`)
+      }
+
+      return { success: true }
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : 'Failed to contact device',
+      )
+    }
+  })

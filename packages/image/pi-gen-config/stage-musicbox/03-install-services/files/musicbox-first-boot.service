@@ -1,0 +1,13 @@
+[Unit]
+Description=MusicBox First Boot Setup
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/boot/firmware/musicbox/wifi.txt
+
+[Service]
+Type=oneshot
+ExecStart=/opt/musicbox/musicbox-first-boot.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

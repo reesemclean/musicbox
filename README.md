@@ -10,28 +10,28 @@ musicbox/
 ├── package.json           # Monorepo root
 ├── outputs/               # Built SD card images
 │
-├── server/                # Central library service (TanStack Start)
-│   ├── src/
-│   │   ├── routes/        # File-based routing
-│   │   ├── components/    # React components
-│   │   ├── services/      # Business logic
-│   │   └── db/schema.ts   # Database schema (Drizzle ORM)
-│   └── library/           # Music files and playlists
-│
-├── player/                # Raspberry Pi player application
-│   ├── src/               # TypeScript source code
-│   ├── dist/              # Compiled player bundle
-│   ├── package.nix        # Nix package definition
-│   ├── e2e-testing/       # Docker-based testing
-│   │   ├── Dockerfile           # NixOS test container
-│   │   └── test-docker.sh       # Test automation script
-│   └── image-building/    # NixOS image builder
-│       ├── build-image.ts       # TypeScript build script
-│       ├── Dockerfile.builder   # Docker build environment
-│       └── nixos-module.nix     # NixOS service config
-│
-└── shared/                # Shared TypeScript types
-    └── src/types/
+└── packages/
+    ├── server/            # Central library service (TanStack Start)
+    │   ├── src/
+    │   │   ├── routes/    # File-based routing
+    │   │   ├── components/# React components
+    │   │   ├── services/  # Business logic
+    │   │   └── db/schema.ts # Database schema (Drizzle ORM)
+    │   └── library/       # Music files and playlists
+    │
+    ├── player/            # Raspberry Pi player application
+    │   ├── src/           # TypeScript source code
+    │   ├── dist/          # Compiled player bundle
+    │   └── e2e-testing/   # Docker-based testing
+    │
+    ├── image/             # Raspberry Pi image builder
+    │   ├── build-image.ts # TypeScript build script
+    │   └── pi-gen-config/ # Pi-gen configuration
+    │
+    ├── agent/             # Device management agent
+    │
+    └── shared/            # Shared TypeScript types
+        └── src/types/
 ```
 
 ## Development Environment
@@ -117,13 +117,16 @@ See `server/src/db/schema.ts` for complete schema.
 ```bash
 npm run dev:server       # Start server
 npm run dev:player       # Start player
+npm run build            # Build all workspaces
 npm run build:image      # Build Raspberry Pi SD card image
+npm run lint             # Lint all workspaces
+npm run typecheck        # Typecheck all workspaces
 ```
 
 **Server:**
 
 ```bash
-cd server
+cd packages/server
 npm run dev              # Development server (port 3000)
 npm run build            # Production build
 npm run db:push          # Apply database schema
@@ -133,10 +136,10 @@ npm run db:studio        # Open Drizzle Studio
 **Player:**
 
 ```bash
-cd player
+cd packages/player
 npm run dev              # Development mode with hot reload
-npm run build:bundle     # Compile TypeScript bundle
-npm run simulate-nfc     # Simulate NFC card scan
+npm run build            # Compile TypeScript
+npm run build:bundle     # Create single-file bundle for Pi
 ```
 
 ## Tech Stack

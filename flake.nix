@@ -36,16 +36,7 @@
           mpv       # Audio playback with IPC control
         ];
         
-        # Player package
-        musicbox-player = pkgs.callPackage ./player/package.nix {};
-        
       in {
-        # Packages
-        packages = {
-          player = musicbox-player;
-          default = musicbox-player;
-        };
-        
         # Development shells
         devShells = {
           # Default: Everything for full-stack development
@@ -58,49 +49,12 @@
               echo "Node: $(node --version)"
               echo "Python: $(python3 --version)"
               echo ""
-              echo "Available commands:"
-              echo "  cd server && npm run dev    # Start server"
-              echo "  cd player && npm run dev    # Start player"
-              echo ""
-              echo "Other shells:"
-              echo "  nix develop .#server        # Server only"
-              echo "  nix develop .#player        # Player only"
-            '';
-          };
-          
-          # Server-only shell
-          server = pkgs.mkShell {
-            buildInputs = commonDeps ++ serverDeps;
-            
-            shellHook = ''
-              echo "🎵 MusicBox Server Environment"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "Node: $(node --version)"
-              echo "Python: $(python3 --version)"
-              echo ""
-              echo "cd server && npm run dev"
-            '';
-          };
-          
-          # Player-only shell
-          player = pkgs.mkShell {
-            buildInputs = commonDeps ++ playerDeps;
-            
-            shellHook = ''
-              echo "🎵 MusicBox Player Environment"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "Node: $(node --version)"
-              echo ""
-              echo "cd player && npm run dev"
+              echo "Commands:"
+              echo "  npm run dev:server    # Start server"
+              echo "  npm run dev:player    # Start player"
             '';
           };
         };
       }
-    ) // {
-      # NixOS module (not system-specific)
-      nixosModules.musicbox-player = import ./player/image-building/nixos-module.nix;
-
-      # Note: SD card images are built via player/image-building/build-image.ts
-      # which uses nixos-generate in Docker for cross-compilation
-    };
+    );
 }
