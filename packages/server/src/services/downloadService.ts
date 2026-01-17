@@ -94,7 +94,7 @@ async function downloadInBackground(
 ) {
   try {
     console.log(`[Download] Starting download for ${videoId}`)
-    
+
     // Update status to downloading
     await db
       .update(downloadQueue)
@@ -121,7 +121,7 @@ async function downloadInBackground(
       '--verbose', // Add verbose output for debugging
       url,
     ])
-    
+
     console.log(`[Download] yt-dlp process spawned with PID: ${ytdlp.pid}`)
 
     ytdlp.stdout.on('data', async (data) => {

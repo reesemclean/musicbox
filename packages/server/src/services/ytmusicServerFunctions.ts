@@ -16,11 +16,15 @@ import { createPlaylist } from './songsService'
 export const searchYTMusic = createServerFn({ method: 'GET' })
   .inputValidator((data: { query: string }) => data)
   .handler(async ({ data }) => {
+    console.log('[API] searchYTMusic called:', data.query)
+
     if (!data.query || data.query.trim().length === 0) {
       throw new Error('Query is required')
     }
 
-    return await searchSongs(data.query)
+    const results = await searchSongs(data.query)
+    console.log('[API] searchYTMusic found', results.length, 'results')
+    return results
   })
 
 export const searchYTMusicAlbums = createServerFn({ method: 'GET' })
@@ -59,6 +63,8 @@ export const downloadYTMusicSong = createServerFn({ method: 'POST' })
     }) => data,
   )
   .handler(async ({ data }) => {
+    console.log('[API] downloadYTMusicSong called:', JSON.stringify(data))
+
     if (!data.videoId || !data.title || !data.artist) {
       throw new Error('videoId, title, and artist are required')
     }
@@ -71,6 +77,8 @@ export const downloadYTMusicSong = createServerFn({ method: 'POST' })
       data.destination || 'songs',
       data.playlistName,
     )
+
+    console.log('[API] downloadYTMusicSong started, path:', relativePath)
 
     return {
       success: true,

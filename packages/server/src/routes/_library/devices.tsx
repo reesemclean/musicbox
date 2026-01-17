@@ -15,7 +15,6 @@ import {
   MoreVertical,
   Pause,
   Play,
-  Plus,
   SkipBack,
   SkipForward,
   Smartphone,
@@ -29,19 +28,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   approveDevice,
-  createDevice,
   getDevices,
   getPendingDevices,
   rejectDevice,
@@ -72,9 +62,6 @@ export const Route = createFileRoute('/_library/devices')({
 })
 
 function DevicesPage() {
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [newDeviceName, setNewDeviceName] = useState('')
-  const [createdDevice, setCreatedDevice] = useState<any>(null)
   const [approvalName, setApprovalName] = useState('')
   const [approvingDeviceId, setApprovingDeviceId] = useState<number | null>(
     null,
@@ -83,15 +70,6 @@ function DevicesPage() {
   const { data: devices } = useSuspenseQuery(devicesQueryOptions)
   const { data: pendingDevices } = useQuery(pendingDevicesQueryOptions)
   const queryClient = useQueryClient()
-
-  const createMutation = useMutation({
-    mutationFn: createDevice,
-    onSuccess: (result) => {
-      setCreatedDevice(result)
-      setNewDeviceName('')
-      queryClient.invalidateQueries({ queryKey: ['devices'] })
-    },
-  })
 
   const commandMutation = useMutation({
     mutationFn: sendDeviceCommand,
@@ -129,12 +107,6 @@ function DevicesPage() {
     },
   })
 
-  const handleCreateDevice = () => {
-    if (newDeviceName.trim()) {
-      createMutation.mutate({ data: { name: newDeviceName.trim() } })
-    }
-  }
-
   const sendCommand = (
     deviceId: number,
     command: 'play' | 'pause' | 'next' | 'previous' | 'stop',
@@ -165,12 +137,8 @@ function DevicesPage() {
     }
   }
 
-  const downloadConfig = (deviceId: number, closeDialog = false) => {
+  const downloadConfig = (deviceId: number) => {
     window.open(`/api/devices/${deviceId}/config`, '_blank')
-    if (closeDialog) {
-      setCreateDialogOpen(false)
-      setCreatedDevice(null)
-    }
   }
 
   const getStatusColor = (status?: string) => {
@@ -209,71 +177,6 @@ function DevicesPage() {
             Manage Raspberry Pi players and control playback remotely
           </p>
         </div>
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Device
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New Device</DialogTitle>
-              <DialogDescription>
-                Create a device configuration for a new Raspberry Pi player
-              </DialogDescription>
-            </DialogHeader>
-            {!createdDevice ? (
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="deviceName">Device Name</Label>
-                  <Input
-                    id="deviceName"
-                    value={newDeviceName}
-                    onChange={(e) => setNewDeviceName(e.target.value)}
-                    placeholder="living-room"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newDeviceName.trim()) {
-                        handleCreateDevice()
-                      }
-                    }}
-                  />
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Use a descriptive name like "living-room" or "bedroom"
-                  </p>
-                </div>
-                <Button
-                  onClick={handleCreateDevice}
-                  disabled={createMutation.isPending || !newDeviceName.trim()}
-                  className="w-full"
-                >
-                  {createMutation.isPending ? 'Creating...' : 'Create Device'}
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
-                  <p className="text-green-800 dark:text-green-200 font-medium">
-                    Device created successfully!
-                  </p>
-                </div>
-                <p className="text-sm">
-                  Download the configuration file and deploy it to your
-                  Raspberry Pi at:
-                </p>
-                <code className="block p-2 bg-gray-100 dark:bg-gray-800 rounded text-sm">
-                  /etc/musicbox/player.config.json
-                </code>
-                <Button
-                  onClick={() => downloadConfig(createdDevice.device.id, true)}
-                  className="w-full"
-                >
-                  Download {createdDevice.device.name}.config.json
-                </Button>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
       </div>
 
       {/* Pending Devices Section */}
@@ -392,13 +295,10 @@ function DevicesPage() {
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <Smartphone className="h-16 w-16 text-muted-foreground mb-4" />
           <h3 className="text-lg font-semibold mb-2">No devices yet</h3>
-          <p className="text-muted-foreground mb-4">
-            Create your first device to start controlling players
+          <p className="text-muted-foreground max-w-md">
+            Flash a Raspberry Pi with the MusicBox image and power it on.
+            It will automatically register here for approval.
           </p>
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Device
-          </Button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -472,7 +372,7 @@ function DevicesPage() {
                   </div>
                 </div>
 
-                <div className="flex gap-2 flex-shrink-0">
+                <div className="flex gap-2 shrink-0">
                   {device.status === 'online' && (
                     <>
                       <Button

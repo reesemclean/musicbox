@@ -236,26 +236,6 @@ export const updateDownloadStatus = createServerFn({ method: 'POST' })
 // ============================================================================
 
 /**
- * Create a new device (admin)
- */
-export const createDevice = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ name: z.string().min(1) }))
-  .handler(async ({ data }) => {
-    const device = await devicesService.createDevice(data.name)
-
-    // Generate downloadable config
-    const config = {
-      deviceId: device.id,
-      deviceName: device.name,
-      deviceSecret: device.secret,
-      serverUrl: process.env.PUBLIC_SERVER_URL || 'http://localhost:3000',
-      httpPort: 8080,
-    }
-
-    return { device, config }
-  })
-
-/**
  * Get all devices
  */
 export const getDevices = createServerFn().handler(async () => {

@@ -1,0 +1,23 @@
+services:
+  server:
+    image: ghcr.io/reesemclean/musicbox/server:latest
+    container_name: musicbox-server
+    ports:
+      - "8347:3000"
+    volumes:
+      # Persist database (contains all data including songs as BLOBs)
+      - musicbox-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=/app/data/musicbox.db
+      - SERVER_URL=https://musicbox.mc-home.org
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  musicbox-data:
