@@ -108,7 +108,7 @@ sudo umount /dev/sdX*
 **macOS:**
 
 ```bash
-sudo dd if=outputs/musicbox.img of=/dev/rdiskN bs=4m
+sudo dd if=outputs/musicbox.img of=/dev/rdiskN bs=4M status=progress
 # Use rdiskN (not diskN) for faster writes
 ```
 

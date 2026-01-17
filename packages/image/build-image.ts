@@ -410,7 +410,10 @@ ARCH="arm64"
   }
 
   // Configure server URL
-  const bootstrapConfigPath = join(stageDest, '02-install-bootstrap/files/config.txt')
+  const bootstrapConfigPath = join(
+    stageDest,
+    '02-install-bootstrap/files/config.txt',
+  )
   writeFileSync(
     bootstrapConfigPath,
     `# MusicBox Bootstrap Configuration\nSERVER_URL=${config.serverUrl}\n`,
@@ -513,12 +516,14 @@ async function runBuild(): Promise<boolean> {
 
   return new Promise((resolve) => {
     // Pass ARCH=arm64 as environment variable to avoid setarch linux32 issues on macOS
+    // Add PIGEN_DOCKER_OPTS for better device access on OrbStack/Docker Desktop
     const build = spawn('./build-docker.sh', [], {
       cwd: PIGEN_DIR,
       stdio: 'inherit',
       env: {
         ...process.env,
         ARCH: 'arm64',
+        PIGEN_DOCKER_OPTS: '--cap-add=SYS_ADMIN --device=/dev/fuse',
       },
     })
 
@@ -612,7 +617,7 @@ ${colors.red}⚠️  WARNING: Double-check the device! Wrong device = data loss$
 3. Flash the image:
 
    ${colors.yellow}macOS:${colors.reset}
-   sudo dd if=${imagePath} of=/dev/rdiskN bs=4m
+   sudo dd if=${imagePath} of=/dev/rdiskN bs=4M status=progress
 
    ${colors.yellow}Linux:${colors.reset}
    sudo dd if=${imagePath} of=/dev/sdX bs=4M status=progress

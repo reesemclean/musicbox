@@ -1,12 +1,13 @@
 [Unit]
 Description=MusicBox First Boot Setup
-After=network-online.target
-Wants=network-online.target
-ConditionPathExists=/boot/firmware/musicbox/wifi.txt
+After=local-fs.target
+Before=network-online.target
+ConditionPathExists=!/opt/musicbox/.first-boot-complete
 
 [Service]
 Type=oneshot
 ExecStart=/opt/musicbox/musicbox-first-boot.sh
+ExecStartPost=/usr/bin/touch /opt/musicbox/.first-boot-complete
 RemainAfterExit=yes
 
 [Install]
