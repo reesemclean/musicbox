@@ -1,12 +1,7 @@
 #!/bin/bash -e
 
-# Extract pre-built agent
-tar -xzf files/agent.tar.gz -C "${ROOTFS_DIR}/opt/musicbox/agent/"
-
-# Install agent dependencies
-on_chroot << EOF
-cd /opt/musicbox/agent && npm ci --omit=dev
-EOF
+# Copy bundled agent (single JS file, no npm install needed)
+install -m 755 files/musicbox-agent.js "${ROOTFS_DIR}/opt/musicbox/agent/musicbox-agent.js"
 
 # Set ownership
 on_chroot << EOF

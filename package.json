@@ -14,15 +14,15 @@
     "dev:server": "npm run dev --workspace=server",
     "dev:player": "npm run dev --workspace=player",
     "build": "npm run build --workspaces --if-present",
-    "build:image": "npm run build --workspace=image",
+    "build:image": "npm run build --workspace=packages/image",
     "lint": "npm run lint --workspaces",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
     "format": "npm run format --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "db:generate": "npm run db:generate --workspace=server",
-    "db:migrate": "npm run db:migrate --workspace=server",
-    "db:push": "npm run db:push --workspace=server",
-    "db:studio": "npm run db:studio --workspace=server"
+    "db:generate": "npm run db:generate --workspace=packages/server",
+    "db:migrate": "npm run db:migrate --workspace=packages/server",
+    "db:push": "npm run db:push --workspace=packages/server",
+    "db:studio": "npm run db:studio --workspace=packages/server"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

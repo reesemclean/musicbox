@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/node /opt/musicbox/agent/dist/index.js
+ExecStart=/usr/bin/node /opt/musicbox/agent/musicbox-agent.js
 User=root
 Environment=NODE_ENV=production
 
