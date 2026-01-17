@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1768625227594,
-      "tag": "0000_even_morlun",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1768666279007,
-      "tag": "0001_add_deployment_tracking",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1737158400000,
-      "tag": "0002_remove_agent_version",
+      "when": 1768669145694,
+      "tag": "0000_sturdy_preak",
       "breakpoints": true
     }
   ]

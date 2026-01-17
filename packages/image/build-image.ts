@@ -410,10 +410,10 @@ ARCH="arm64"
   }
 
   // Configure server URL
-  const agentConfigPath = join(stageDest, '02-install-agent/files/config.txt')
+  const bootstrapConfigPath = join(stageDest, '02-install-bootstrap/files/config.txt')
   writeFileSync(
-    agentConfigPath,
-    `# MusicBox Agent Configuration\nSERVER_URL=${config.serverUrl}\n`,
+    bootstrapConfigPath,
+    `# MusicBox Bootstrap Configuration\nSERVER_URL=${config.serverUrl}\n`,
   )
 
   // Configure WiFi

@@ -10,6 +10,11 @@ export default tseslint.config(
     ignores: ["dist/**", "build/**", "*.config.js", "*.config.ts"],
   },
   {
+    languageOptions: {
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
     rules: {
       "@typescript-eslint/no-unused-vars": [
         "error",

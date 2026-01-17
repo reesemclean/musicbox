@@ -29,7 +29,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
@@ -157,10 +156,6 @@ function DevicesPage() {
     playbook: 'site' | 'deploy-player' | 'sync-config' = 'site',
   ) => {
     deployMutation.mutate({ data: { deviceId, playbook } })
-  }
-
-  const downloadConfig = (deviceId: number) => {
-    window.open(`/api/devices/${deviceId}/config`, '_blank')
   }
 
   const getDeploymentStatusBadge = (status?: string | null) => {
@@ -596,13 +591,6 @@ function DevicesPage() {
                       >
                         <Download className="h-4 w-4 mr-2" />
                         Sync Config Only
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => downloadConfig(device.id)}
-                      >
-                        <Download className="h-4 w-4 mr-2" />
-                        Download Config
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

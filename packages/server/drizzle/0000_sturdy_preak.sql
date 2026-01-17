@@ -9,6 +9,18 @@ CREATE TABLE `cards` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `cards_nfc_id_unique` ON `cards` (`nfc_id`);--> statement-breakpoint
+CREATE TABLE `deployment_runs` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`device_id` integer,
+	`playbook` text NOT NULL,
+	`status` text NOT NULL,
+	`output` text,
+	`started_at` integer,
+	`completed_at` integer,
+	`created_at` integer DEFAULT (unixepoch()),
+	FOREIGN KEY (`device_id`) REFERENCES `devices`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
 CREATE TABLE `devices` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`name` text NOT NULL,
@@ -23,8 +35,10 @@ CREATE TABLE `devices` (
 	`library_version` integer DEFAULT 0,
 	`approved_at` integer,
 	`reported_player_version` text,
-	`reported_agent_version` text,
 	`reported_config_version` text,
+	`last_deployed_at` integer,
+	`last_deployed_version` text,
+	`deployment_status` text,
 	`created_at` integer DEFAULT (unixepoch())
 );
 --> statement-breakpoint
