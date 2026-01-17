@@ -1,0 +1,16 @@
+[Unit]
+Description=MusicBox Bootstrap
+Documentation=https://github.com/anthropics/musicbox
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/opt/musicbox/.bootstrap-complete
+
+[Service]
+Type=oneshot
+ExecStart=/opt/musicbox/musicbox-bootstrap.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

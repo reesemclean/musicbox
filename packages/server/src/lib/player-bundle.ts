@@ -10,7 +10,12 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 
 // Player bundle location (relative to server root)
-const PLAYER_BUNDLE_PATH = join(process.cwd(), 'data', 'player', 'player.tar.gz')
+const PLAYER_BUNDLE_PATH = join(
+  process.cwd(),
+  'data',
+  'player',
+  'player.tar.gz',
+)
 const PLAYER_VERSION_PATH = join(process.cwd(), 'data', 'player', 'version.txt')
 
 let cachedVersion: string | null = null

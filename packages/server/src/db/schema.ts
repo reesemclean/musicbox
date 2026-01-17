@@ -27,6 +27,15 @@ export type NewCard = typeof cards.$inferInsert
 export const deviceStatus = ['pending', 'approved', 'rejected'] as const
 export type DeviceStatus = (typeof deviceStatus)[number]
 
+// Deployment status for devices
+export const deploymentStatus = [
+  'pending',
+  'deploying',
+  'success',
+  'failed',
+] as const
+export type DeploymentStatus = (typeof deploymentStatus)[number]
+
 // Registered Pi devices
 export const devices = sqliteTable('devices', {
   id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
@@ -41,9 +50,12 @@ export const devices = sqliteTable('devices', {
   currentSong: text('current_song'), // JSON string of current playback
   libraryVersion: integer('library_version').default(0),
   approvedAt: integer('approved_at', { mode: 'timestamp' }), // When device was approved
-  reportedPlayerVersion: text('reported_player_version'), // Version reported by agent
-  reportedAgentVersion: text('reported_agent_version'), // Agent version reported
+  reportedPlayerVersion: text('reported_player_version'), // Version reported by heartbeat
   reportedConfigVersion: text('reported_config_version'), // Config version applied
+  // Deployment tracking (Ansible push-based)
+  lastDeployedAt: integer('last_deployed_at', { mode: 'timestamp' }),
+  lastDeployedVersion: text('last_deployed_version'),
+  deploymentStatus: text('deployment_status', { enum: deploymentStatus }),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(
     sql`(unixepoch())`,
   ),
@@ -140,3 +152,29 @@ export const playlistSongs = sqliteTable('playlist_songs', {
     sql`(unixepoch())`,
   ),
 })
+
+// Deployment run status
+export const deploymentRunStatus = [
+  'queued',
+  'running',
+  'success',
+  'failed',
+] as const
+export type DeploymentRunStatus = (typeof deploymentRunStatus)[number]
+
+// Ansible deployment runs
+export const deploymentRuns = sqliteTable('deployment_runs', {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  deviceId: integer('device_id').references(() => devices.id), // null = all devices
+  playbook: text('playbook').notNull(), // 'site', 'deploy-player', 'sync-config'
+  status: text('status', { enum: deploymentRunStatus }).notNull(),
+  output: text('output'), // Ansible output log
+  startedAt: integer('started_at', { mode: 'timestamp' }),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(
+    sql`(unixepoch())`,
+  ),
+})
+
+export type DeploymentRun = typeof deploymentRuns.$inferSelect
+export type NewDeploymentRun = typeof deploymentRuns.$inferInsert

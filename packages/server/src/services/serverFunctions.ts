@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import * as devicesService from './devicesService.js'
+import * as ansibleService from './ansibleService.js'
 import { db } from '@/db'
 import { cards, downloadQueue, libraryVersion, playHistory } from '@/db/schema'
 import { nfcQueue } from '@/lib/nfc-queue'
@@ -331,50 +332,72 @@ export const rejectDevice = createServerFn({ method: 'POST' })
     return { device }
   })
 
+// ============================================================================
+// Ansible Deployment
+// ============================================================================
+
 /**
- * Trigger update on a device
+ * Trigger Ansible deployment to devices
  */
-export const triggerDeviceUpdate = createServerFn({ method: 'POST' })
+export const triggerDeployment = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      deviceId: z.number(),
+      deviceId: z.number().optional(),
+      playbook: z
+        .enum(['site', 'deploy-player', 'sync-config'])
+        .default('site'),
     }),
   )
   .handler(async ({ data }) => {
-    const device = await devicesService.getDeviceById(data.deviceId)
-
-    if (!device) {
-      throw new Error('Device not found')
-    }
-
-    if (!device.ipAddress) {
-      throw new Error('Device IP address unknown - wait for heartbeat')
-    }
-
-    const playerPort = device.httpPort || 8080
-
-    try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
-
-      const response = await fetch(
-        `http://${device.ipAddress}:${playerPort}/trigger-update`,
-        {
-          method: 'POST',
-          signal: controller.signal,
-        },
-      )
-
-      clearTimeout(timeoutId)
-
-      if (!response.ok) {
-        throw new Error(`Device returned ${response.status}`)
-      }
-
-      return { success: true }
-    } catch (error) {
-      throw new Error(
-        error instanceof Error ? error.message : 'Failed to contact device',
-      )
-    }
+    const runId = await ansibleService.runPlaybook(data.playbook, data.deviceId)
+    return { runId, success: true }
   })
+
+/**
+ * Get deployment run history
+ */
+export const getDeploymentRuns = createServerFn()
+  .inputValidator(
+    z
+      .object({
+        limit: z.number().optional().default(50),
+      })
+      .optional(),
+  )
+  .handler(async ({ data }) => {
+    const runs = await ansibleService.getDeploymentRuns(data?.limit || 50)
+    return { runs }
+  })
+
+/**
+ * Get a specific deployment run with output
+ */
+export const getDeploymentRun = createServerFn()
+  .inputValidator(
+    z.object({
+      runId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const run = await ansibleService.getDeploymentRun(data.runId)
+    if (!run) {
+      throw new Error('Deployment run not found')
+    }
+    return { run }
+  })
+
+/**
+ * Get server's SSH public key for device registration
+ */
+export const getSSHPublicKey = createServerFn().handler(() => {
+  const publicKey = ansibleService.getServerSSHPublicKey()
+  return { publicKey }
+})
+
+/**
+ * Get devices ready for deployment
+ */
+export const getDeployableDevices = createServerFn().handler(async () => {
+  const devices = await ansibleService.getDeployableDevices()
+  return { devices }
+})

@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node --experimental-transform-types build-image.ts",
-    "build:interactive": "node --experimental-transform-types build-image.ts --interactive",
+    "build:image": "node --experimental-transform-types build-image.ts",
+    "build:image:interactive": "node --experimental-transform-types build-image.ts --interactive",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

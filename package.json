@@ -7,14 +7,13 @@
     "packages/server",
     "packages/player",
     "packages/shared",
-    "packages/image",
-    "packages/agent"
+    "packages/image"
   ],
   "scripts": {
     "dev:server": "npm run dev --workspace=server",
     "dev:player": "npm run dev --workspace=player",
     "build": "npm run build --workspaces --if-present",
-    "build:image": "npm run build --workspace=packages/image",
+    "build:image": "npm run build:image --workspace=packages/image",
     "lint": "npm run lint --workspaces",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
     "format": "npm run format --workspaces --if-present",

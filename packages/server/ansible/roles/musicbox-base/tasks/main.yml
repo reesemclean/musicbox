@@ -1,0 +1,60 @@
+---
+# MusicBox Base Role
+# Sets up system requirements for MusicBox player
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  become: yes
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - mpv
+      - alsa-utils
+      - i2c-tools
+      - curl
+      - jq
+    state: present
+  become: yes
+
+- name: Create musicbox group
+  ansible.builtin.group:
+    name: musicbox
+    state: present
+  become: yes
+
+- name: Create musicbox user
+  ansible.builtin.user:
+    name: musicbox
+    group: musicbox
+    groups:
+      - audio
+      - i2c
+      - gpio
+    shell: /bin/bash
+    create_home: yes
+    home: /home/musicbox
+    state: present
+  become: yes
+
+- name: Create MusicBox directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: musicbox
+    group: musicbox
+    mode: '0755'
+  loop:
+    - /opt/musicbox
+    - /opt/musicbox/player
+    - /var/cache/musicbox
+  become: yes
+
+- name: Create MusicBox config directory
+  ansible.builtin.file:
+    path: /boot/firmware/musicbox
+    state: directory
+    mode: '0755'
+  become: yes

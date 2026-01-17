@@ -1,0 +1,16 @@
+---
+# MusicBox Full Setup Playbook
+# Applies base setup, player deployment, and configuration
+# Run this for initial setup or full updates
+
+- name: Setup MusicBox devices
+  hosts: musicbox_devices
+  gather_facts: yes
+
+  roles:
+    - role: musicbox-base
+      tags: [base, setup]
+    - role: musicbox-player
+      tags: [player, deploy]
+    - role: musicbox-config
+      tags: [config, setup]

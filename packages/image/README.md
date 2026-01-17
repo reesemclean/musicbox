@@ -195,23 +195,17 @@ Just plug in Ethernet - it will get an IP via DHCP automatically.
 
 ## Troubleshooting
 
-### Check Agent Logs
+### Check Bootstrap Logs
 
 ```bash
 ssh musicbox@musicbox.local
-journalctl -u musicbox-agent -f
+journalctl -u musicbox-bootstrap -f
 ```
 
 ### Check Player Logs
 
 ```bash
 journalctl -u musicbox-player -f
-```
-
-### Manual Agent Run
-
-```bash
-sudo /usr/bin/node /opt/musicbox/agent/dist/index.js
 ```
 
 ### Verify Hardware

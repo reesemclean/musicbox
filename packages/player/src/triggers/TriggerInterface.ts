@@ -9,22 +9,22 @@
  * - WebSocket events (server push)
  */
 
-import type { PlayerCore } from "../core/PlayerCore.ts";
+import type { PlayerCore } from '../core/PlayerCore.ts'
 
 export interface Trigger {
   /**
    * Unique name for this trigger
    */
-  readonly name: string;
+  readonly name: string
 
   /**
    * Start the trigger and connect it to the player core
    * @param playerCore - The player core instance to control
    */
-  start(playerCore: PlayerCore): Promise<void>;
+  start(playerCore: PlayerCore): Promise<void>
 
   /**
    * Stop the trigger and clean up resources
    */
-  stop(): Promise<void>;
+  stop(): Promise<void>
 }

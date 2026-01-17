@@ -16,8 +16,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          cache: "npm"
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -25,34 +25,8 @@ jobs:
       - name: Lint all projects
         run: npm run lint
 
-      - name: Typecheck shared
-        run: npx tsc --noEmit
-        working-directory: packages/shared
+      - name: Typecheck all projects
+        run: npm run typecheck
 
-      - name: Typecheck server
-        run: npx tsc --noEmit
-        working-directory: packages/server
-
-      - name: Typecheck player
-        run: npx tsc --noEmit
-        working-directory: packages/player
-
-      - name: Typecheck agent
-        run: npx tsc --noEmit
-        working-directory: packages/agent
-
-      - name: Typecheck image
-        run: npx tsc --noEmit
-        working-directory: packages/image
-
-      - name: Build server
+      - name: Build all projects
         run: npm run build
-        working-directory: packages/server
-
-      - name: Build player
-        run: npm run build
-        working-directory: packages/player
-
-      - name: Build agent
-        run: npm run build
-        working-directory: packages/agent

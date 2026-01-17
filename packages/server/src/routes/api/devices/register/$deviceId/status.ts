@@ -2,16 +2,18 @@
  * Device registration status API route
  * GET /api/devices/register/:deviceId/status
  *
- * Polled by the agent to check if the device has been approved.
+ * Polled by the bootstrap script to check if the device has been approved.
+ * On approval, includes the SSH public key for Ansible deployment.
  */
 
 import { createFileRoute } from '@tanstack/react-router'
 import * as devicesService from '../../../../../services/devicesService.js'
+import { getServerSSHPublicKey } from '../../../../../services/ansibleService.js'
 
 export const Route = createFileRoute('/api/devices/register/$deviceId/status')({
   server: {
     handlers: {
-      GET: async ({ params }) => {
+      POST: async ({ params, request }) => {
         try {
           const deviceId = parseInt(params.deviceId, 10)
 
@@ -22,21 +24,29 @@ export const Route = createFileRoute('/api/devices/register/$deviceId/status')({
             )
           }
 
-          const result = await devicesService.getRegistrationStatus(deviceId)
+          // Parse body for IP address
+          const body = await request.json().catch(() => ({}))
+          const ipAddress = body.ipAddress as string | undefined
+
+          const result = await devicesService.getRegistrationStatus(
+            deviceId,
+            ipAddress,
+          )
 
           if (!result) {
-            return Response.json(
-              { error: 'Device not found' },
-              { status: 404 },
-            )
+            return Response.json({ error: 'Device not found' }, { status: 404 })
           }
 
           // Return different responses based on status
           if (result.status === 'approved') {
+            // Include SSH public key for bootstrap script to add to authorized_keys
+            const sshPublicKey = getServerSSHPublicKey()
+
             return Response.json({
               status: result.status,
               secret: result.secret,
               name: result.name,
+              sshPublicKey,
             })
           }
 

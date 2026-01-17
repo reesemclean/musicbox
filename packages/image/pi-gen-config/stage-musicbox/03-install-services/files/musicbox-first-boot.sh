@@ -68,6 +68,6 @@ else
   echo "MusicBox: Connect via Ethernet or add wifi.txt to boot partition"
 fi
 
-# Run the agent immediately on first boot
-echo "MusicBox: Running agent for initial registration..."
-systemctl start musicbox-agent.service
+# Run bootstrap for initial registration
+echo "MusicBox: Running bootstrap for initial registration..."
+systemctl start musicbox-bootstrap.service

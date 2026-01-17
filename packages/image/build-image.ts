@@ -342,31 +342,6 @@ function printSummary(config: BuildConfig) {
 // Build Steps
 // ============================================
 
-function buildAgent() {
-  log.header('Building Agent')
-
-  const agentDir = join(PROJECT_ROOT, 'packages/agent')
-  exec('npm install', { cwd: agentDir })
-  exec('npm run build:bundle', { cwd: agentDir })
-
-  log.success('Agent built successfully')
-}
-
-// Create agent tarball in the pi-gen stage directory (called after stage is copied)
-function createAgentTarball() {
-  const agentDir = join(PROJECT_ROOT, 'packages/agent')
-  const filesDir = join(PIGEN_DIR, 'stage-musicbox/02-install-agent/files')
-  mkdirSync(filesDir, { recursive: true })
-
-  // Copy the bundled agent JS file (no npm install needed on Pi)
-  copyFileSync(
-    join(agentDir, 'dist/musicbox-agent.js'),
-    join(filesDir, 'musicbox-agent.js'),
-  )
-
-  log.success('Agent bundle copied')
-}
-
 function setupPigen(forceClean = false) {
   log.header('Setting up pi-gen')
 
@@ -698,14 +673,10 @@ ${colors.reset}`)
   }
 
   // Build steps
-  buildAgent()
-  console.log()
-
   setupPigen(forceClean)
   console.log()
 
   configureBuild(config)
-  createAgentTarball()
   console.log()
 
   setupArmEmulation()

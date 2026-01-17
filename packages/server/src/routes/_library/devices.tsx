@@ -10,11 +10,14 @@ import {
 import {
   AlertCircle,
   Check,
+  ChevronDown,
   Clock,
   Download,
+  Loader2,
   MoreVertical,
   Pause,
   Play,
+  Rocket,
   SkipBack,
   SkipForward,
   Smartphone,
@@ -26,17 +29,19 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   approveDevice,
+  getDeploymentRuns,
   getDevices,
   getPendingDevices,
   rejectDevice,
   sendDeviceCommand,
-  triggerDeviceUpdate,
+  triggerDeployment,
 } from '@/services/serverFunctions'
 
 const devicesQueryOptions = queryOptions({
@@ -51,11 +56,18 @@ const pendingDevicesQueryOptions = queryOptions({
   refetchInterval: 5000, // Refresh every 5s for new registrations
 })
 
+const deploymentRunsQueryOptions = queryOptions({
+  queryKey: ['deploymentRuns'],
+  queryFn: () => getDeploymentRuns({ data: { limit: 10 } }),
+  refetchInterval: 5000, // Refresh every 5s during deployments
+})
+
 export const Route = createFileRoute('/_library/devices')({
   loader: async ({ context }) => {
     await Promise.all([
       context.queryClient.ensureQueryData(devicesQueryOptions),
       context.queryClient.ensureQueryData(pendingDevicesQueryOptions),
+      context.queryClient.ensureQueryData(deploymentRunsQueryOptions),
     ])
   },
   component: DevicesPage,
@@ -66,9 +78,11 @@ function DevicesPage() {
   const [approvingDeviceId, setApprovingDeviceId] = useState<number | null>(
     null,
   )
+  const [showDeploymentHistory, setShowDeploymentHistory] = useState(false)
 
   const { data: devices } = useSuspenseQuery(devicesQueryOptions)
   const { data: pendingDevices } = useQuery(pendingDevicesQueryOptions)
+  const { data: deploymentRunsData } = useQuery(deploymentRunsQueryOptions)
   const queryClient = useQueryClient()
 
   const commandMutation = useMutation({
@@ -107,6 +121,18 @@ function DevicesPage() {
     },
   })
 
+  const deployMutation = useMutation({
+    mutationFn: triggerDeployment,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      queryClient.invalidateQueries({ queryKey: ['deploymentRuns'] })
+    },
+    onError: (error: any) => {
+      console.error('Failed to trigger deployment:', error)
+      alert('Failed to trigger deployment: ' + error.message)
+    },
+  })
+
   const sendCommand = (
     deviceId: number,
     command: 'play' | 'pause' | 'next' | 'previous' | 'stop',
@@ -126,19 +152,47 @@ function DevicesPage() {
     }
   }
 
-  const handleTriggerUpdate = async (deviceId: number) => {
-    try {
-      await triggerDeviceUpdate({ data: { deviceId } })
-      alert('Update triggered successfully')
-    } catch (error) {
-      alert(
-        `Failed to trigger update: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
+  const handleDeploy = (
+    deviceId?: number,
+    playbook: 'site' | 'deploy-player' | 'sync-config' = 'site',
+  ) => {
+    deployMutation.mutate({ data: { deviceId, playbook } })
   }
 
   const downloadConfig = (deviceId: number) => {
     window.open(`/api/devices/${deviceId}/config`, '_blank')
+  }
+
+  const getDeploymentStatusBadge = (status?: string | null) => {
+    switch (status) {
+      case 'pending':
+        return (
+          <span className="text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+            Pending
+          </span>
+        )
+      case 'deploying':
+        return (
+          <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 flex items-center gap-1">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Deploying
+          </span>
+        )
+      case 'success':
+        return (
+          <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+            Deployed
+          </span>
+        )
+      case 'failed':
+        return (
+          <span className="text-xs px-2 py-1 rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+            Failed
+          </span>
+        )
+      default:
+        return null
+    }
   }
 
   const getStatusColor = (status?: string) => {
@@ -177,7 +231,94 @@ function DevicesPage() {
             Manage Raspberry Pi players and control playback remotely
           </p>
         </div>
+        <div className="flex gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                disabled={deployMutation.isPending || devices.length === 0}
+              >
+                {deployMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Deploying...
+                  </>
+                ) : (
+                  <>
+                    <Rocket className="h-4 w-4 mr-2" />
+                    Deploy All
+                    <ChevronDown className="h-4 w-4 ml-2" />
+                  </>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleDeploy(undefined, 'site')}>
+                <Rocket className="h-4 w-4 mr-2" />
+                Full Setup
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleDeploy(undefined, 'deploy-player')}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Deploy Player Only
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleDeploy(undefined, 'sync-config')}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Sync Config Only
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            onClick={() => setShowDeploymentHistory(!showDeploymentHistory)}
+          >
+            History
+          </Button>
+        </div>
       </div>
+
+      {/* Deployment History Section */}
+      {showDeploymentHistory && deploymentRunsData?.runs && (
+        <div className="mb-8 border rounded-lg p-4">
+          <h2 className="text-lg font-semibold mb-4">Deployment History</h2>
+          {deploymentRunsData.runs.length === 0 ? (
+            <p className="text-muted-foreground">No deployments yet</p>
+          ) : (
+            <div className="space-y-2">
+              {deploymentRunsData.runs.map((run: any) => (
+                <div
+                  key={run.id}
+                  className="flex items-center justify-between py-2 border-b last:border-0"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-sm">#{run.id}</span>
+                    <span className="text-sm">{run.playbook}</span>
+                    {run.deviceId ? (
+                      <span className="text-xs text-muted-foreground">
+                        Device #{run.deviceId}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        All devices
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {getDeploymentStatusBadge(run.status)}
+                    {run.startedAt && (
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(run.startedAt).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pending Devices Section */}
       {pendingDevices && pendingDevices.length > 0 && (
@@ -322,8 +463,14 @@ function DevicesPage() {
                     <span className="text-2xl">
                       {getStatusIcon(device.status)}
                     </span>
-                    <div>
-                      <h3 className="text-xl font-semibold">{device.name}</h3>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xl font-semibold">{device.name}</h3>
+                        {(device as any).deploymentStatus &&
+                          getDeploymentStatusBadge(
+                            (device as any).deploymentStatus,
+                          )}
+                      </div>
                       <span
                         className={`text-sm ${getStatusColor(device.status)}`}
                       >
@@ -430,11 +577,27 @@ function DevicesPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem
-                        onClick={() => handleTriggerUpdate(device.id)}
+                        onClick={() => handleDeploy(device.id, 'site')}
+                        disabled={deployMutation.isPending}
+                      >
+                        <Rocket className="h-4 w-4 mr-2" />
+                        Deploy (Full Setup)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleDeploy(device.id, 'deploy-player')}
+                        disabled={deployMutation.isPending}
                       >
                         <Download className="h-4 w-4 mr-2" />
-                        Trigger Update
+                        Deploy Player Only
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleDeploy(device.id, 'sync-config')}
+                        disabled={deployMutation.isPending}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Sync Config Only
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={() => downloadConfig(device.id)}
                       >

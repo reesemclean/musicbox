@@ -1,0 +1,9 @@
+[musicbox_devices]
+{% for device in devices %}
+{{ device.name }} ansible_host={{ device.ipAddress }} device_id={{ device.id }} device_secret={{ device.secret }}
+{% endfor %}
+
+[musicbox_devices:vars]
+ansible_user=pi
+ansible_ssh_private_key_file=/app/data/ssh/id_ed25519
+server_url={{ serverUrl }}

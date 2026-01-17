@@ -20,13 +20,10 @@ import { Route as ApiPlayerVersionRouteImport } from './routes/api/player/versio
 import { Route as ApiPlayerDownloadRouteImport } from './routes/api/player/download'
 import { Route as ApiNfcScanRouteImport } from './routes/api/nfc/scan'
 import { Route as ApiDevicesHeartbeatRouteImport } from './routes/api/devices/heartbeat'
-import { Route as ApiAgentDownloadRouteImport } from './routes/api/agent/download'
 import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlist.$id'
 import { Route as ApiDevicesRegisterIndexRouteImport } from './routes/api/devices/register/index'
 import { Route as ApiDevicesDeviceIdConfigRouteImport } from './routes/api/devices/$deviceId/config'
 import { Route as ApiDevicesRegisterDeviceIdStatusRouteImport } from './routes/api/devices/register/$deviceId/status'
-import { Route as ApiDevicesBySecretSecretStateRouteImport } from './routes/api/devices/by-secret/$secret/state'
-import { Route as ApiDevicesBySecretSecretDesiredStateRouteImport } from './routes/api/devices/by-secret/$secret/desired-state'
 
 const LibraryRoute = LibraryRouteImport.update({
   id: '/_library',
@@ -82,11 +79,6 @@ const ApiDevicesHeartbeatRoute = ApiDevicesHeartbeatRouteImport.update({
   path: '/api/devices/heartbeat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAgentDownloadRoute = ApiAgentDownloadRouteImport.update({
-  id: '/api/agent/download',
-  path: '/api/agent/download',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LibraryPlaylistIdRoute = LibraryPlaylistIdRouteImport.update({
   id: '/playlist/$id',
   path: '/playlist/$id',
@@ -109,18 +101,6 @@ const ApiDevicesRegisterDeviceIdStatusRoute =
     path: '/api/devices/register/$deviceId/status',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiDevicesBySecretSecretStateRoute =
-  ApiDevicesBySecretSecretStateRouteImport.update({
-    id: '/api/devices/by-secret/$secret/state',
-    path: '/api/devices/by-secret/$secret/state',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiDevicesBySecretSecretDesiredStateRoute =
-  ApiDevicesBySecretSecretDesiredStateRouteImport.update({
-    id: '/api/devices/by-secret/$secret/desired-state',
-    path: '/api/devices/by-secret/$secret/desired-state',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/cards': typeof LibraryCardsRoute
@@ -129,7 +109,6 @@ export interface FileRoutesByFullPath {
   '/api/health': typeof ApiHealthRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
-  '/api/agent/download': typeof ApiAgentDownloadRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/player/download': typeof ApiPlayerDownloadRoute
@@ -137,8 +116,6 @@ export interface FileRoutesByFullPath {
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
   '/api/devices/$deviceId/config': typeof ApiDevicesDeviceIdConfigRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
-  '/api/devices/by-secret/$secret/desired-state': typeof ApiDevicesBySecretSecretDesiredStateRoute
-  '/api/devices/by-secret/$secret/state': typeof ApiDevicesBySecretSecretStateRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
 export interface FileRoutesByTo {
@@ -148,7 +125,6 @@ export interface FileRoutesByTo {
   '/api/health': typeof ApiHealthRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
-  '/api/agent/download': typeof ApiAgentDownloadRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/player/download': typeof ApiPlayerDownloadRoute
@@ -156,8 +132,6 @@ export interface FileRoutesByTo {
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
   '/api/devices/$deviceId/config': typeof ApiDevicesDeviceIdConfigRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
-  '/api/devices/by-secret/$secret/desired-state': typeof ApiDevicesBySecretSecretDesiredStateRoute
-  '/api/devices/by-secret/$secret/state': typeof ApiDevicesBySecretSecretStateRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
 export interface FileRoutesById {
@@ -169,7 +143,6 @@ export interface FileRoutesById {
   '/api/health': typeof ApiHealthRoute
   '/_library/': typeof LibraryIndexRoute
   '/_library/playlist/$id': typeof LibraryPlaylistIdRoute
-  '/api/agent/download': typeof ApiAgentDownloadRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/player/download': typeof ApiPlayerDownloadRoute
@@ -177,8 +150,6 @@ export interface FileRoutesById {
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
   '/api/devices/$deviceId/config': typeof ApiDevicesDeviceIdConfigRoute
   '/api/devices/register/': typeof ApiDevicesRegisterIndexRoute
-  '/api/devices/by-secret/$secret/desired-state': typeof ApiDevicesBySecretSecretDesiredStateRoute
-  '/api/devices/by-secret/$secret/state': typeof ApiDevicesBySecretSecretStateRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
 export interface FileRouteTypes {
@@ -190,7 +161,6 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/'
     | '/playlist/$id'
-    | '/api/agent/download'
     | '/api/devices/heartbeat'
     | '/api/nfc/scan'
     | '/api/player/download'
@@ -198,8 +168,6 @@ export interface FileRouteTypes {
     | '/api/stream/$songId'
     | '/api/devices/$deviceId/config'
     | '/api/devices/register'
-    | '/api/devices/by-secret/$secret/desired-state'
-    | '/api/devices/by-secret/$secret/state'
     | '/api/devices/register/$deviceId/status'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -209,7 +177,6 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/'
     | '/playlist/$id'
-    | '/api/agent/download'
     | '/api/devices/heartbeat'
     | '/api/nfc/scan'
     | '/api/player/download'
@@ -217,8 +184,6 @@ export interface FileRouteTypes {
     | '/api/stream/$songId'
     | '/api/devices/$deviceId/config'
     | '/api/devices/register'
-    | '/api/devices/by-secret/$secret/desired-state'
-    | '/api/devices/by-secret/$secret/state'
     | '/api/devices/register/$deviceId/status'
   id:
     | '__root__'
@@ -229,7 +194,6 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/_library/'
     | '/_library/playlist/$id'
-    | '/api/agent/download'
     | '/api/devices/heartbeat'
     | '/api/nfc/scan'
     | '/api/player/download'
@@ -237,15 +201,12 @@ export interface FileRouteTypes {
     | '/api/stream/$songId'
     | '/api/devices/$deviceId/config'
     | '/api/devices/register/'
-    | '/api/devices/by-secret/$secret/desired-state'
-    | '/api/devices/by-secret/$secret/state'
     | '/api/devices/register/$deviceId/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   LibraryRoute: typeof LibraryRouteWithChildren
   ApiHealthRoute: typeof ApiHealthRoute
-  ApiAgentDownloadRoute: typeof ApiAgentDownloadRoute
   ApiDevicesHeartbeatRoute: typeof ApiDevicesHeartbeatRoute
   ApiNfcScanRoute: typeof ApiNfcScanRoute
   ApiPlayerDownloadRoute: typeof ApiPlayerDownloadRoute
@@ -253,8 +214,6 @@ export interface RootRouteChildren {
   ApiStreamSongIdRoute: typeof ApiStreamSongIdRoute
   ApiDevicesDeviceIdConfigRoute: typeof ApiDevicesDeviceIdConfigRoute
   ApiDevicesRegisterIndexRoute: typeof ApiDevicesRegisterIndexRoute
-  ApiDevicesBySecretSecretDesiredStateRoute: typeof ApiDevicesBySecretSecretDesiredStateRoute
-  ApiDevicesBySecretSecretStateRoute: typeof ApiDevicesBySecretSecretStateRoute
   ApiDevicesRegisterDeviceIdStatusRoute: typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
 
@@ -337,13 +296,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDevicesHeartbeatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/agent/download': {
-      id: '/api/agent/download'
-      path: '/api/agent/download'
-      fullPath: '/api/agent/download'
-      preLoaderRoute: typeof ApiAgentDownloadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_library/playlist/$id': {
       id: '/_library/playlist/$id'
       path: '/playlist/$id'
@@ -372,20 +324,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDevicesRegisterDeviceIdStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/devices/by-secret/$secret/state': {
-      id: '/api/devices/by-secret/$secret/state'
-      path: '/api/devices/by-secret/$secret/state'
-      fullPath: '/api/devices/by-secret/$secret/state'
-      preLoaderRoute: typeof ApiDevicesBySecretSecretStateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/devices/by-secret/$secret/desired-state': {
-      id: '/api/devices/by-secret/$secret/desired-state'
-      path: '/api/devices/by-secret/$secret/desired-state'
-      fullPath: '/api/devices/by-secret/$secret/desired-state'
-      preLoaderRoute: typeof ApiDevicesBySecretSecretDesiredStateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -411,7 +349,6 @@ const LibraryRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   LibraryRoute: LibraryRouteWithChildren,
   ApiHealthRoute: ApiHealthRoute,
-  ApiAgentDownloadRoute: ApiAgentDownloadRoute,
   ApiDevicesHeartbeatRoute: ApiDevicesHeartbeatRoute,
   ApiNfcScanRoute: ApiNfcScanRoute,
   ApiPlayerDownloadRoute: ApiPlayerDownloadRoute,
@@ -419,9 +356,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStreamSongIdRoute: ApiStreamSongIdRoute,
   ApiDevicesDeviceIdConfigRoute: ApiDevicesDeviceIdConfigRoute,
   ApiDevicesRegisterIndexRoute: ApiDevicesRegisterIndexRoute,
-  ApiDevicesBySecretSecretDesiredStateRoute:
-    ApiDevicesBySecretSecretDesiredStateRoute,
-  ApiDevicesBySecretSecretStateRoute: ApiDevicesBySecretSecretStateRoute,
   ApiDevicesRegisterDeviceIdStatusRoute: ApiDevicesRegisterDeviceIdStatusRoute,
 }
 export const routeTree = rootRouteImport

@@ -1,0 +1,26 @@
+[Unit]
+Description=MusicBox Player
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=musicbox
+Group=musicbox
+WorkingDirectory=/opt/musicbox/player
+ExecStart=/usr/bin/node /opt/musicbox/player/dist/player.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=SERVER_URL={{ server_url }}
+Environment=DEVICE_SECRET={{ device_secret }}
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/cache/musicbox
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

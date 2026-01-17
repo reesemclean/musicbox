@@ -11,7 +11,6 @@ COPY package.json ./
 COPY packages/server/package.json ./packages/server/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/player/package.json ./packages/player/
-COPY packages/agent/package.json ./packages/agent/
 
 # Install dependencies (including devDependencies for build)
 RUN npm install
@@ -22,10 +21,6 @@ COPY packages/shared ./packages/shared
 # Copy player source files and build bundle
 COPY packages/player ./packages/player
 RUN npm run build:bundle --workspace=player
-
-# Copy agent source files and build
-COPY packages/agent ./packages/agent
-RUN npm run build --workspace=agent
 
 # Copy server source files
 COPY packages/server ./packages/server
@@ -39,12 +34,6 @@ RUN mkdir -p /app/player-bundle && \
     tar -czf /app/player-bundle/player.tar.gz dist/ package.json && \
     node -p "require('./package.json').version" > /app/player-bundle/version.txt
 
-# Create agent bundle (dist contains compiled agent)
-RUN mkdir -p /app/agent-bundle && \
-    cd /app/packages/agent && \
-    tar -czf /app/agent-bundle/agent.tar.gz dist/ package.json && \
-    node -p "require('./package.json').version" > /app/agent-bundle/version.txt
-
 # Production stage
 FROM node:22-alpine AS production
 
@@ -56,7 +45,8 @@ WORKDIR /app
 # - python3 + py3-pip: for ytmusicapi (YouTube Music search)
 # - ffmpeg: for audio conversion (used by yt-dlp)
 # - yt-dlp: for downloading from YouTube Music
-RUN apk add --no-cache libstdc++ curl python3 py3-pip ffmpeg yt-dlp && \
+# - ansible + openssh-client: for push-based deployment to Pis
+RUN apk add --no-cache libstdc++ curl python3 py3-pip ffmpeg yt-dlp ansible openssh-client && \
     pip3 install --no-cache-dir --break-system-packages ytmusicapi
 
 # Create non-root user
@@ -71,12 +61,12 @@ COPY --from=builder /app/packages/server/package.json ./package.json
 # Copy bundled player
 COPY --from=builder /app/player-bundle ./data/player
 
-# Copy bundled agent
-COPY --from=builder /app/agent-bundle ./data/agent
-
-# Create directories for data persistence
-RUN mkdir -p /app/data && \
+# Create directories for data persistence (including SSH keys for Ansible)
+RUN mkdir -p /app/data /app/data/ssh && \
     chown -R nodejs:nodejs /app
+
+# Copy ansible configuration
+COPY --from=builder /app/packages/server/ansible ./ansible
 
 USER nodejs
 

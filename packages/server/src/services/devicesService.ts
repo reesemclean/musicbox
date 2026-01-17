@@ -60,6 +60,9 @@ export async function getAllDevices() {
       httpPort: devices.httpPort,
       lastSeen: devices.lastSeen,
       currentSong: devices.currentSong,
+      deploymentStatus: devices.deploymentStatus,
+      lastDeployedAt: devices.lastDeployedAt,
+      lastDeployedVersion: devices.lastDeployedVersion,
     })
     .from(devices)
     .orderBy(devices.name)
@@ -163,8 +166,12 @@ export async function registerDevice(hardwareId: string, hostname: string) {
 /**
  * Get registration status for a device
  * @param deviceId - Device ID
+ * @param ipAddress - Optional IP address to save when device is approved
  */
-export async function getRegistrationStatus(deviceId: number) {
+export async function getRegistrationStatus(
+  deviceId: number,
+  ipAddress?: string,
+) {
   const device = await db.query.devices.findFirst({
     where: eq(devices.id, deviceId),
     columns: {
@@ -177,6 +184,11 @@ export async function getRegistrationStatus(deviceId: number) {
 
   if (!device) {
     return null
+  }
+
+  // If device is approved and IP address is provided, save it
+  if (device.status === 'approved' && ipAddress) {
+    await db.update(devices).set({ ipAddress }).where(eq(devices.id, deviceId))
   }
 
   return {
@@ -252,7 +264,6 @@ export async function updateDeviceState(
   state: {
     configVersion?: string
     playerVersion?: string
-    agentVersion?: string
     ip?: string
     hostname?: string
     uptime?: number
@@ -266,7 +277,6 @@ export async function updateDeviceState(
     .set({
       reportedConfigVersion: state.configVersion,
       reportedPlayerVersion: state.playerVersion,
-      reportedAgentVersion: state.agentVersion,
       ipAddress: state.ip,
       hostname: state.hostname,
       lastSeen: now,

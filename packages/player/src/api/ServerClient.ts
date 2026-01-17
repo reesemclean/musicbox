@@ -7,12 +7,12 @@
  * - Error handling for all API responses
  */
 
-import type { NFCScanResponse, NFCScanErrorResponse } from "shared";
+import type { NFCScanResponse, NFCScanErrorResponse } from 'shared'
 
 export class ServerClient {
   constructor(
     private serverUrl: string,
-    private deviceId: string
+    private deviceId: string,
   ) {}
 
   /**
@@ -24,53 +24,51 @@ export class ServerClient {
   async scanCard(nfcId: string): Promise<NFCScanResponse> {
     try {
       const response = await fetch(`${this.serverUrl}/api/nfc/scan`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           deviceId: this.deviceId,
           nfcId: nfcId,
         }),
-      });
+      })
 
       if (!response.ok && response.status !== 422) {
-        console.error(`❌ Failed to scan: ${response.status}`);
-        const text = await response.text();
-        console.error(`   Error: ${text}`);
-        throw new Error(`HTTP ${response.status}: ${text}`);
+        console.error(`❌ Failed to scan: ${response.status}`)
+        const text = await response.text()
+        console.error(`   Error: ${text}`)
+        throw new Error(`HTTP ${response.status}: ${text}`)
       }
 
-      let result: NFCScanResponse | NFCScanErrorResponse;
+      let result: NFCScanResponse | NFCScanErrorResponse
       try {
         result = (await response.json()) as
           | NFCScanResponse
-          | NFCScanErrorResponse;
+          | NFCScanErrorResponse
       } catch {
-        console.error(`❌ Invalid response from server`);
-        console.error(`   Status: ${response.status}`);
-        throw new Error("Invalid JSON response from server");
+        console.error(`❌ Invalid response from server`)
+        console.error(`   Status: ${response.status}`)
+        throw new Error('Invalid JSON response from server')
       }
 
-      if (response.ok && "success" in result) {
-        return result;
+      if (response.ok && 'success' in result) {
+        return result
       } else if (response.status === 422) {
-        console.log(`⚠️  Card not registered: ${nfcId}`);
-        console.log(`   Register it at: ${this.serverUrl}/cards`);
-        throw new Error("Card not registered");
+        console.log(`⚠️  Card not registered: ${nfcId}`)
+        console.log(`   Register it at: ${this.serverUrl}/cards`)
+        throw new Error('Card not registered')
       } else {
-        const errorMsg = "error" in result ? result.error : "Unknown error";
-        console.error(`❌ Failed to scan: ${response.status} - ${errorMsg}`);
-        throw new Error(errorMsg);
+        const errorMsg = 'error' in result ? result.error : 'Unknown error'
+        console.error(`❌ Failed to scan: ${response.status} - ${errorMsg}`)
+        throw new Error(errorMsg)
       }
     } catch (error) {
-      if (error instanceof Error && error.message !== "Card not registered") {
-        console.error("❌ Network error:", error);
-        console.error(
-          `   Make sure the server is running at ${this.serverUrl}`
-        );
+      if (error instanceof Error && error.message !== 'Card not registered') {
+        console.error('❌ Network error:', error)
+        console.error(`   Make sure the server is running at ${this.serverUrl}`)
       }
-      throw error;
+      throw error
     }
   }
 
@@ -80,13 +78,13 @@ export class ServerClient {
    * @returns The full URL for streaming the song
    */
   getStreamUrl(songId: number): string {
-    return `${this.serverUrl}/api/stream/${songId}`;
+    return `${this.serverUrl}/api/stream/${songId}`
   }
 
   /**
    * Get the server URL
    */
   getServerUrl(): string {
-    return this.serverUrl;
+    return this.serverUrl
   }
 }

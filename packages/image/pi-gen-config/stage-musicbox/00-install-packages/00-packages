@@ -1,7 +1,3 @@
-mpv
-alsa-utils
-i2c-tools
-libgpiod2
-gpiod
 curl
 jq
+python3
