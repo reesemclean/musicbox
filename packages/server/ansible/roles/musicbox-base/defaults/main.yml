@@ -1,0 +1,7 @@
+---
+# Default password for musicbox user
+# Override this in your inventory or when running the playbook:
+#   ansible-playbook site.yml -e "musicbox_password=your_secure_password"
+#
+# If not set, the password will not be changed
+musicbox_password: ''

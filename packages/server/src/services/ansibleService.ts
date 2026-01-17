@@ -14,6 +14,7 @@ import {
   initializeSSHKeys,
 } from '../lib/ssh-keys.js'
 import { getPlayerVersion } from '../lib/player-bundle.js'
+import { env } from '../env.js'
 import type { DeploymentRunStatus } from '../db/schema.js'
 
 // Paths
@@ -142,6 +143,11 @@ export async function runPlaybook(
 
   // Build ansible-playbook command
   const args = ['-i', INVENTORY_PATH, playbookPath]
+
+  // Pass musicbox password if configured
+  if (env.MUSICBOX_PASSWORD) {
+    args.push('-e', `musicbox_password=${env.MUSICBOX_PASSWORD}`)
+  }
 
   // Limit to specific device if provided
   if (deviceId) {

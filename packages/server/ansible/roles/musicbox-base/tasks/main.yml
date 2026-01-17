@@ -39,6 +39,13 @@
     state: present
   become: yes
 
+- name: Set musicbox user password
+  ansible.builtin.user:
+    name: musicbox
+    password: "{{ musicbox_password | password_hash('sha512') }}"
+  become: yes
+  when: musicbox_password is defined and musicbox_password | length > 0
+
 - name: Create MusicBox directories
   ansible.builtin.file:
     path: '{{ item }}'

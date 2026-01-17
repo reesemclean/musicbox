@@ -373,9 +373,8 @@ function configureBuild(config: BuildConfig) {
 
   // Create pi-gen config
   // Use arm64 architecture to avoid setarch issues on macOS Docker
-  // Password hash for "musicbox" - change after first login
-  // Escape $ signs for shell config file
-  const passwordHash = '\\$6\\$I67bRC76P3aboGhe\\$pwAdiO0jkDBTo3RaeVsuDEa9YvK12msDoGOM.LRanNPqMepP2h7S6ou6EmoRj838UITAIYW447BmjKh7SSmNB.'
+  // Use plaintext password - pi-gen will hash it
+  // DISABLE_FIRST_BOOT_USER_RENAME=1 keeps the username as "musicbox" permanently
   const pigenConfig = `IMG_NAME="${imgName}"
 RELEASE="bookworm"
 TARGET_HOSTNAME="musicbox"
@@ -383,7 +382,8 @@ KEYBOARD_KEYMAP="us"
 KEYBOARD_LAYOUT="English (US)"
 TIMEZONE_DEFAULT="${config.timezone}"
 FIRST_USER_NAME="musicbox"
-FIRST_USER_PASS="${passwordHash}"
+FIRST_USER_PASS="musicbox"
+DISABLE_FIRST_BOOT_USER_RENAME=1
 ENABLE_SSH=1
 LOCALE_DEFAULT="en_US.UTF-8"
 STAGE_LIST="stage0 stage1 stage2 stage-musicbox"

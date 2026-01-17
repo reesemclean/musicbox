@@ -20,7 +20,7 @@ node --experimental-transform-types build-image.ts --interactive
 
 ```bash
 # Flash to SD card
-sudo dd if=../../outputs/musicbox-*.img of=/dev/rdiskX bs=4m status=progress
+sudo dd if=../../outputs/musicbox-*.img of=/dev/rdiskX bs=4M status=progress
 diskutil eject /dev/diskX
 
 # Insert SD card in Pi and boot
