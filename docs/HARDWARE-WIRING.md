@@ -45,10 +45,6 @@ Set DIP switches or jumpers for I2C mode (consult your module's documentation).
 - GPIO 19 (Pin 35) → LRC (Left/Right Clock / Word Select)
 - GPIO 21 (Pin 40) → DIN (Data In)
 
-**Amplifier Control:**
-
-- GPIO 22 (Pin 15) → SD (Shutdown - software controlled)
-
 **Power:**
 
 - 5V (Pin 4) → VIN
@@ -62,6 +58,10 @@ Set DIP switches or jumpers for I2C mode (consult your module's documentation).
 **Gain Control:**
 
 - GAIN → Leave floating (unconnected) for 9dB gain (recommended)
+
+**Shutdown Pin (SD):**
+
+- SD → Leave floating (unconnected) - amplifier always enabled
 
 ## Control Buttons
 
@@ -89,7 +89,6 @@ All buttons connect between GPIO pin and GND (active-low with internal pull-ups)
 | 9     | GND  | Ground   | MAX98357A GND           |
 | 12    | 18   | I2S BCLK | MAX98357A BCLK          |
 | 14    | GND  | Ground   | All buttons common      |
-| 15    | 22   | GPIO     | MAX98357A SD (shutdown) |
 | 29    | 5    | GPIO     | Play/Pause button       |
 | 31    | 6    | GPIO     | Volume Up button        |
 | 33    | 13   | GPIO     | Volume Down button      |
@@ -104,7 +103,6 @@ All buttons connect between GPIO pin and GND (active-low with internal pull-ups)
 
 - GPIO 2, 3: I2C (NFC reader)
 - GPIO 18, 19, 21: I2S audio (MAX98357A)
-- GPIO 22: Amplifier shutdown control
 
 **Button Inputs:**
 
@@ -129,7 +127,6 @@ Raspberry Pi 4
 │  GPIO 18 (12) ─────────── MAX98357A BCLK│
 │  GPIO 19 (35) ─────────── MAX98357A LRC │
 │  GPIO 21 (40) ─────────── MAX98357A DIN │
-│  GPIO 22 (15) ─────────── MAX98357A SD  │
 │                                         │
 │  GPIO 5 (29) ──[Button]──┐             │
 │  GPIO 6 (31) ──[Button]──┤             │
@@ -210,11 +207,6 @@ curl -X POST http://musicbox-test-player.local:8080/volume -d '{"level": 50}'
 - Check button wiring (one side to GPIO, other to GND)
 - Buttons should be normally-open (not normally-closed)
 - Check logs: `journalctl -u musicbox-player -f`
-
-**Amplifier always on (noise when idle):**
-
-- Verify GPIO 22 connected to MAX98357A SD pin
-- Check logs for GPIO initialization messages
 
 ## Safety Notes
 

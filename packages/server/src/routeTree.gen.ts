@@ -22,7 +22,6 @@ import { Route as ApiNfcScanRouteImport } from './routes/api/nfc/scan'
 import { Route as ApiDevicesHeartbeatRouteImport } from './routes/api/devices/heartbeat'
 import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlist.$id'
 import { Route as ApiDevicesRegisterIndexRouteImport } from './routes/api/devices/register/index'
-import { Route as ApiDevicesDeviceIdConfigRouteImport } from './routes/api/devices/$deviceId/config'
 import { Route as ApiDevicesRegisterDeviceIdStatusRouteImport } from './routes/api/devices/register/$deviceId/status'
 
 const LibraryRoute = LibraryRouteImport.update({
@@ -89,12 +88,6 @@ const ApiDevicesRegisterIndexRoute = ApiDevicesRegisterIndexRouteImport.update({
   path: '/api/devices/register/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiDevicesDeviceIdConfigRoute =
-  ApiDevicesDeviceIdConfigRouteImport.update({
-    id: '/api/devices/$deviceId/config',
-    path: '/api/devices/$deviceId/config',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiDevicesRegisterDeviceIdStatusRoute =
   ApiDevicesRegisterDeviceIdStatusRouteImport.update({
     id: '/api/devices/register/$deviceId/status',
@@ -114,7 +107,6 @@ export interface FileRoutesByFullPath {
   '/api/player/download': typeof ApiPlayerDownloadRoute
   '/api/player/version': typeof ApiPlayerVersionRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
-  '/api/devices/$deviceId/config': typeof ApiDevicesDeviceIdConfigRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
@@ -130,7 +122,6 @@ export interface FileRoutesByTo {
   '/api/player/download': typeof ApiPlayerDownloadRoute
   '/api/player/version': typeof ApiPlayerVersionRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
-  '/api/devices/$deviceId/config': typeof ApiDevicesDeviceIdConfigRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
@@ -148,7 +139,6 @@ export interface FileRoutesById {
   '/api/player/download': typeof ApiPlayerDownloadRoute
   '/api/player/version': typeof ApiPlayerVersionRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
-  '/api/devices/$deviceId/config': typeof ApiDevicesDeviceIdConfigRoute
   '/api/devices/register/': typeof ApiDevicesRegisterIndexRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
@@ -166,7 +156,6 @@ export interface FileRouteTypes {
     | '/api/player/download'
     | '/api/player/version'
     | '/api/stream/$songId'
-    | '/api/devices/$deviceId/config'
     | '/api/devices/register'
     | '/api/devices/register/$deviceId/status'
   fileRoutesByTo: FileRoutesByTo
@@ -182,7 +171,6 @@ export interface FileRouteTypes {
     | '/api/player/download'
     | '/api/player/version'
     | '/api/stream/$songId'
-    | '/api/devices/$deviceId/config'
     | '/api/devices/register'
     | '/api/devices/register/$deviceId/status'
   id:
@@ -199,7 +187,6 @@ export interface FileRouteTypes {
     | '/api/player/download'
     | '/api/player/version'
     | '/api/stream/$songId'
-    | '/api/devices/$deviceId/config'
     | '/api/devices/register/'
     | '/api/devices/register/$deviceId/status'
   fileRoutesById: FileRoutesById
@@ -212,7 +199,6 @@ export interface RootRouteChildren {
   ApiPlayerDownloadRoute: typeof ApiPlayerDownloadRoute
   ApiPlayerVersionRoute: typeof ApiPlayerVersionRoute
   ApiStreamSongIdRoute: typeof ApiStreamSongIdRoute
-  ApiDevicesDeviceIdConfigRoute: typeof ApiDevicesDeviceIdConfigRoute
   ApiDevicesRegisterIndexRoute: typeof ApiDevicesRegisterIndexRoute
   ApiDevicesRegisterDeviceIdStatusRoute: typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
@@ -310,13 +296,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDevicesRegisterIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/devices/$deviceId/config': {
-      id: '/api/devices/$deviceId/config'
-      path: '/api/devices/$deviceId/config'
-      fullPath: '/api/devices/$deviceId/config'
-      preLoaderRoute: typeof ApiDevicesDeviceIdConfigRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/devices/register/$deviceId/status': {
       id: '/api/devices/register/$deviceId/status'
       path: '/api/devices/register/$deviceId/status'
@@ -354,7 +333,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPlayerDownloadRoute: ApiPlayerDownloadRoute,
   ApiPlayerVersionRoute: ApiPlayerVersionRoute,
   ApiStreamSongIdRoute: ApiStreamSongIdRoute,
-  ApiDevicesDeviceIdConfigRoute: ApiDevicesDeviceIdConfigRoute,
   ApiDevicesRegisterIndexRoute: ApiDevicesRegisterIndexRoute,
   ApiDevicesRegisterDeviceIdStatusRoute: ApiDevicesRegisterDeviceIdStatusRoute,
 }
