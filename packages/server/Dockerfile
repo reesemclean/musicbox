@@ -11,9 +11,10 @@ COPY package.json ./
 COPY packages/server/package.json ./packages/server/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/player/package.json ./packages/player/
+COPY packages/agent/package.json ./packages/agent/
 
-# Install dependencies
-RUN npm install --workspaces
+# Install dependencies (including devDependencies for build)
+RUN npm install
 
 # Copy shared package source
 COPY packages/shared ./packages/shared
@@ -21,6 +22,10 @@ COPY packages/shared ./packages/shared
 # Copy player source files and build bundle
 COPY packages/player ./packages/player
 RUN npm run build:bundle --workspace=player
+
+# Copy agent source files and build
+COPY packages/agent ./packages/agent
+RUN npm run build --workspace=agent
 
 # Copy server source files
 COPY packages/server ./packages/server
@@ -33,6 +38,12 @@ RUN mkdir -p /app/player-bundle && \
     cd /app/packages/player && \
     tar -czf /app/player-bundle/player.tar.gz dist/ package.json && \
     node -p "require('./package.json').version" > /app/player-bundle/version.txt
+
+# Create agent bundle (dist contains compiled agent)
+RUN mkdir -p /app/agent-bundle && \
+    cd /app/packages/agent && \
+    tar -czf /app/agent-bundle/agent.tar.gz dist/ package.json && \
+    node -p "require('./package.json').version" > /app/agent-bundle/version.txt
 
 # Production stage
 FROM node:22-alpine AS production
@@ -59,6 +70,9 @@ COPY --from=builder /app/packages/server/package.json ./package.json
 
 # Copy bundled player
 COPY --from=builder /app/player-bundle ./data/player
+
+# Copy bundled agent
+COPY --from=builder /app/agent-bundle ./data/agent
 
 # Create directories for data persistence
 RUN mkdir -p /app/data && \

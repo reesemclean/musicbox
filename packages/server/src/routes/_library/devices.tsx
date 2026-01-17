@@ -296,8 +296,8 @@ function DevicesPage() {
           <Smartphone className="h-16 w-16 text-muted-foreground mb-4" />
           <h3 className="text-lg font-semibold mb-2">No devices yet</h3>
           <p className="text-muted-foreground max-w-md">
-            Flash a Raspberry Pi with the MusicBox image and power it on.
-            It will automatically register here for approval.
+            Flash a Raspberry Pi with the MusicBox image and power it on. It
+            will automatically register here for approval.
           </p>
         </div>
       ) : (

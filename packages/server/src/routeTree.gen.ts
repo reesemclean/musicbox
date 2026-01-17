@@ -20,6 +20,7 @@ import { Route as ApiPlayerVersionRouteImport } from './routes/api/player/versio
 import { Route as ApiPlayerDownloadRouteImport } from './routes/api/player/download'
 import { Route as ApiNfcScanRouteImport } from './routes/api/nfc/scan'
 import { Route as ApiDevicesHeartbeatRouteImport } from './routes/api/devices/heartbeat'
+import { Route as ApiAgentDownloadRouteImport } from './routes/api/agent/download'
 import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlist.$id'
 import { Route as ApiDevicesRegisterIndexRouteImport } from './routes/api/devices/register/index'
 import { Route as ApiDevicesDeviceIdConfigRouteImport } from './routes/api/devices/$deviceId/config'
@@ -81,6 +82,11 @@ const ApiDevicesHeartbeatRoute = ApiDevicesHeartbeatRouteImport.update({
   path: '/api/devices/heartbeat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAgentDownloadRoute = ApiAgentDownloadRouteImport.update({
+  id: '/api/agent/download',
+  path: '/api/agent/download',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LibraryPlaylistIdRoute = LibraryPlaylistIdRouteImport.update({
   id: '/playlist/$id',
   path: '/playlist/$id',
@@ -123,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/api/health': typeof ApiHealthRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/agent/download': typeof ApiAgentDownloadRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/player/download': typeof ApiPlayerDownloadRoute
@@ -141,6 +148,7 @@ export interface FileRoutesByTo {
   '/api/health': typeof ApiHealthRoute
   '/': typeof LibraryIndexRoute
   '/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/agent/download': typeof ApiAgentDownloadRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/player/download': typeof ApiPlayerDownloadRoute
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/api/health': typeof ApiHealthRoute
   '/_library/': typeof LibraryIndexRoute
   '/_library/playlist/$id': typeof LibraryPlaylistIdRoute
+  '/api/agent/download': typeof ApiAgentDownloadRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
   '/api/player/download': typeof ApiPlayerDownloadRoute
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/'
     | '/playlist/$id'
+    | '/api/agent/download'
     | '/api/devices/heartbeat'
     | '/api/nfc/scan'
     | '/api/player/download'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/'
     | '/playlist/$id'
+    | '/api/agent/download'
     | '/api/devices/heartbeat'
     | '/api/nfc/scan'
     | '/api/player/download'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/_library/'
     | '/_library/playlist/$id'
+    | '/api/agent/download'
     | '/api/devices/heartbeat'
     | '/api/nfc/scan'
     | '/api/player/download'
@@ -233,6 +245,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   LibraryRoute: typeof LibraryRouteWithChildren
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiAgentDownloadRoute: typeof ApiAgentDownloadRoute
   ApiDevicesHeartbeatRoute: typeof ApiDevicesHeartbeatRoute
   ApiNfcScanRoute: typeof ApiNfcScanRoute
   ApiPlayerDownloadRoute: typeof ApiPlayerDownloadRoute
@@ -324,6 +337,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDevicesHeartbeatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/agent/download': {
+      id: '/api/agent/download'
+      path: '/api/agent/download'
+      fullPath: '/api/agent/download'
+      preLoaderRoute: typeof ApiAgentDownloadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_library/playlist/$id': {
       id: '/_library/playlist/$id'
       path: '/playlist/$id'
@@ -391,6 +411,7 @@ const LibraryRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   LibraryRoute: LibraryRouteWithChildren,
   ApiHealthRoute: ApiHealthRoute,
+  ApiAgentDownloadRoute: ApiAgentDownloadRoute,
   ApiDevicesHeartbeatRoute: ApiDevicesHeartbeatRoute,
   ApiNfcScanRoute: ApiNfcScanRoute,
   ApiPlayerDownloadRoute: ApiPlayerDownloadRoute,

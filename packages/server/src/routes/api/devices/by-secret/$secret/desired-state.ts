@@ -3,11 +3,18 @@
  * GET /api/devices/by-secret/:secret/desired-state
  *
  * Returns the desired configuration for a device to apply.
- * Player version is bundled with the server - no database lookup needed.
+ * Player and agent versions are bundled with the server - no database lookup needed.
  */
 
 import { createFileRoute } from '@tanstack/react-router'
-import { getPlayerChecksum, getPlayerVersion } from '../../../../../lib/player-bundle.js'
+import {
+  getAgentChecksum,
+  getAgentVersion,
+} from '../../../../../lib/agent-bundle.js'
+import {
+  getPlayerChecksum,
+  getPlayerVersion,
+} from '../../../../../lib/player-bundle.js'
 import * as devicesService from '../../../../../services/devicesService.js'
 
 export const Route = createFileRoute(
@@ -37,6 +44,10 @@ export const Route = createFileRoute(
           const playerVersion = getPlayerVersion()
           const playerChecksum = getPlayerChecksum()
 
+          // Get bundled agent info
+          const agentVersion = getAgentVersion()
+          const agentChecksum = getAgentChecksum()
+
           // Build desired state response
           const desiredState = {
             player: playerVersion
@@ -44,6 +55,13 @@ export const Route = createFileRoute(
                   version: playerVersion,
                   url: '/api/player/download',
                   checksum: playerChecksum,
+                }
+              : null,
+            agent: agentVersion
+              ? {
+                  version: agentVersion,
+                  url: '/api/agent/download',
+                  checksum: agentChecksum,
                 }
               : null,
           }
