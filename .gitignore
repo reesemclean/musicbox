@@ -57,6 +57,6 @@ result-*
 device-configs/
 
 # Image builder
-image/build-config.json
+build-config.json
 
 outputs/

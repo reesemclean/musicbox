@@ -375,6 +375,8 @@ function configureBuild(config: BuildConfig) {
   // Use arm64 architecture to avoid setarch issues on macOS Docker
   // Use plaintext password - pi-gen will hash it
   // DISABLE_FIRST_BOOT_USER_RENAME=1 keeps the username as "musicbox" permanently
+  // WPA_COUNTRY unblocks rfkill and sets regulatory domain
+  const wpaCountry = config.wifi?.country || 'US'
   const pigenConfig = `IMG_NAME="${imgName}"
 RELEASE="bookworm"
 TARGET_HOSTNAME="musicbox"
@@ -385,6 +387,7 @@ FIRST_USER_NAME="musicbox"
 FIRST_USER_PASS="musicbox"
 DISABLE_FIRST_BOOT_USER_RENAME=1
 ENABLE_SSH=1
+WPA_COUNTRY="${wpaCountry}"
 LOCALE_DEFAULT="en_US.UTF-8"
 STAGE_LIST="stage0 stage1 stage2 stage-musicbox"
 DEPLOY_COMPRESSION="none"

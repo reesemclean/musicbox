@@ -2,8 +2,6 @@
 # MusicBox First Boot Setup
 # Configures WiFi from embedded config or boot partition file
 
-WPA_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
-
 # Check for embedded WiFi config first (baked into image during build)
 EMBEDDED_WIFI="/opt/musicbox/wifi-config.txt"
 # Then check boot partition (for post-flash configuration)
@@ -21,24 +19,27 @@ configure_wifi() {
   if [ -n "$SSID" ] && [ -n "$PASSWORD" ]; then
     echo "MusicBox: Setting up WiFi for SSID: $SSID"
     
-    # Create wpa_supplicant config
-    cat > "$WPA_CONF" << EOF
-country=${COUNTRY:-US}
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-
-network={
-  ssid="$SSID"
-  psk="$PASSWORD"
-}
-EOF
+    # Set WiFi country code (this also unblocks rfkill)
+    raspi-config nonint do_wifi_country "${COUNTRY:-US}"
     
-    # Set permissions
-    chmod 600 "$WPA_CONF"
-    
-    # Restart networking
-    systemctl restart wpa_supplicant
+    # Explicitly unblock WiFi
     rfkill unblock wifi
+    
+    # Delete any existing connection with same name
+    nmcli connection delete "musicbox-wifi" 2>/dev/null || true
+    
+    # Create NetworkManager connection
+    nmcli connection add \
+      type wifi \
+      con-name "musicbox-wifi" \
+      ifname wlan0 \
+      ssid "$SSID" \
+      wifi-sec.key-mgmt wpa-psk \
+      wifi-sec.psk "$PASSWORD"
+    
+    # Activate the connection
+    echo "MusicBox: Activating WiFi connection..."
+    nmcli connection up "musicbox-wifi"
     
     echo "MusicBox: WiFi configured, waiting for connection..."
     sleep 10
