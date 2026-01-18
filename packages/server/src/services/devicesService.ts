@@ -186,8 +186,8 @@ export async function getRegistrationStatus(
     return null
   }
 
-  // If device is approved and IP address is provided, save it
-  if (device.status === 'approved' && ipAddress) {
+  // Always save IP address when provided (so it's available when device is approved)
+  if (ipAddress) {
     await db.update(devices).set({ ipAddress }).where(eq(devices.id, deviceId))
   }
 
