@@ -12,7 +12,7 @@ await build({
   platform: "node",
   target: "node22",
   format: "esm",
-  outfile: "dist/musicbox-player.js",
+  outfile: "dist/player.js",
   banner: {
     js: "#!/usr/bin/env node",
   },
@@ -21,4 +21,4 @@ await build({
   logLevel: "info",
 });
 
-console.log("✅ Bundle created: dist/musicbox-player.js");
+console.log("✅ Bundle created: dist/player.js");

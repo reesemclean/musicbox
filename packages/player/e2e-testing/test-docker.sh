@@ -60,8 +60,8 @@ container_exists() {
 # Build Nix package and Docker image
 build() {
     # Check if bundle exists, build if needed
-    if [ ! -f "player/dist/musicbox-player.js" ]; then
-        log_warning "Bundle not found at player/dist/musicbox-player.js"
+    if [ ! -f "player/dist/player.js" ]; then
+        log_warning "Bundle not found at player/dist/player.js"
         log_info "Building bundle..."
         if (cd player && npm run build:bundle); then
             log_success "Bundle built successfully"
@@ -70,7 +70,7 @@ build() {
             exit 1
         fi
     else
-        log_info "Using existing bundle at player/dist/musicbox-player.js"
+        log_info "Using existing bundle at player/dist/player.js"
     fi
 
     log_info "Packaging with Nix..."
