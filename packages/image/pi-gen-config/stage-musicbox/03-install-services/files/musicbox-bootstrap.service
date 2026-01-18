@@ -1,8 +1,9 @@
 [Unit]
 Description=MusicBox Bootstrap
 Documentation=https://github.com/anthropics/musicbox
-After=network-online.target
+After=network-online.target musicbox-first-boot.service
 Wants=network-online.target
+Requires=musicbox-first-boot.service
 ConditionPathExists=!/opt/musicbox/.bootstrap-complete
 
 [Service]

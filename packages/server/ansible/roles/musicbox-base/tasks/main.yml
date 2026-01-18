@@ -2,6 +2,19 @@
 # MusicBox Base Role
 # Sets up system requirements for MusicBox player
 
+# Note: Filesystem expansion happens on first boot via musicbox-first-boot.sh
+
+- name: Clean apt cache to free disk space
+  ansible.builtin.apt:
+    autoclean: yes
+  become: yes
+
+- name: Remove unused packages
+  ansible.builtin.apt:
+    autoremove: yes
+    purge: yes
+  become: yes
+
 - name: Update apt cache
   ansible.builtin.apt:
     update_cache: yes
