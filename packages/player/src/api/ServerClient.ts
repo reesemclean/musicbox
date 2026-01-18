@@ -12,7 +12,7 @@ import type { NFCScanResponse, NFCScanErrorResponse } from 'shared'
 export class ServerClient {
   constructor(
     private serverUrl: string,
-    private deviceId: string,
+    private deviceSecret: string,
   ) {}
 
   /**
@@ -29,7 +29,7 @@ export class ServerClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          deviceId: this.deviceId,
+          secret: this.deviceSecret,
           nfcId: nfcId,
         }),
       })

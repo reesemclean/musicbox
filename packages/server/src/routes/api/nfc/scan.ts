@@ -1,9 +1,16 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { eq } from 'drizzle-orm'
 import { db } from '@/db'
-import { cards, playlistSongs, playlists, podcastFeeds, songs } from '@/db/schema'
+import {
+  cards,
+  playlistSongs,
+  playlists,
+  podcastFeeds,
+  songs,
+} from '@/db/schema'
 import { nfcQueue } from '@/lib/nfc-queue'
 import { getLatestEpisodeForFeed } from '@/services/podcastService'
+import * as devicesService from '@/services/devicesService'
 
 export const Route = createFileRoute('/api/nfc/scan')({
   server: {
@@ -11,18 +18,31 @@ export const Route = createFileRoute('/api/nfc/scan')({
       POST: async ({ request }) => {
         try {
           const body = await request.json()
-          const { deviceId, nfcId } = body
+          const { secret, nfcId } = body
 
-          if (!deviceId || !nfcId) {
+          if (!secret || !nfcId) {
             return Response.json(
               {
-                error: 'Missing required fields: deviceId and nfcId',
+                error: 'Missing required fields: secret and nfcId',
               },
               { status: 400 },
             )
           }
 
-          console.log(`📡 NFC scan received: ${nfcId} from ${deviceId}`)
+          // Authenticate device by secret
+          const device = await devicesService.getDeviceBySecret(secret)
+          if (!device) {
+            console.warn(`[nfc/scan] Invalid device secret`)
+            return Response.json(
+              { error: 'Invalid device secret' },
+              { status: 401 },
+            )
+          }
+
+          const deviceId = device.id
+          console.log(
+            `📡 NFC scan received: ${nfcId} from device ${deviceId} (${device.name})`,
+          )
 
           // Look up the card mapping
           const cardMapping = await db
@@ -34,7 +54,7 @@ export const Route = createFileRoute('/api/nfc/scan')({
           if (cardMapping.length === 0) {
             console.log(`❌ Card ${nfcId} not registered`)
             // Still add to queue for web UI registration flow
-            nfcQueue.addScan(deviceId, nfcId)
+            nfcQueue.addScan(String(deviceId), nfcId)
 
             return Response.json(
               {
@@ -49,7 +69,7 @@ export const Route = createFileRoute('/api/nfc/scan')({
           console.log(`✅ Card ${nfcId} mapped to ${card.contentType}`)
 
           // Add to queue for web UI notifications
-          nfcQueue.addScan(deviceId, nfcId)
+          nfcQueue.addScan(String(deviceId), nfcId)
 
           // Build response based on content type
           let content = null

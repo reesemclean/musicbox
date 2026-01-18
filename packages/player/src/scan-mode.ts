@@ -12,7 +12,7 @@
 import * as readline from 'readline'
 import type { NFCScanResponse, NFCScanErrorResponse } from 'shared'
 
-const deviceName = process.env.DEVICE_NAME || 'dev-player'
+const deviceSecret = process.env.DEVICE_SECRET || ''
 const serverUrl = process.env.SERVER_URL || 'http://localhost:3000'
 
 let scanCount = 0
@@ -25,7 +25,7 @@ async function sendNFCScan(nfcId: string) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        deviceId: deviceName,
+        secret: deviceSecret,
         nfcId: nfcId,
       }),
     })
@@ -90,10 +90,10 @@ function generateCardId(): string {
 }
 
 async function startScanMode() {
-  console.log('🎵 MusicBox NFC Scanner')
+  console.log('🎵 MusicBox NFC Scanner (Dev Mode)')
   console.log('━'.repeat(50))
-  console.log(`📡 Device: ${deviceName}`)
   console.log(`🖥️  Server: ${serverUrl}`)
+  console.log(`🔑 Secret: ${deviceSecret ? '(configured)' : '(not configured - scans will fail)'}`)
   console.log('━'.repeat(50))
   console.log('')
   console.log('📻 Scanner is ready!')

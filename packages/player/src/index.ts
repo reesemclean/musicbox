@@ -42,8 +42,8 @@ async function main() {
   console.log(`🖥️  Server: ${config.serverUrl}`)
   console.log('═'.repeat(60))
 
-  // Initialize server client
-  const serverClient = new ServerClient(config.serverUrl, config.deviceName)
+  // Initialize server client (uses device secret for authenticated API calls)
+  const serverClient = new ServerClient(config.serverUrl, config.deviceSecret)
 
   // Initialize player core (sets up audio engine and tone generator)
   const playerCore = new PlayerCore(serverClient)

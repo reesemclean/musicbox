@@ -4,6 +4,8 @@
  *
  * Called by the bootstrap script after installing the SSH public key.
  * Triggers deployment to the device.
+ *
+ * Requires device secret for authentication.
  */
 
 import { createFileRoute } from '@tanstack/react-router'
@@ -15,7 +17,7 @@ export const Route = createFileRoute(
 )({
   server: {
     handlers: {
-      POST: async ({ params }) => {
+      POST: async ({ params, request }) => {
         try {
           const deviceId = parseInt(params.deviceId, 10)
 
@@ -26,20 +28,52 @@ export const Route = createFileRoute(
             )
           }
 
-          console.log(
-            `[ssh-ready] Device ${deviceId} reporting SSH key installed`,
-          )
+          // Parse body for secret
+          const body = await request.json().catch(() => ({}))
+          const secret = body.secret as string | undefined
 
-          const device = await devicesService.reportSshKeyInstalled(deviceId)
+          if (!secret) {
+            console.warn(`[ssh-ready] Device ${deviceId} missing secret`)
+            return Response.json(
+              { error: 'Missing device secret' },
+              { status: 401 },
+            )
+          }
 
+          // Verify secret matches device
+          const device = await devicesService.getDeviceById(deviceId)
           if (!device) {
             return Response.json({ error: 'Device not found' }, { status: 404 })
           }
 
+          if (device.secret !== secret) {
+            console.warn(
+              `[ssh-ready] Device ${deviceId} provided invalid secret`,
+            )
+            return Response.json(
+              { error: 'Invalid device secret' },
+              { status: 401 },
+            )
+          }
+
+          console.log(
+            `[ssh-ready] Device ${deviceId} (${device.name}) reporting SSH key installed`,
+          )
+
+          const updatedDevice =
+            await devicesService.reportSshKeyInstalled(deviceId)
+
+          if (!updatedDevice) {
+            return Response.json(
+              { error: 'Failed to update device' },
+              { status: 500 },
+            )
+          }
+
           // Only trigger deployment for approved devices with an IP address
-          if (device.status === 'approved' && device.ipAddress) {
+          if (updatedDevice.status === 'approved' && updatedDevice.ipAddress) {
             console.log(
-              `[ssh-ready] Device ${deviceId} is approved with IP ${device.ipAddress}, triggering deployment`,
+              `[ssh-ready] Device ${deviceId} is approved with IP ${updatedDevice.ipAddress}, triggering deployment`,
             )
 
             try {
@@ -67,7 +101,7 @@ export const Route = createFileRoute(
             }
           } else {
             console.log(
-              `[ssh-ready] Device ${deviceId} not ready for deployment (status=${device.status}, ip=${device.ipAddress})`,
+              `[ssh-ready] Device ${deviceId} not ready for deployment (status=${updatedDevice.status}, ip=${updatedDevice.ipAddress})`,
             )
             return Response.json({
               success: true,

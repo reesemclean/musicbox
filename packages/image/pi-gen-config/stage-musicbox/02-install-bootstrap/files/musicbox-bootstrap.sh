@@ -164,6 +164,8 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
                 # Notify server that SSH key is installed (triggers deployment)
                 log "Notifying server that SSH key is ready..."
                 SSH_READY_RESPONSE=$(curl -s -X POST \
+                    -H "Content-Type: application/json" \
+                    -d "{\"secret\": \"$SECRET\"}" \
                     "$SERVER_URL/api/devices/register/$DEVICE_ID/ssh-ready" || echo "")
 
                 if [ -n "$SSH_READY_RESPONSE" ]; then

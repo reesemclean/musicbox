@@ -13,7 +13,7 @@ import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import type { NFCScanResponse, NFCScanErrorResponse } from 'shared'
 
-const deviceName = process.env.DEVICE_NAME || 'dev-player'
+const deviceSecret = process.env.DEVICE_SECRET || ''
 const serverUrl = process.env.SERVER_URL || 'http://localhost:3000'
 
 interface PlayerState {
@@ -133,7 +133,7 @@ async function scanCard(nfcId: string): Promise<void> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        deviceId: deviceName,
+        secret: deviceSecret,
         nfcId: nfcId,
       }),
     })
@@ -314,10 +314,10 @@ function printStatus(): void {
 }
 
 async function startPlayer() {
-  console.log('🎵 MusicBox Player')
+  console.log('🎵 MusicBox Player (Dev Mode)')
   console.log('═'.repeat(60))
-  console.log(`📡 Device: ${deviceName}`)
   console.log(`🖥️  Server: ${serverUrl}`)
+  console.log(`🔑 Secret: ${deviceSecret ? '(configured)' : '(not configured - NFC scans will fail)'}`)
   console.log('═'.repeat(60))
   console.log('\n📻 Player ready!')
   console.log('   Type NFC card ID and press ENTER to scan')

@@ -11,16 +11,16 @@
 
 import type { NFCScanResponse, NFCScanErrorResponse } from 'shared'
 
-const deviceName = process.env.DEVICE_NAME || 'dev-player'
+const deviceSecret = process.env.DEVICE_SECRET || ''
 const serverUrl = process.env.SERVER_URL || 'http://localhost:3000'
 
 async function simulateNFCScan(nfcId?: string) {
   const cardId = nfcId || `nfc-${Date.now()}`
 
   console.log('🎯 Simulating NFC card scan...')
-  console.log(`   Device: ${deviceName}`)
   console.log(`   Card ID: ${cardId}`)
   console.log(`   Server: ${serverUrl}`)
+  console.log(`   Secret: ${deviceSecret ? '(configured)' : '(not configured - will fail)'}`)
 
   try {
     const response = await fetch(`${serverUrl}/api/nfc/scan`, {
@@ -29,7 +29,7 @@ async function simulateNFCScan(nfcId?: string) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        deviceId: deviceName,
+        secret: deviceSecret,
         nfcId: cardId,
       }),
     })
