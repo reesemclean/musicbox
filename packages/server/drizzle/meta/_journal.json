@@ -15,6 +15,13 @@
       "when": 1768684413734,
       "tag": "0001_superb_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1768750379564,
+      "tag": "0002_large_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }

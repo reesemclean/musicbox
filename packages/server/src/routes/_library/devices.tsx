@@ -22,6 +22,7 @@ import {
   SkipForward,
   Smartphone,
   Square,
+  Trash2,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -35,6 +36,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   approveDevice,
+  deleteDevice,
   getDeploymentRuns,
   getDevices,
   getPendingDevices,
@@ -120,6 +122,18 @@ function DevicesPage() {
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: deleteDevice,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      queryClient.invalidateQueries({ queryKey: ['pendingDevices'] })
+    },
+    onError: (error: any) => {
+      console.error('Failed to delete device:', error)
+      alert('Failed to delete device: ' + error.message)
+    },
+  })
+
   const deployMutation = useMutation({
     mutationFn: triggerDeployment,
     onSuccess: () => {
@@ -148,6 +162,12 @@ function DevicesPage() {
   const handleReject = (deviceId: number) => {
     if (confirm('Are you sure you want to reject this device?')) {
       rejectMutation.mutate({ data: { deviceId } })
+    }
+  }
+
+  const handleDelete = (deviceId: number, deviceName: string) => {
+    if (confirm(`Are you sure you want to delete "${deviceName}"? This cannot be undone. The device will need to re-register if reflashed.`)) {
+      deleteMutation.mutate({ data: { deviceId } })
     }
   }
 
@@ -591,6 +611,14 @@ function DevicesPage() {
                       >
                         <Download className="h-4 w-4 mr-2" />
                         Sync Config Only
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleDelete(device.id, device.name)}
+                        disabled={deleteMutation.isPending}
+                        className="text-red-600 focus:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Device
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

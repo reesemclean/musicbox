@@ -311,14 +311,11 @@ export const approveDevice = createServerFn({ method: 'POST' })
       throw new Error('Device not found or not pending')
     }
 
-    // Auto-deploy the player to the newly approved device
+    // Auto-deploy to the newly approved device (full site deployment in case image is old)
     try {
-      const runId = await ansibleService.runPlaybook(
-        'deploy-player',
-        data.deviceId,
-      )
+      const runId = await ansibleService.runPlaybook('site', data.deviceId)
       console.log(
-        `[approveDevice] Triggered deployment for device ${data.deviceId}, run ID: ${runId}`,
+        `[approveDevice] Triggered full deployment for device ${data.deviceId}, run ID: ${runId}`,
       )
     } catch (err) {
       // Log but don't fail the approval if deployment fails to start
@@ -348,6 +345,25 @@ export const rejectDevice = createServerFn({ method: 'POST' })
     }
 
     return { device }
+  })
+
+/**
+ * Delete a device completely
+ */
+export const deleteDevice = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      deviceId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const deleted = await devicesService.deleteDevice(data.deviceId)
+
+    if (!deleted) {
+      throw new Error('Device not found')
+    }
+
+    return { success: true }
   })
 
 // ============================================================================

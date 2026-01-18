@@ -237,6 +237,20 @@ export async function rejectDevice(deviceId: number) {
 }
 
 /**
+ * Delete a device completely
+ * @param deviceId - Device ID
+ * @returns true if deleted, false if not found
+ */
+export async function deleteDevice(deviceId: number) {
+  const result = await db
+    .delete(devices)
+    .where(eq(devices.id, deviceId))
+    .returning()
+  
+  return result.length > 0
+}
+
+/**
  * Get all pending devices
  */
 export async function getPendingDevices() {
