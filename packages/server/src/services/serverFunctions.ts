@@ -412,6 +412,23 @@ export const getDeploymentRun = createServerFn()
   })
 
 /**
+ * Cancel a running deployment
+ */
+export const cancelDeployment = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      runId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const cancelled = await ansibleService.cancelDeployment(data.runId)
+    if (!cancelled) {
+      throw new Error('Deployment is not running or already completed')
+    }
+    return { success: true }
+  })
+
+/**
  * Get server's SSH public key for device registration
  */
 export const getSSHPublicKey = createServerFn().handler(() => {

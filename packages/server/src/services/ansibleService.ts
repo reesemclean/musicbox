@@ -2,7 +2,7 @@
  * Ansible Service - Push-based deployment to Raspberry Pi devices
  */
 
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { and, desc, eq, isNotNull } from 'drizzle-orm'
@@ -21,6 +21,9 @@ import type { DeploymentRunStatus } from '../db/schema.js'
 const ANSIBLE_DIR = join(process.cwd(), 'ansible')
 const INVENTORY_PATH = join(process.cwd(), 'data', 'ansible-inventory.ini')
 const DATA_DIR = join(process.cwd(), 'data')
+
+// Track running Ansible processes by run ID
+const runningProcesses = new Map<number, ChildProcess>()
 
 // Playbook mapping
 const PLAYBOOKS: Record<string, string> = {
@@ -310,7 +313,7 @@ async function executePlaybook(
     console.log(`[ansible:exec] Working directory: ${ANSIBLE_DIR}`)
     console.log(`[ansible:exec] Spawning ansible-playbook process...`)
 
-    const result = await new Promise<{ code: number; output: string }>(
+    const result = await new Promise<{ code: number; output: string; cancelled?: boolean }>(
       (resolve, reject) => {
         const proc = spawn('ansible-playbook', args, {
           cwd: ANSIBLE_DIR,
@@ -320,6 +323,9 @@ async function executePlaybook(
             ANSIBLE_FORCE_COLOR: '0',
           },
         })
+
+        // Track the process for cancellation
+        runningProcesses.set(runId, proc)
 
         console.log(`[ansible:exec] Process spawned with PID: ${proc.pid}`)
 
@@ -345,15 +351,30 @@ async function executePlaybook(
           }
         })
 
-        proc.on('close', (code) => {
+        proc.on('close', (code, signal) => {
+          // Clean up process tracking
+          runningProcesses.delete(runId)
+
           const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-          console.log(
-            `[ansible:exec] Process exited with code ${code} after ${duration}s`,
-          )
-          resolve({ code: code ?? 1, output })
+          
+          // Check if process was killed (cancelled)
+          if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+            console.log(
+              `[ansible:exec] Process was cancelled (signal: ${signal}) after ${duration}s`,
+            )
+            resolve({ code: code ?? 1, output, cancelled: true })
+          } else {
+            console.log(
+              `[ansible:exec] Process exited with code ${code} after ${duration}s`,
+            )
+            resolve({ code: code ?? 1, output })
+          }
         })
 
         proc.on('error', (err) => {
+          // Clean up process tracking
+          runningProcesses.delete(runId)
+
           console.error(`[ansible:exec] Process spawn error:`, err)
           console.error(
             `[ansible:exec] This may indicate ansible-playbook is not installed or not in PATH`,
@@ -368,15 +389,22 @@ async function executePlaybook(
       (completedAt.getTime() - startedAt.getTime()) /
       1000
     ).toFixed(1)
-    const status: DeploymentRunStatus = result.code === 0 ? 'success' : 'failed'
+    
+    // Determine status based on result
+    let status: DeploymentRunStatus
+    if (result.cancelled) {
+      status = 'failed' // We'll treat cancelled as failed, could add 'cancelled' status later
+    } else {
+      status = result.code === 0 ? 'success' : 'failed'
+    }
 
     console.log(`[ansible:exec] ---------- Run #${runId} finished ----------`)
-    console.log(`[ansible:exec] Status: ${status}`)
+    console.log(`[ansible:exec] Status: ${status}${result.cancelled ? ' (cancelled)' : ''}`)
     console.log(`[ansible:exec] Exit code: ${result.code}`)
     console.log(`[ansible:exec] Duration: ${duration}s`)
     console.log(`[ansible:exec] Completed at: ${completedAt.toISOString()}`)
 
-    if (status === 'failed') {
+    if (status === 'failed' && !result.cancelled) {
       console.error(
         `[ansible:exec] DEPLOYMENT FAILED - Review ansible:output and ansible:stderr logs above`,
       )
@@ -510,6 +538,73 @@ export async function getDeploymentRun(runId: number) {
   return db.query.deploymentRuns.findFirst({
     where: eq(deploymentRuns.id, runId),
   })
+}
+
+/**
+ * Cancel a running deployment
+ * @param runId - Deployment run ID to cancel
+ * @returns true if cancelled, false if not running
+ */
+export async function cancelDeployment(runId: number): Promise<boolean> {
+  console.log(`[ansible:cancel] Attempting to cancel run #${runId}`)
+
+  const proc = runningProcesses.get(runId)
+  if (!proc) {
+    // Check if the run exists and is in a cancellable state
+    const run = await db.query.deploymentRuns.findFirst({
+      where: eq(deploymentRuns.id, runId),
+    })
+
+    if (!run) {
+      console.log(`[ansible:cancel] Run #${runId} not found`)
+      return false
+    }
+
+    if (run.status === 'queued' || run.status === 'running') {
+      // Process might have finished between check and cancel, or server restarted
+      console.log(
+        `[ansible:cancel] Run #${runId} is ${run.status} but no process found - marking as failed`,
+      )
+      await db
+        .update(deploymentRuns)
+        .set({
+          status: 'failed',
+          output: (run.output || '') + '\n\n=== CANCELLED ===\nDeployment was cancelled by user.',
+          completedAt: new Date(),
+        })
+        .where(eq(deploymentRuns.id, runId))
+      return true
+    }
+
+    console.log(`[ansible:cancel] Run #${runId} is already ${run.status}`)
+    return false
+  }
+
+  // Kill the process
+  console.log(`[ansible:cancel] Killing process for run #${runId} (PID: ${proc.pid})`)
+  proc.kill('SIGTERM')
+
+  // Give it a moment, then force kill if still running
+  setTimeout(() => {
+    if (runningProcesses.has(runId)) {
+      console.log(`[ansible:cancel] Force killing process for run #${runId}`)
+      proc.kill('SIGKILL')
+    }
+  }, 5000)
+
+  return true
+}
+
+/**
+ * Check if a deployment is currently running for a device
+ */
+export function hasActiveDeployment(deviceId?: number): boolean {
+  if (!deviceId) {
+    return runningProcesses.size > 0
+  }
+  // Note: We'd need to track deviceId -> runId mapping for precise check
+  // For now, return true if any deployment is running
+  return runningProcesses.size > 0
 }
 
 /**

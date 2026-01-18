@@ -24,6 +24,7 @@ import {
   Square,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -36,6 +37,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   approveDevice,
+  cancelDeployment,
   deleteDevice,
   getDeploymentRuns,
   getDevices,
@@ -145,6 +147,24 @@ function DevicesPage() {
       alert('Failed to trigger deployment: ' + error.message)
     },
   })
+
+  const cancelMutation = useMutation({
+    mutationFn: cancelDeployment,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      queryClient.invalidateQueries({ queryKey: ['deploymentRuns'] })
+    },
+    onError: (error: any) => {
+      console.error('Failed to cancel deployment:', error)
+      alert('Failed to cancel deployment: ' + error.message)
+    },
+  })
+
+  const handleCancelDeployment = (runId: number) => {
+    if (confirm('Are you sure you want to cancel this deployment?')) {
+      cancelMutation.mutate({ data: { runId } })
+    }
+  }
 
   const sendCommand = (
     deviceId: number,
@@ -345,6 +365,17 @@ function DevicesPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     {getDeploymentStatusBadge(run.status)}
+                    {(run.status === 'queued' || run.status === 'running') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleCancelDeployment(run.id)}
+                        disabled={cancelMutation.isPending}
+                      >
+                        <XCircle className="h-4 w-4 mr-1" />
+                        Cancel
+                      </Button>
+                    )}
                     {run.startedAt && (
                       <span className="text-xs text-muted-foreground">
                         {new Date(run.startedAt).toLocaleString()}

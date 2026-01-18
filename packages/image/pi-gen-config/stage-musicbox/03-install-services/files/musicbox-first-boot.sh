@@ -1,78 +1,15 @@
 #!/bin/bash
 # MusicBox First Boot Setup
-# Expands filesystem, waits for network, and triggers initial registration
+# Waits for network and triggers initial registration with the server
+# Note: Filesystem expansion is handled by Pi OS's built-in resize2fs_once.service
 
 set -e
 
 LOG_TAG="musicbox-first-boot"
-EXPANDED_MARKER="/var/lib/musicbox/.fs-expanded"
 
 log() {
   echo "[$LOG_TAG] $1"
   logger -t "$LOG_TAG" "$1"
-}
-
-# Expand root filesystem to fill SD card
-expand_filesystem() {
-  if [ -f "$EXPANDED_MARKER" ]; then
-    log "Filesystem already expanded, skipping"
-    return 0
-  fi
-
-  log "Checking if filesystem needs expansion..."
-  
-  # Get root partition info
-  ROOT_PART=$(findmnt -n -o SOURCE /)
-  ROOT_DEV=$(lsblk -no PKNAME "$ROOT_PART" 2>/dev/null || echo "")
-  
-  if [ -z "$ROOT_DEV" ]; then
-    log "Could not determine root device, skipping expansion"
-    return 0
-  fi
-  
-  log "Root partition: $ROOT_PART on /dev/$ROOT_DEV"
-  
-  # Get current sizes
-  DISK_SIZE=$(blockdev --getsize64 /dev/$ROOT_DEV)
-  PART_SIZE=$(lsblk -bno SIZE "$ROOT_PART")
-  DISK_SIZE_GB=$((DISK_SIZE / 1024 / 1024 / 1024))
-  PART_SIZE_GB=$((PART_SIZE / 1024 / 1024 / 1024))
-  
-  log "Disk size: ${DISK_SIZE_GB}GB, Partition size: ${PART_SIZE_GB}GB"
-  
-  # Check if expansion is needed (partition less than 90% of disk)
-  THRESHOLD=$((DISK_SIZE * 90 / 100))
-  if [ "$PART_SIZE" -ge "$THRESHOLD" ]; then
-    log "Filesystem already uses most of the disk, skipping expansion"
-    mkdir -p "$(dirname $EXPANDED_MARKER)"
-    touch "$EXPANDED_MARKER"
-    return 0
-  fi
-  
-  log "Expanding filesystem to use full SD card..."
-  
-  # Use raspi-config to expand the partition
-  if raspi-config --expand-rootfs; then
-    log "Partition table updated, resizing filesystem..."
-    
-    # Reload partition table
-    partprobe /dev/$ROOT_DEV 2>/dev/null || true
-    
-    # Resize the filesystem online
-    if resize2fs "$ROOT_PART"; then
-      log "Filesystem expanded successfully"
-      mkdir -p "$(dirname $EXPANDED_MARKER)"
-      touch "$EXPANDED_MARKER"
-      
-      # Show new size
-      NEW_SIZE=$(df -h / | awk 'NR==2 {print $2}')
-      log "New root filesystem size: $NEW_SIZE"
-    else
-      log "Warning: resize2fs failed, may need reboot"
-    fi
-  else
-    log "Warning: raspi-config --expand-rootfs failed"
-  fi
 }
 
 # Wait for network to be available
@@ -108,8 +45,15 @@ wait_for_network() {
 # Main
 log "Starting MusicBox first boot setup"
 
-# Expand filesystem first (before anything else)
-expand_filesystem
+# Wait for Pi's built-in filesystem expansion to complete (if running)
+if systemctl is-active --quiet resize2fs_once.service 2>/dev/null; then
+  log "Waiting for resize2fs_once.service to complete..."
+  systemctl is-active --quiet resize2fs_once.service && sleep 5
+fi
+
+# Log disk status
+log "Filesystem status:"
+df -h / | tail -1 | while read line; do log "  $line"; done
 
 # Show network status for debugging
 log "Network status:"

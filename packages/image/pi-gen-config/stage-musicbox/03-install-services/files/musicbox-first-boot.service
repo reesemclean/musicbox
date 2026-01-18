@@ -1,6 +1,6 @@
 [Unit]
 Description=MusicBox First Boot Setup
-After=NetworkManager.service
+After=NetworkManager.service resize2fs_once.service
 Wants=NetworkManager.service
 ConditionPathExists=!/opt/musicbox/.first-boot-complete
 

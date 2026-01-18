@@ -3,9 +3,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { devices } from '../db/schema.js'
+import { deploymentRuns, devices } from '../db/schema.js'
 import type { DeviceStatus } from '../db/schema.js'
 
 /**
@@ -247,9 +247,27 @@ export async function rejectDevice(deviceId: number) {
 /**
  * Delete a device completely
  * @param deviceId - Device ID
- * @returns true if deleted, false if not found
+ * @returns object with success status and message
+ * @throws Error if device has active deployment
  */
 export async function deleteDevice(deviceId: number) {
+  // Check for active deployments (queued or running)
+  const activeDeployments = await db
+    .select({ id: deploymentRuns.id, status: deploymentRuns.status })
+    .from(deploymentRuns)
+    .where(
+      and(
+        eq(deploymentRuns.deviceId, deviceId),
+        inArray(deploymentRuns.status, ['queued', 'running']),
+      ),
+    )
+
+  if (activeDeployments.length > 0) {
+    throw new Error(
+      `Cannot delete device: deployment is currently ${activeDeployments[0].status}. Wait for it to complete or cancel it first.`,
+    )
+  }
+
   const result = await db
     .delete(devices)
     .where(eq(devices.id, deviceId))
