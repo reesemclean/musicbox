@@ -2,7 +2,7 @@
  * Ansible Service - Push-based deployment to Raspberry Pi devices
  */
 
-import { spawn, type ChildProcess } from 'node:child_process'
+import {  spawn } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { and, desc, eq, isNotNull } from 'drizzle-orm'
@@ -15,6 +15,7 @@ import {
 } from '../lib/ssh-keys.js'
 import { getPlayerVersion } from '../lib/player-bundle.js'
 import { env } from '../env.js'
+import type {ChildProcess} from 'node:child_process';
 import type { DeploymentRunStatus } from '../db/schema.js'
 
 // Paths
