@@ -3,22 +3,6 @@
 # Copy boot config
 install -m 644 files/config.txt "${ROOTFS_DIR}/boot/firmware/config.txt"
 
-# Ensure cmdline.txt has the 'resize' parameter for automatic filesystem expansion
-# The rpi-resize service reads this on first boot
-if [ -f "${ROOTFS_DIR}/boot/firmware/cmdline.txt" ]; then
-  if ! grep -q 'resize' "${ROOTFS_DIR}/boot/firmware/cmdline.txt"; then
-    sed -i 's/$/ resize/' "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
-    echo "Added 'resize' parameter to cmdline.txt"
-  fi
-else
-  echo "Warning: cmdline.txt not found, will be created by pi-gen"
-fi
-
-# Enable the rpi-resize service for automatic filesystem expansion on first boot
-on_chroot << EOF
-systemctl enable rpi-resize || true
-EOF
-
 # Copy ALSA config
 install -m 644 files/asound.conf "${ROOTFS_DIR}/etc/asound.conf"
 
@@ -32,12 +16,14 @@ install -d -m 755 "${ROOTFS_DIR}/opt/musicbox"
 install -d -m 755 "${ROOTFS_DIR}/opt/musicbox/agent"
 install -d -m 755 "${ROOTFS_DIR}/opt/musicbox/player"
 install -d -m 755 "${ROOTFS_DIR}/var/cache/musicbox"
+install -d -m 755 "${ROOTFS_DIR}/var/lib/musicbox"
 install -d -m 755 "${ROOTFS_DIR}/boot/firmware/musicbox"
 
 # Set ownership
 on_chroot << EOF
 chown -R musicbox:musicbox /opt/musicbox
 chown -R musicbox:musicbox /var/cache/musicbox
+chown -R musicbox:musicbox /var/lib/musicbox
 EOF
 
 # Enable I2C
