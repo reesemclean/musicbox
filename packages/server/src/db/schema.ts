@@ -50,6 +50,7 @@ export const devices = sqliteTable('devices', {
   currentSong: text('current_song'), // JSON string of current playback
   libraryVersion: integer('library_version').default(0),
   approvedAt: integer('approved_at', { mode: 'timestamp' }), // When device was approved
+  sshKeyInstalled: integer('ssh_key_installed', { mode: 'boolean' }).default(false), // SSH key installed on device
   reportedPlayerVersion: text('reported_player_version'), // Version reported by heartbeat
   reportedConfigVersion: text('reported_config_version'), // Config version applied
   // Deployment tracking (Ansible push-based)

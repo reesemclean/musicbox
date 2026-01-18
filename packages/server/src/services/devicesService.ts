@@ -299,3 +299,36 @@ export async function updateDeviceState(
 
   return { success: true }
 }
+
+/**
+ * Report that SSH key has been installed on the device
+ * @param deviceId - Device ID
+ * @returns Device info if found and updated, null otherwise
+ */
+export async function reportSshKeyInstalled(deviceId: number) {
+  console.log(`[devices] Device ${deviceId} reporting SSH key installed`)
+
+  const device = await db.query.devices.findFirst({
+    where: eq(devices.id, deviceId),
+  })
+
+  if (!device) {
+    console.warn(`[devices] Device ${deviceId} not found`)
+    return null
+  }
+
+  if (device.sshKeyInstalled) {
+    console.log(`[devices] Device ${deviceId} already has SSH key marked as installed`)
+    return device
+  }
+
+  const [updated] = await db
+    .update(devices)
+    .set({ sshKeyInstalled: true })
+    .where(eq(devices.id, deviceId))
+    .returning()
+
+  console.log(`[devices] Device ${deviceId} SSH key marked as installed`)
+
+  return updated
+}

@@ -1,0 +1,1 @@
+ALTER TABLE `devices` ADD `ssh_key_installed` integer DEFAULT false;

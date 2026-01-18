@@ -295,7 +295,8 @@ export const getPendingDevices = createServerFn().handler(async () => {
 })
 
 /**
- * Approve a pending device and trigger deployment
+ * Approve a pending device
+ * Deployment is triggered when the device reports SSH key installed via /api/devices/register/:deviceId/ssh-ready
  */
 export const approveDevice = createServerFn({ method: 'POST' })
   .inputValidator(
@@ -311,26 +312,9 @@ export const approveDevice = createServerFn({ method: 'POST' })
       throw new Error('Device not found or not pending')
     }
 
-    // Auto-deploy to the newly approved device (full site deployment in case image is old)
-    // Only deploy if device has an IP address (from heartbeat), otherwise skip
-    if (device.ipAddress) {
-      try {
-        const runId = await ansibleService.runPlaybook('site', data.deviceId)
-        console.log(
-          `[approveDevice] Triggered full deployment for device ${data.deviceId}, run ID: ${runId}`,
-        )
-      } catch (err) {
-        // Log but don't fail the approval if deployment fails to start
-        console.error(
-          `[approveDevice] Failed to trigger deployment for device ${data.deviceId}:`,
-          err,
-        )
-      }
-    } else {
-      console.log(
-        `[approveDevice] Skipping auto-deploy for device ${data.deviceId} - no IP address yet (will deploy on next heartbeat or manual trigger)`,
-      )
-    }
+    console.log(
+      `[approveDevice] Device ${data.deviceId} approved as "${data.name}" - deployment will trigger when device reports SSH key installed`,
+    )
 
     return { device }
   })

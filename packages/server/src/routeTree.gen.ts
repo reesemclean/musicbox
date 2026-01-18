@@ -25,6 +25,7 @@ import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlis
 import { Route as ApiDevicesRegisterIndexRouteImport } from './routes/api/devices/register/index'
 import { Route as ApiStreamEpisodeEpisodeIdRouteImport } from './routes/api/stream/episode/$episodeId'
 import { Route as ApiDevicesRegisterDeviceIdStatusRouteImport } from './routes/api/devices/register/$deviceId/status'
+import { Route as ApiDevicesRegisterDeviceIdSshReadyRouteImport } from './routes/api/devices/register/$deviceId/ssh-ready'
 
 const LibraryRoute = LibraryRouteImport.update({
   id: '/_library',
@@ -107,6 +108,12 @@ const ApiDevicesRegisterDeviceIdStatusRoute =
     path: '/api/devices/register/$deviceId/status',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiDevicesRegisterDeviceIdSshReadyRoute =
+  ApiDevicesRegisterDeviceIdSshReadyRouteImport.update({
+    id: '/api/devices/register/$deviceId/ssh-ready',
+    path: '/api/devices/register/$deviceId/ssh-ready',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/cards': typeof LibraryCardsRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
   '/api/stream/episode/$episodeId': typeof ApiStreamEpisodeEpisodeIdRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
+  '/api/devices/register/$deviceId/ssh-ready': typeof ApiDevicesRegisterDeviceIdSshReadyRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
 export interface FileRoutesByTo {
@@ -140,6 +148,7 @@ export interface FileRoutesByTo {
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
   '/api/stream/episode/$episodeId': typeof ApiStreamEpisodeEpisodeIdRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
+  '/api/devices/register/$deviceId/ssh-ready': typeof ApiDevicesRegisterDeviceIdSshReadyRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
 export interface FileRoutesById {
@@ -159,6 +168,7 @@ export interface FileRoutesById {
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
   '/api/stream/episode/$episodeId': typeof ApiStreamEpisodeEpisodeIdRoute
   '/api/devices/register/': typeof ApiDevicesRegisterIndexRoute
+  '/api/devices/register/$deviceId/ssh-ready': typeof ApiDevicesRegisterDeviceIdSshReadyRoute
   '/api/devices/register/$deviceId/status': typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
 export interface FileRouteTypes {
@@ -178,6 +188,7 @@ export interface FileRouteTypes {
     | '/api/stream/$songId'
     | '/api/stream/episode/$episodeId'
     | '/api/devices/register'
+    | '/api/devices/register/$deviceId/ssh-ready'
     | '/api/devices/register/$deviceId/status'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -195,6 +206,7 @@ export interface FileRouteTypes {
     | '/api/stream/$songId'
     | '/api/stream/episode/$episodeId'
     | '/api/devices/register'
+    | '/api/devices/register/$deviceId/ssh-ready'
     | '/api/devices/register/$deviceId/status'
   id:
     | '__root__'
@@ -213,6 +225,7 @@ export interface FileRouteTypes {
     | '/api/stream/$songId'
     | '/api/stream/episode/$episodeId'
     | '/api/devices/register/'
+    | '/api/devices/register/$deviceId/ssh-ready'
     | '/api/devices/register/$deviceId/status'
   fileRoutesById: FileRoutesById
 }
@@ -226,6 +239,7 @@ export interface RootRouteChildren {
   ApiStreamSongIdRoute: typeof ApiStreamSongIdRoute
   ApiStreamEpisodeEpisodeIdRoute: typeof ApiStreamEpisodeEpisodeIdRoute
   ApiDevicesRegisterIndexRoute: typeof ApiDevicesRegisterIndexRoute
+  ApiDevicesRegisterDeviceIdSshReadyRoute: typeof ApiDevicesRegisterDeviceIdSshReadyRoute
   ApiDevicesRegisterDeviceIdStatusRoute: typeof ApiDevicesRegisterDeviceIdStatusRoute
 }
 
@@ -343,6 +357,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDevicesRegisterDeviceIdStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/devices/register/$deviceId/ssh-ready': {
+      id: '/api/devices/register/$deviceId/ssh-ready'
+      path: '/api/devices/register/$deviceId/ssh-ready'
+      fullPath: '/api/devices/register/$deviceId/ssh-ready'
+      preLoaderRoute: typeof ApiDevicesRegisterDeviceIdSshReadyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -377,6 +398,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStreamSongIdRoute: ApiStreamSongIdRoute,
   ApiStreamEpisodeEpisodeIdRoute: ApiStreamEpisodeEpisodeIdRoute,
   ApiDevicesRegisterIndexRoute: ApiDevicesRegisterIndexRoute,
+  ApiDevicesRegisterDeviceIdSshReadyRoute:
+    ApiDevicesRegisterDeviceIdSshReadyRoute,
   ApiDevicesRegisterDeviceIdStatusRoute: ApiDevicesRegisterDeviceIdStatusRoute,
 }
 export const routeTree = rootRouteImport
