@@ -1,0 +1,15 @@
+[Unit]
+Description=Unblock WiFi and set regulatory domain
+DefaultDependencies=no
+Before=network-pre.target NetworkManager.service systemd-networkd.service
+After=systemd-modules-load.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/raspi-config nonint do_wifi_country US
+ExecStart=/usr/sbin/rfkill unblock wifi
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

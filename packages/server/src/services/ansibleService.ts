@@ -104,18 +104,24 @@ export async function runPlaybook(
   playbook: string,
   deviceId?: number,
 ): Promise<number> {
+  console.log(`[ansible] Starting playbook: ${playbook}${deviceId ? ` for device ${deviceId}` : ' for all devices'}`)
+  
   const playbookFile = PLAYBOOKS[playbook]
   if (!playbookFile) {
+    console.error(`[ansible] Unknown playbook: ${playbook}`)
     throw new Error(`Unknown playbook: ${playbook}`)
   }
 
   const playbookPath = join(ANSIBLE_DIR, 'playbooks', playbookFile)
   if (!existsSync(playbookPath)) {
+    console.error(`[ansible] Playbook not found: ${playbookPath}`)
     throw new Error(`Playbook not found: ${playbookPath}`)
   }
 
   // Generate fresh inventory
-  await generateInventory()
+  console.log('[ansible] Generating inventory...')
+  const inventory = await generateInventory()
+  console.log(`[ansible] Inventory generated:\n${inventory}`)
 
   // Create deployment run record
   const [run] = await db
@@ -126,6 +132,8 @@ export async function runPlaybook(
       status: 'queued',
     })
     .returning()
+
+  console.log(`[ansible] Created deployment run #${run.id}`)
 
   // Update device deployment status if specific device
   if (deviceId) {
@@ -159,6 +167,8 @@ export async function runPlaybook(
     }
   }
 
+  console.log(`[ansible] Running: ansible-playbook ${args.join(' ')}`)
+
   // Start playbook execution asynchronously
   executePlaybook(run.id, args, deviceId)
 
@@ -174,6 +184,7 @@ async function executePlaybook(
   deviceId?: number,
 ): Promise<void> {
   const startedAt = new Date()
+  console.log(`[ansible] Executing playbook for run #${runId}`)
 
   // Update run to running status
   await db
@@ -200,30 +211,41 @@ async function executePlaybook(
   let output = ''
 
   try {
+    const ansibleConfig = join(ANSIBLE_DIR, 'ansible.cfg')
+    console.log(`[ansible] Using config: ${ansibleConfig}`)
+    console.log(`[ansible] Working directory: ${ANSIBLE_DIR}`)
+    
     const result = await new Promise<{ code: number; output: string }>(
       (resolve, reject) => {
         const proc = spawn('ansible-playbook', args, {
           cwd: ANSIBLE_DIR,
           env: {
             ...process.env,
-            ANSIBLE_CONFIG: join(ANSIBLE_DIR, 'ansible.cfg'),
+            ANSIBLE_CONFIG: ansibleConfig,
             ANSIBLE_FORCE_COLOR: '0',
           },
         })
 
         proc.stdout.on('data', (data) => {
-          output += data.toString()
+          const chunk = data.toString()
+          output += chunk
+          // Log output in real-time
+          process.stdout.write(`[ansible] ${chunk}`)
         })
 
         proc.stderr.on('data', (data) => {
-          output += data.toString()
+          const chunk = data.toString()
+          output += chunk
+          process.stderr.write(`[ansible] ${chunk}`)
         })
 
         proc.on('close', (code) => {
+          console.log(`[ansible] Process exited with code ${code}`)
           resolve({ code: code ?? 1, output })
         })
 
         proc.on('error', (err) => {
+          console.error(`[ansible] Process error:`, err)
           reject(err)
         })
       },
@@ -231,6 +253,7 @@ async function executePlaybook(
 
     const completedAt = new Date()
     const status: DeploymentRunStatus = result.code === 0 ? 'success' : 'failed'
+    console.log(`[ansible] Run #${runId} completed with status: ${status}`)
 
     // Update run record
     await db
@@ -266,6 +289,7 @@ async function executePlaybook(
         .where(eq(devices.status, 'approved'))
     }
   } catch (error) {
+    console.error(`[ansible] Run #${runId} failed with error:`, error)
     const completedAt = new Date()
 
     await db

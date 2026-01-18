@@ -295,7 +295,7 @@ export const getPendingDevices = createServerFn().handler(async () => {
 })
 
 /**
- * Approve a pending device
+ * Approve a pending device and trigger deployment
  */
 export const approveDevice = createServerFn({ method: 'POST' })
   .inputValidator(
@@ -309,6 +309,23 @@ export const approveDevice = createServerFn({ method: 'POST' })
 
     if (!device) {
       throw new Error('Device not found or not pending')
+    }
+
+    // Auto-deploy the player to the newly approved device
+    try {
+      const runId = await ansibleService.runPlaybook(
+        'deploy-player',
+        data.deviceId,
+      )
+      console.log(
+        `[approveDevice] Triggered deployment for device ${data.deviceId}, run ID: ${runId}`,
+      )
+    } catch (err) {
+      // Log but don't fail the approval if deployment fails to start
+      console.error(
+        `[approveDevice] Failed to trigger deployment for device ${data.deviceId}:`,
+        err,
+      )
     }
 
     return { device }

@@ -89,13 +89,15 @@ See [docs/CUSTOM-IMAGE.md](docs/CUSTOM-IMAGE.md) for creating bootable SD card i
 Quick overview:
 
 ```bash
-# Build ready-to-flash SD card image
-npm run build:image -- ./device-configs/my-device.json \
-  --wifi ./device-configs/wifi.json \
-  --ssh ./device-configs/ssh.json
+# Configure image settings
+cp packages/image/build-config.example.json packages/image/build-config.json
+# Edit build-config.json with server URL, WiFi, SSH key, timezone
 
-# Flash to SD card
-sudo dd if=./outputs/my-device.img of=/dev/diskX bs=4M status=progress
+# Build ready-to-flash SD card image (takes 30-60 min)
+npm run build:image
+
+# Flash to SD card (find device with `diskutil list`)
+sudo dd if=./outputs/musicbox.img of=/dev/rdiskX bs=4M status=progress
 ```
 
 ## Database Schema

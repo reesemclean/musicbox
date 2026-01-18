@@ -5,16 +5,23 @@ install -m 644 files/musicbox-bootstrap.service "${ROOTFS_DIR}/etc/systemd/syste
 install -m 755 files/musicbox-first-boot.sh "${ROOTFS_DIR}/opt/musicbox/"
 install -m 644 files/musicbox-first-boot.service "${ROOTFS_DIR}/etc/systemd/system/"
 
-# Install embedded WiFi config if present (generated during build)
-if [ -f files/wifi-config.txt ]; then
-  install -m 600 files/wifi-config.txt "${ROOTFS_DIR}/opt/musicbox/wifi-config.txt"
-  echo "WiFi config installed"
+# Install early-boot WiFi unblock service (runs before NetworkManager)
+# This is needed because raspi-config can't run in QEMU chroot during build
+install -m 644 files/musicbox-wifi-unblock.service "${ROOTFS_DIR}/etc/systemd/system/"
+
+# Install NetworkManager WiFi connection file if present (generated during build)
+# This is the proper Bookworm way - .nmconnection files with 600 permissions
+if [ -f files/musicbox-wifi.nmconnection ]; then
+  mkdir -p "${ROOTFS_DIR}/etc/NetworkManager/system-connections"
+  install -m 600 files/musicbox-wifi.nmconnection "${ROOTFS_DIR}/etc/NetworkManager/system-connections/"
+  echo "WiFi connection file installed"
 fi
 
 # Enable services
 on_chroot << EOF
 systemctl enable musicbox-bootstrap.service
 systemctl enable musicbox-first-boot.service
+systemctl enable musicbox-wifi-unblock.service
 EOF
 
 # Disable unused services for faster boot

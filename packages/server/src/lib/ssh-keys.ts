@@ -57,7 +57,10 @@ function generateKeyPair(): void {
  * Generates keypair if it doesn't exist
  */
 export function getSSHPublicKey(): string {
-  if (cachedPublicKey) return cachedPublicKey
+  if (cachedPublicKey) {
+    console.log('[ssh-keys] Returning cached public key')
+    return cachedPublicKey
+  }
 
   generateKeyPair()
 
@@ -66,6 +69,7 @@ export function getSSHPublicKey(): string {
   }
 
   cachedPublicKey = readFileSync(PUBLIC_KEY_PATH, 'utf-8').trim()
+  console.log(`[ssh-keys] Loaded public key from ${PUBLIC_KEY_PATH}`)
   return cachedPublicKey
 }
 

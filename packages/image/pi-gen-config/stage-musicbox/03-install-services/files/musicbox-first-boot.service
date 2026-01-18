@@ -1,7 +1,7 @@
 [Unit]
 Description=MusicBox First Boot Setup
-After=local-fs.target
-Before=network-online.target
+After=NetworkManager.service
+Wants=NetworkManager.service
 ConditionPathExists=!/opt/musicbox/.first-boot-complete
 
 [Service]
@@ -9,6 +9,7 @@ Type=oneshot
 ExecStart=/opt/musicbox/musicbox-first-boot.sh
 ExecStartPost=/usr/bin/touch /opt/musicbox/.first-boot-complete
 RemainAfterExit=yes
+TimeoutStartSec=120
 
 [Install]
 WantedBy=multi-user.target

@@ -10,6 +10,7 @@
  */
 
 import { execSync, spawn } from 'child_process'
+import crypto from 'crypto'
 import {
   readFileSync,
   writeFileSync,
@@ -342,28 +343,24 @@ function printSummary(config: BuildConfig) {
 // Build Steps
 // ============================================
 
-function setupPigen(forceClean = false) {
+function setupPigen() {
   log.header('Setting up pi-gen')
 
   console.log(`Build directory: ${BUILD_DIR}`)
 
-  // Force clean if requested or if work directory has wrong architecture
-  if (forceClean && existsSync(PIGEN_DIR)) {
+  // Always clean to ensure fresh build with latest config
+  if (existsSync(PIGEN_DIR)) {
     console.log('Removing existing pi-gen for fresh clone...')
     rmSync(PIGEN_DIR, { recursive: true })
   }
 
-  if (!existsSync(PIGEN_DIR)) {
-    console.log('Cloning pi-gen (bookworm-arm64 branch)...')
-    mkdirSync(BUILD_DIR, { recursive: true })
-    // Use the bookworm-arm64 branch which has correct GPG keys for bookworm
-    exec(
-      `git clone --depth 1 --branch bookworm-arm64 https://github.com/RPi-Distro/pi-gen.git "${PIGEN_DIR}"`,
-    )
-    log.success('pi-gen cloned (bookworm-arm64 branch)')
-  } else {
-    log.success('pi-gen already cloned (use --clean to force fresh clone)')
-  }
+  console.log('Cloning pi-gen (bookworm-arm64 branch)...')
+  mkdirSync(BUILD_DIR, { recursive: true })
+  // Use the bookworm-arm64 branch which has correct GPG keys for bookworm
+  exec(
+    `git clone --depth 1 --branch bookworm-arm64 https://github.com/RPi-Distro/pi-gen.git "${PIGEN_DIR}"`,
+  )
+  log.success('pi-gen cloned (bookworm-arm64 branch)')
 }
 
 function configureBuild(config: BuildConfig) {
@@ -425,19 +422,41 @@ ARCH="arm64"
     `# MusicBox Bootstrap Configuration\nSERVER_URL=${config.serverUrl}\n`,
   )
 
-  // Configure WiFi
-  const wifiConfigPath = join(
+  // Configure WiFi via NetworkManager .nmconnection file (Bookworm way)
+  const nmconnectionPath = join(
     stageDest,
-    '03-install-services/files/wifi-config.txt',
+    '03-install-services/files/musicbox-wifi.nmconnection',
   )
   if (config.wifi) {
-    writeFileSync(
-      wifiConfigPath,
-      `SSID="${config.wifi.ssid}"\nPASSWORD="${config.wifi.password}"\nCOUNTRY="${config.wifi.country}"\n`,
-    )
-    log.success('WiFi credentials embedded')
-  } else if (existsSync(wifiConfigPath)) {
-    rmSync(wifiConfigPath)
+    // Generate a UUID for the connection
+    const uuid = crypto.randomUUID()
+    const nmconnection = `[connection]
+id=musicbox-wifi
+uuid=${uuid}
+type=wifi
+autoconnect=true
+
+[wifi]
+mode=infrastructure
+ssid=${config.wifi.ssid}
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=${config.wifi.password}
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=default
+method=auto
+
+[proxy]
+`
+    writeFileSync(nmconnectionPath, nmconnection)
+    log.success('WiFi connection file generated')
+  } else if (existsSync(nmconnectionPath)) {
+    rmSync(nmconnectionPath)
   }
 
   // Make scripts executable
@@ -641,7 +660,6 @@ ${colors.green}Happy building! 🎵${colors.reset}
 async function main() {
   const args = process.argv.slice(2)
   const forceInteractive = args.includes('--interactive') || args.includes('-i')
-  const forceClean = args.includes('--clean') || args.includes('-c')
   const configExists = existsSync(CONFIG_FILE)
 
   console.log(`${colors.blue}
@@ -684,7 +702,7 @@ ${colors.reset}`)
   }
 
   // Build steps
-  setupPigen(forceClean)
+  setupPigen()
   console.log()
 
   configureBuild(config)
