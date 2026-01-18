@@ -220,6 +220,8 @@ function DevicesPage() {
         return 'text-green-500'
       case 'offline':
         return 'text-red-500'
+      case 'pending_setup':
+        return 'text-amber-500'
       case 'inactive':
         return 'text-gray-400'
       default:
@@ -233,10 +235,27 @@ function DevicesPage() {
         return '🟢'
       case 'offline':
         return '🔴'
+      case 'pending_setup':
+        return '🟡'
       case 'inactive':
         return '⚪'
       default:
         return '⚪'
+    }
+  }
+
+  const getStatusLabel = (status?: string) => {
+    switch (status) {
+      case 'online':
+        return 'Online'
+      case 'offline':
+        return 'Offline'
+      case 'pending_setup':
+        return 'Pending Setup'
+      case 'inactive':
+        return 'Inactive'
+      default:
+        return status || 'Unknown'
     }
   }
 
@@ -493,7 +512,7 @@ function DevicesPage() {
                       <span
                         className={`text-sm ${getStatusColor(device.status)}`}
                       >
-                        {device.status}
+                        {getStatusLabel(device.status)}
                       </span>
                     </div>
                   </div>

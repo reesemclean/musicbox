@@ -29,13 +29,20 @@ export async function createDevice(name: string) {
 }
 
 /**
- * Calculate device status based on last heartbeat
+ * Calculate device connection status based on last heartbeat and setup state
  * @param lastSeen - Last heartbeat timestamp
- * @returns 'online', 'offline', or 'inactive'
+ * @param sshKeyInstalled - Whether SSH key has been installed
+ * @returns 'online', 'offline', 'inactive', or 'pending_setup'
  */
 function calculateDeviceStatus(
   lastSeen: Date | null,
-): 'online' | 'offline' | 'inactive' {
+  sshKeyInstalled: boolean | null,
+): 'online' | 'offline' | 'inactive' | 'pending_setup' {
+  // If SSH key not installed, device is still setting up
+  if (!sshKeyInstalled) {
+    return 'pending_setup'
+  }
+
   if (!lastSeen) {
     return 'inactive'
   }
@@ -63,6 +70,7 @@ export async function getAllDevices() {
       deploymentStatus: devices.deploymentStatus,
       lastDeployedAt: devices.lastDeployedAt,
       lastDeployedVersion: devices.lastDeployedVersion,
+      sshKeyInstalled: devices.sshKeyInstalled,
     })
     .from(devices)
     .orderBy(devices.name)
@@ -70,7 +78,7 @@ export async function getAllDevices() {
   // Calculate status on the fly
   return allDevices.map((device) => ({
     ...device,
-    status: calculateDeviceStatus(device.lastSeen),
+    status: calculateDeviceStatus(device.lastSeen, device.sshKeyInstalled),
   }))
 } /**
  * Update device heartbeat with current status

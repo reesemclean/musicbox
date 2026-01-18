@@ -142,24 +142,35 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
                 sed -i "s/127.0.1.1.*/127.0.1.1\t$NAME/" /etc/hosts
             fi
 
-            # Add SSH public key to authorized_keys for pi user
+            # Add SSH public key to authorized_keys for musicbox user
             if [ "$SSH_PUBLIC_KEY" != "null" ] && [ -n "$SSH_PUBLIC_KEY" ]; then
                 log "Adding server SSH key to authorized_keys..."
 
-                # Ensure .ssh directory exists for pi user
-                mkdir -p /home/pi/.ssh
-                chmod 700 /home/pi/.ssh
-                chown pi:pi /home/pi/.ssh
+                # Ensure .ssh directory exists for musicbox user
+                mkdir -p /home/musicbox/.ssh
+                chmod 700 /home/musicbox/.ssh
+                chown musicbox:musicbox /home/musicbox/.ssh
 
                 # Add key if not already present
-                AUTHORIZED_KEYS="/home/pi/.ssh/authorized_keys"
+                AUTHORIZED_KEYS="/home/musicbox/.ssh/authorized_keys"
                 if [ ! -f "$AUTHORIZED_KEYS" ] || ! grep -q "musicbox-server" "$AUTHORIZED_KEYS"; then
                     echo "$SSH_PUBLIC_KEY" >> "$AUTHORIZED_KEYS"
                     chmod 600 "$AUTHORIZED_KEYS"
-                    chown pi:pi "$AUTHORIZED_KEYS"
+                    chown musicbox:musicbox "$AUTHORIZED_KEYS"
                 fi
 
                 log "SSH key added successfully"
+
+                # Notify server that SSH key is installed (triggers deployment)
+                log "Notifying server that SSH key is ready..."
+                SSH_READY_RESPONSE=$(curl -s -X POST \
+                    "$SERVER_URL/api/devices/register/$DEVICE_ID/ssh-ready" || echo "")
+
+                if [ -n "$SSH_READY_RESPONSE" ]; then
+                    log "Server notified: $SSH_READY_RESPONSE"
+                else
+                    log "Warning: Failed to notify server, deployment may need manual trigger"
+                fi
             fi
 
             # Create bootstrap complete marker
