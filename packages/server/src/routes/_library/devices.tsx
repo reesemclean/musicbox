@@ -166,7 +166,11 @@ function DevicesPage() {
   }
 
   const handleDelete = (deviceId: number, deviceName: string) => {
-    if (confirm(`Are you sure you want to delete "${deviceName}"? This cannot be undone. The device will need to re-register if reflashed.`)) {
+    if (
+      confirm(
+        `Are you sure you want to delete "${deviceName}"? This cannot be undone. The device will need to re-register if reflashed.`,
+      )
+    ) {
       deleteMutation.mutate({ data: { deviceId } })
     }
   }

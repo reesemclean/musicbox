@@ -72,7 +72,9 @@ export const downloadQueue = sqliteTable('download_queue', {
   artist: text('artist'),
   album: text('album'),
   targetPath: text('target_path'),
-  playlistId: integer('playlist_id').references(() => playlists.id, { onDelete: 'cascade' }), // For adding to playlist after download
+  playlistId: integer('playlist_id').references(() => playlists.id, {
+    onDelete: 'cascade',
+  }), // For adding to playlist after download
   trackPosition: integer('track_position'), // Position in playlist
   status: text('status', {
     enum: ['pending', 'downloading', 'failed'],
@@ -165,7 +167,9 @@ export type DeploymentRunStatus = (typeof deploymentRunStatus)[number]
 // Ansible deployment runs
 export const deploymentRuns = sqliteTable('deployment_runs', {
   id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
-  deviceId: integer('device_id').references(() => devices.id, { onDelete: 'cascade' }), // null = all devices
+  deviceId: integer('device_id').references(() => devices.id, {
+    onDelete: 'cascade',
+  }), // null = all devices
   playbook: text('playbook').notNull(), // 'site', 'deploy-player', 'sync-config'
   status: text('status', { enum: deploymentRunStatus }).notNull(),
   output: text('output'), // Ansible output log

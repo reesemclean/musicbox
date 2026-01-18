@@ -41,8 +41,10 @@ export const Route = createFileRoute('/api/devices/register/$deviceId/status')({
           if (result.status === 'approved') {
             // Include SSH public key for bootstrap script to add to authorized_keys
             const sshPublicKey = getServerSSHPublicKey()
-            
-            console.log(`[device-status] Device ${deviceId} approved, returning SSH key (${sshPublicKey.substring(0, 50)}...)`)
+
+            console.log(
+              `[device-status] Device ${deviceId} approved, returning SSH key (${sshPublicKey.substring(0, 50)}...)`,
+            )
 
             return Response.json({
               status: result.status,

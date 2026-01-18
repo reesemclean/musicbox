@@ -246,7 +246,7 @@ export async function deleteDevice(deviceId: number) {
     .delete(devices)
     .where(eq(devices.id, deviceId))
     .returning()
-  
+
   return result.length > 0
 }
 

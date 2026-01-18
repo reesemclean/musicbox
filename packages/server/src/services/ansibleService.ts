@@ -57,11 +57,15 @@ export function initializeAnsible(): void {
   // Log ansible-playbook availability
   const { execSync } = require('node:child_process')
   try {
-    const version = execSync('ansible-playbook --version', { encoding: 'utf8' }).split('\n')[0]
+    const version = execSync('ansible-playbook --version', {
+      encoding: 'utf8',
+    }).split('\n')[0]
     console.log(`[ansible:init] ansible-playbook available: ${version}`)
   } catch {
     console.warn('[ansible:init] WARNING: ansible-playbook not found in PATH')
-    console.warn('[ansible:init] Deployments will fail until ansible is installed')
+    console.warn(
+      '[ansible:init] Deployments will fail until ansible is installed',
+    )
   }
 
   console.log('[ansible:init] Ansible service ready')
@@ -71,7 +75,9 @@ export function initializeAnsible(): void {
  * Generate Ansible inventory from approved devices
  */
 export async function generateInventory(): Promise<string> {
-  console.log('[ansible:inventory] Querying approved devices with IP addresses...')
+  console.log(
+    '[ansible:inventory] Querying approved devices with IP addresses...',
+  )
 
   // Get all approved devices with IP addresses
   const approvedDevices = await db
@@ -84,14 +90,22 @@ export async function generateInventory(): Promise<string> {
     .from(devices)
     .where(and(eq(devices.status, 'approved'), isNotNull(devices.ipAddress)))
 
-  console.log(`[ansible:inventory] Found ${approvedDevices.length} deployable device(s)`)
+  console.log(
+    `[ansible:inventory] Found ${approvedDevices.length} deployable device(s)`,
+  )
 
   if (approvedDevices.length === 0) {
-    console.warn('[ansible:inventory] WARNING: No devices found with status=approved AND ipAddress set')
-    console.warn('[ansible:inventory] Deployment will have no targets - check device registration status')
+    console.warn(
+      '[ansible:inventory] WARNING: No devices found with status=approved AND ipAddress set',
+    )
+    console.warn(
+      '[ansible:inventory] Deployment will have no targets - check device registration status',
+    )
   } else {
     for (const device of approvedDevices) {
-      console.log(`[ansible:inventory]   - ${device.name} (id=${device.id}, ip=${device.ipAddress})`)
+      console.log(
+        `[ansible:inventory]   - ${device.name} (id=${device.id}, ip=${device.ipAddress})`,
+      )
     }
   }
 
@@ -113,7 +127,7 @@ export async function generateInventory(): Promise<string> {
 
   lines.push('')
   lines.push('[musicbox_devices:vars]')
-  lines.push('ansible_user=pi')
+  lines.push('ansible_user=musicbox')
   lines.push(`ansible_ssh_private_key_file=${getSSHPrivateKeyPath()}`)
   lines.push(`server_url=${serverUrl}`)
   lines.push(`player_version=${getPlayerVersion() || 'unknown'}`)
@@ -148,13 +162,17 @@ export async function runPlaybook(
   const playbookFile = PLAYBOOKS[playbook]
   if (!playbookFile) {
     console.error(`[ansible:run] ERROR: Unknown playbook "${playbook}"`)
-    console.error(`[ansible:run] Available playbooks: ${Object.keys(PLAYBOOKS).join(', ')}`)
+    console.error(
+      `[ansible:run] Available playbooks: ${Object.keys(PLAYBOOKS).join(', ')}`,
+    )
     throw new Error(`Unknown playbook: ${playbook}`)
   }
 
   const playbookPath = join(ANSIBLE_DIR, 'playbooks', playbookFile)
   if (!existsSync(playbookPath)) {
-    console.error(`[ansible:run] ERROR: Playbook file not found: ${playbookPath}`)
+    console.error(
+      `[ansible:run] ERROR: Playbook file not found: ${playbookPath}`,
+    )
     throw new Error(`Playbook not found: ${playbookPath}`)
   }
   console.log(`[ansible:run] Playbook path: ${playbookPath}`)
@@ -162,7 +180,9 @@ export async function runPlaybook(
   // Generate fresh inventory
   console.log('[ansible:run] Generating inventory...')
   await generateInventory()
-  console.log(`[ansible:run] Inventory generation completed in ${Date.now() - startTime}ms`)
+  console.log(
+    `[ansible:run] Inventory generation completed in ${Date.now() - startTime}ms`,
+  )
 
   // Create deployment run record
   const [run] = await db
@@ -178,13 +198,17 @@ export async function runPlaybook(
 
   // Update device deployment status if specific device
   if (deviceId) {
-    console.log(`[ansible:run] Setting device ${deviceId} deploymentStatus to 'pending'`)
+    console.log(
+      `[ansible:run] Setting device ${deviceId} deploymentStatus to 'pending'`,
+    )
     await db
       .update(devices)
       .set({ deploymentStatus: 'pending' })
       .where(eq(devices.id, deviceId))
   } else {
-    console.log(`[ansible:run] Setting all approved devices deploymentStatus to 'pending'`)
+    console.log(
+      `[ansible:run] Setting all approved devices deploymentStatus to 'pending'`,
+    )
     await db
       .update(devices)
       .set({ deploymentStatus: 'pending' })
@@ -209,7 +233,9 @@ export async function runPlaybook(
       args.push('-l', device.name)
       console.log(`[ansible:run] Limiting to device: ${device.name}`)
     } else {
-      console.warn(`[ansible:run] WARNING: Device ${deviceId} not found in database`)
+      console.warn(
+        `[ansible:run] WARNING: Device ${deviceId} not found in database`,
+      )
     }
   }
 
@@ -217,13 +243,17 @@ export async function runPlaybook(
   const redactedArgs = args.map((arg) =>
     arg.includes('device_secret') ? '[REDACTED]' : arg,
   )
-  console.log(`[ansible:run] Command: ansible-playbook ${redactedArgs.join(' ')}`)
+  console.log(
+    `[ansible:run] Command: ansible-playbook ${redactedArgs.join(' ')}`,
+  )
 
   // Start playbook execution asynchronously
   console.log(`[ansible:run] Launching ansible-playbook process...`)
   executePlaybook(run.id, args, deviceId)
 
-  console.log(`[ansible:run] Run #${run.id} queued, setup took ${Date.now() - startTime}ms`)
+  console.log(
+    `[ansible:run] Run #${run.id} queued, setup took ${Date.now() - startTime}ms`,
+  )
   return run.id
 }
 
@@ -255,13 +285,17 @@ async function executePlaybook(
 
   // Update device status
   if (deviceId) {
-    console.log(`[ansible:exec] Setting device ${deviceId} deploymentStatus to 'deploying'`)
+    console.log(
+      `[ansible:exec] Setting device ${deviceId} deploymentStatus to 'deploying'`,
+    )
     await db
       .update(devices)
       .set({ deploymentStatus: 'deploying' })
       .where(eq(devices.id, deviceId))
   } else {
-    console.log(`[ansible:exec] Setting all approved devices deploymentStatus to 'deploying'`)
+    console.log(
+      `[ansible:exec] Setting all approved devices deploymentStatus to 'deploying'`,
+    )
     await db
       .update(devices)
       .set({ deploymentStatus: 'deploying' })
@@ -313,20 +347,27 @@ async function executePlaybook(
 
         proc.on('close', (code) => {
           const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-          console.log(`[ansible:exec] Process exited with code ${code} after ${duration}s`)
+          console.log(
+            `[ansible:exec] Process exited with code ${code} after ${duration}s`,
+          )
           resolve({ code: code ?? 1, output })
         })
 
         proc.on('error', (err) => {
           console.error(`[ansible:exec] Process spawn error:`, err)
-          console.error(`[ansible:exec] This may indicate ansible-playbook is not installed or not in PATH`)
+          console.error(
+            `[ansible:exec] This may indicate ansible-playbook is not installed or not in PATH`,
+          )
           reject(err)
         })
       },
     )
 
     const completedAt = new Date()
-    const duration = ((completedAt.getTime() - startedAt.getTime()) / 1000).toFixed(1)
+    const duration = (
+      (completedAt.getTime() - startedAt.getTime()) /
+      1000
+    ).toFixed(1)
     const status: DeploymentRunStatus = result.code === 0 ? 'success' : 'failed'
 
     console.log(`[ansible:exec] ---------- Run #${runId} finished ----------`)
@@ -336,7 +377,9 @@ async function executePlaybook(
     console.log(`[ansible:exec] Completed at: ${completedAt.toISOString()}`)
 
     if (status === 'failed') {
-      console.error(`[ansible:exec] DEPLOYMENT FAILED - Review ansible:output and ansible:stderr logs above`)
+      console.error(
+        `[ansible:exec] DEPLOYMENT FAILED - Review ansible:output and ansible:stderr logs above`,
+      )
       // Log last few lines of output for quick diagnosis
       const lastLines = result.output.split('\n').slice(-10).join('\n')
       console.error(`[ansible:exec] Last 10 lines of output:\n${lastLines}`)
@@ -358,7 +401,9 @@ async function executePlaybook(
     const playerVersion = getPlayerVersion()
 
     if (deviceId) {
-      console.log(`[ansible:exec] Updating device ${deviceId}: deploymentStatus=${deviceStatus}`)
+      console.log(
+        `[ansible:exec] Updating device ${deviceId}: deploymentStatus=${deviceStatus}`,
+      )
       await db
         .update(devices)
         .set({
@@ -368,7 +413,9 @@ async function executePlaybook(
         })
         .where(eq(devices.id, deviceId))
     } else {
-      console.log(`[ansible:exec] Updating all approved devices: deploymentStatus=${deviceStatus}`)
+      console.log(
+        `[ansible:exec] Updating all approved devices: deploymentStatus=${deviceStatus}`,
+      )
       await db
         .update(devices)
         .set({
@@ -384,12 +431,19 @@ async function executePlaybook(
     }
   } catch (error) {
     const completedAt = new Date()
-    const duration = ((completedAt.getTime() - startedAt.getTime()) / 1000).toFixed(1)
+    const duration = (
+      (completedAt.getTime() - startedAt.getTime()) /
+      1000
+    ).toFixed(1)
 
     console.error(`[ansible:exec] ---------- Run #${runId} CRASHED ----------`)
     console.error(`[ansible:exec] Duration before crash: ${duration}s`)
-    console.error(`[ansible:exec] Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
-    console.error(`[ansible:exec] Error message: ${error instanceof Error ? error.message : String(error)}`)
+    console.error(
+      `[ansible:exec] Error type: ${error instanceof Error ? error.constructor.name : typeof error}`,
+    )
+    console.error(
+      `[ansible:exec] Error message: ${error instanceof Error ? error.message : String(error)}`,
+    )
     if (error instanceof Error && error.stack) {
       console.error(`[ansible:exec] Stack trace:\n${error.stack}`)
     }
@@ -401,20 +455,26 @@ async function executePlaybook(
         output:
           output +
           '\n\n=== EXECUTION ERROR ===\n' +
-          (error instanceof Error ? `${error.name}: ${error.message}` : String(error)),
+          (error instanceof Error
+            ? `${error.name}: ${error.message}`
+            : String(error)),
         completedAt,
       })
       .where(eq(deploymentRuns.id, runId))
 
     // Update device status to failed
     if (deviceId) {
-      console.log(`[ansible:exec] Setting device ${deviceId} deploymentStatus to 'failed'`)
+      console.log(
+        `[ansible:exec] Setting device ${deviceId} deploymentStatus to 'failed'`,
+      )
       await db
         .update(devices)
         .set({ deploymentStatus: 'failed' })
         .where(eq(devices.id, deviceId))
     } else {
-      console.log(`[ansible:exec] Setting all approved devices deploymentStatus to 'failed'`)
+      console.log(
+        `[ansible:exec] Setting all approved devices deploymentStatus to 'failed'`,
+      )
       await db
         .update(devices)
         .set({ deploymentStatus: 'failed' })
