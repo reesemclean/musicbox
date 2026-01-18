@@ -13,7 +13,7 @@ import {
   getSSHPublicKey,
   initializeSSHKeys,
 } from '../lib/ssh-keys.js'
-import { getPlayerVersion } from '../lib/player-bundle.js'
+import { getPlayerChecksum, getPlayerVersion } from '../lib/player-bundle.js'
 import { env } from '../env.js'
 import type {ChildProcess} from 'node:child_process';
 import type { DeploymentRunStatus } from '../db/schema.js'
@@ -134,7 +134,8 @@ export async function generateInventory(): Promise<string> {
   lines.push('ansible_user=musicbox')
   lines.push(`ansible_ssh_private_key_file=${getSSHPrivateKeyPath()}`)
   lines.push(`server_url=${serverUrl}`)
-  lines.push(`player_version=${getPlayerVersion() || 'unknown'}`)
+  // Use checksum for version comparison - any bundle change triggers re-download
+  lines.push(`player_version=${getPlayerChecksum() || getPlayerVersion() || 'unknown'}`)
   lines.push('')
 
   const inventoryContent = lines.join('\n')
