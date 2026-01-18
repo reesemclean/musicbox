@@ -23,3 +23,8 @@ enable_uart=1
 
 # Disable WiFi power management for reliability
 dtoverlay=disable-wifi-pwr-mgmt
+
+# Boot speed optimizations
+boot_delay=0
+initial_turbo=60
+disable_poe_fan=1

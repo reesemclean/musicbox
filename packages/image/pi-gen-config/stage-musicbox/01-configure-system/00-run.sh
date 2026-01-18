@@ -29,6 +29,11 @@ on_chroot << EOF
 raspi-config nonint do_i2c 0
 EOF
 
+# Set WiFi country code (unblocks rfkill)
+on_chroot << EOF
+raspi-config nonint do_wifi_country US
+EOF
+
 # Install Node.js 22 LTS
 on_chroot << EOF
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
