@@ -29,9 +29,22 @@ COPY packages/server ./packages/server
 RUN npm run build --workspace=server
 
 # Create player bundle (dist contains the bundled player.js)
-RUN mkdir -p /app/player-bundle && \
+# Generate a deployment-specific package.json with only runtime native dependencies
+# (shared workspace dep is bundled, only i2c-bus needs to be installed on Pi)
+RUN mkdir -p /app/player-bundle /tmp/player-deploy && \
     cd /app/packages/player && \
-    tar -czf /app/player-bundle/player.tar.gz dist/ package.json && \
+    cp -r dist /tmp/player-deploy/ && \
+    node -e " \
+      const pkg = require('./package.json'); \
+      const deployPkg = { \
+        name: pkg.name, \
+        version: pkg.version, \
+        type: pkg.type, \
+        dependencies: { 'i2c-bus': pkg.dependencies['i2c-bus'] } \
+      }; \
+      require('fs').writeFileSync('/tmp/player-deploy/package.json', JSON.stringify(deployPkg, null, 2)); \
+    " && \
+    tar -czf /app/player-bundle/player.tar.gz -C /tmp/player-deploy . && \
     node -p "require('./package.json').version" > /app/player-bundle/version.txt
 
 # Production stage

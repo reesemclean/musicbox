@@ -19,6 +19,7 @@ await build({
   sourcemap: true,
   minify: false, // Keep readable for debugging
   logLevel: "info",
+  external: ["i2c-bus"], // Native module - compiled on Pi at deploy time
 });
 
 console.log("✅ Bundle created: dist/player.js");

@@ -37,13 +37,6 @@
   when: player_download.changed
   ignore_errors: yes
 
-- name: Remove old player files
-  ansible.builtin.file:
-    path: /opt/musicbox/player
-    state: absent
-  become: yes
-  when: player_download.changed
-
 - name: Create player directory
   ansible.builtin.file:
     path: /opt/musicbox/player
@@ -51,6 +44,12 @@
     owner: musicbox
     group: musicbox
     mode: '0755'
+  become: yes
+
+- name: Remove old player dist (preserve node_modules for faster updates)
+  ansible.builtin.file:
+    path: /opt/musicbox/player/dist
+    state: absent
   become: yes
   when: player_download.changed
 
@@ -62,6 +61,14 @@
     owner: musicbox
     group: musicbox
   become: yes
+  when: player_download.changed
+
+- name: Install native dependencies
+  ansible.builtin.command:
+    cmd: npm install --omit=dev
+    chdir: /opt/musicbox/player
+  become: yes
+  become_user: musicbox
   when: player_download.changed
   notify: Restart player service
 

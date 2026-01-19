@@ -1,8 +1,8 @@
 /**
- * NFCReaderTrigger - PN532 NFC card reader via I2C using i2c-tools
+ * NFCReaderTrigger - PN532 NFC card reader via I2C using native i2c-bus
  *
- * Uses shell commands (i2ctransfer) for I2C communication - no native modules needed.
- * This approach works reliably in NixOS without complex npm native dependencies.
+ * Uses the i2c-bus npm package for direct I2C communication without spawning processes.
+ * This provides much better CPU efficiency on resource-constrained devices like Pi Zero W 2.
  *
  * Hardware: PN532 NFC/RFID module in I2C mode
  * Connection:
@@ -12,8 +12,8 @@
  *   - GND → Ground (Pin 6)
  */
 
-import { execSync } from 'child_process'
 import { existsSync } from 'fs'
+import type { I2CBus } from 'i2c-bus'
 import type { Trigger } from './TriggerInterface.ts'
 import type { PlayerCore } from '../core/PlayerCore.ts'
 
@@ -35,7 +35,8 @@ const PN532_PN532TOHOST = 0xd5
 
 export class NFCReaderTrigger implements Trigger {
   readonly name = 'nfc'
-  private i2cBus: number
+  private i2cBusNumber: number
+  private bus: I2CBus | null = null
   private running = false
   private playerCore?: PlayerCore
   private lastCardId: string | null = null
@@ -43,15 +44,15 @@ export class NFCReaderTrigger implements Trigger {
   private readonly debounceMs = 2000 // Don't re-trigger same card within 2 seconds
   private pollInterval?: NodeJS.Timeout
 
-  constructor(i2cBus: number = 1) {
-    this.i2cBus = i2cBus
+  constructor(i2cBusNumber: number = 1) {
+    this.i2cBusNumber = i2cBusNumber
   }
 
   async start(playerCore: PlayerCore): Promise<void> {
     this.playerCore = playerCore
     this.running = true
 
-    const i2cPath = `/dev/i2c-${this.i2cBus}`
+    const i2cPath = `/dev/i2c-${this.i2cBusNumber}`
 
     if (!existsSync(i2cPath)) {
       console.log(`⚠️  NFC Reader: I2C bus not found (${i2cPath})`)
@@ -59,17 +60,20 @@ export class NFCReaderTrigger implements Trigger {
       return
     }
 
-    // Check if i2ctransfer is available by trying to run it
+    // Try to load i2c-bus module
+    let i2c: typeof import('i2c-bus')
     try {
-      execSync('i2ctransfer -V', { stdio: 'pipe' })
+      i2c = await import('i2c-bus')
     } catch {
-      console.log(`⚠️  NFC Reader: i2ctransfer not found`)
-      console.log(`   Install i2c-tools package`)
-      console.log(`   PATH: ${process.env.PATH}`)
+      console.log(`⚠️  NFC Reader: i2c-bus module not found`)
+      console.log(`   Run: npm install i2c-bus`)
       return
     }
 
     try {
+      // Open I2C bus
+      this.bus = i2c.openSync(this.i2cBusNumber)
+
       // Wake up PN532
       await this.wakeup()
       await this.sleep(50)
@@ -83,6 +87,7 @@ export class NFCReaderTrigger implements Trigger {
       } else {
         console.log(`⚠️  NFC Reader: Could not read firmware version`)
         console.log(`   Check wiring: SDA→Pin3, SCL→Pin5, VCC→5V, GND→GND`)
+        this.closeBus()
         return
       }
 
@@ -90,6 +95,7 @@ export class NFCReaderTrigger implements Trigger {
       const samConfigured = await this.SAMConfig()
       if (!samConfigured) {
         console.log(`⚠️  NFC Reader: SAM configuration failed`)
+        this.closeBus()
         return
       }
 
@@ -99,6 +105,21 @@ export class NFCReaderTrigger implements Trigger {
       this.pollInterval = setInterval(() => this.pollForCard(), 300)
     } catch (err) {
       console.log(`⚠️  NFC Reader initialization failed:`, err)
+      this.closeBus()
+    }
+  }
+
+  /**
+   * Close I2C bus if open
+   */
+  private closeBus(): void {
+    if (this.bus) {
+      try {
+        this.bus.closeSync()
+      } catch {
+        // Ignore close errors
+      }
+      this.bus = null
     }
   }
 
@@ -106,12 +127,10 @@ export class NFCReaderTrigger implements Trigger {
    * Wake up the PN532 by sending a dummy byte
    */
   private async wakeup(): Promise<void> {
+    if (!this.bus) return
     try {
-      // Send wake-up sequence
-      execSync(
-        `i2ctransfer -y ${this.i2cBus} w1@0x${PN532_I2C_ADDRESS.toString(16)} 0x00`,
-        { stdio: 'pipe' },
-      )
+      const wakeupBuffer = Buffer.from([0x00])
+      this.bus.i2cWriteSync(PN532_I2C_ADDRESS, 1, wakeupBuffer)
     } catch {
       // Ignore wakeup errors - PN532 may NAK
     }
@@ -156,7 +175,7 @@ export class NFCReaderTrigger implements Trigger {
    * Poll for NFC card
    */
   private async pollForCard(): Promise<void> {
-    if (!this.running) return
+    if (!this.running || !this.bus) return
 
     try {
       const response = await this.sendCommand(
@@ -210,44 +229,32 @@ export class NFCReaderTrigger implements Trigger {
   }
 
   /**
-   * Send command to PN532 and read response using i2ctransfer
+   * Send command to PN532 and read response using native I2C
    */
   private async sendCommand(
     command: number,
     data: number[],
   ): Promise<number[] | null> {
+    if (!this.bus) return null
+
     try {
       // Build command frame
       const frame = this.buildFrame(command, data)
-
-      // Convert to hex string for i2ctransfer
-      const hexBytes = frame
-        .map((b) => `0x${b.toString(16).padStart(2, '0')}`)
-        .join(' ')
+      const writeBuffer = Buffer.from(frame)
 
       // Write command
-      execSync(
-        `i2ctransfer -y ${this.i2cBus} w${frame.length}@0x${PN532_I2C_ADDRESS.toString(16)} ${hexBytes}`,
-        { stdio: 'pipe' },
-      )
+      this.bus.i2cWriteSync(PN532_I2C_ADDRESS, writeBuffer.length, writeBuffer)
 
       // Wait for PN532 to process
       await this.sleep(50)
 
-      // First, read ACK frame (6 bytes: 00 00 FF 00 FF 00)
-      // Check if ready for ACK
+      // Check if ready for ACK (read status byte)
+      const statusBuffer = Buffer.alloc(1)
       let ready = false
       for (let i = 0; i < 10; i++) {
         try {
-          const readyResult = execSync(
-            `i2ctransfer -y ${this.i2cBus} r1@0x${PN532_I2C_ADDRESS.toString(16)}`,
-            { stdio: 'pipe' },
-          )
-            .toString()
-            .trim()
-
-          const readyByte = parseInt(readyResult, 16)
-          if (readyByte === 0x01) {
+          this.bus.i2cReadSync(PN532_I2C_ADDRESS, 1, statusBuffer)
+          if (statusBuffer[0] === 0x01) {
             ready = true
             break
           }
@@ -261,11 +268,9 @@ export class NFCReaderTrigger implements Trigger {
         return null
       }
 
-      // Read ACK frame (includes ready byte)
-      execSync(
-        `i2ctransfer -y ${this.i2cBus} r7@0x${PN532_I2C_ADDRESS.toString(16)}`,
-        { stdio: 'pipe' },
-      )
+      // Read ACK frame (7 bytes including status)
+      const ackBuffer = Buffer.alloc(7)
+      this.bus.i2cReadSync(PN532_I2C_ADDRESS, 7, ackBuffer)
 
       // Wait for response to be ready
       await this.sleep(50)
@@ -273,15 +278,8 @@ export class NFCReaderTrigger implements Trigger {
       ready = false
       for (let i = 0; i < 20; i++) {
         try {
-          const readyResult = execSync(
-            `i2ctransfer -y ${this.i2cBus} r1@0x${PN532_I2C_ADDRESS.toString(16)}`,
-            { stdio: 'pipe' },
-          )
-            .toString()
-            .trim()
-
-          const readyByte = parseInt(readyResult, 16)
-          if (readyByte === 0x01) {
+          this.bus.i2cReadSync(PN532_I2C_ADDRESS, 1, statusBuffer)
+          if (statusBuffer[0] === 0x01) {
             ready = true
             break
           }
@@ -296,19 +294,11 @@ export class NFCReaderTrigger implements Trigger {
       }
 
       // Read actual response frame
-      const result = execSync(
-        `i2ctransfer -y ${this.i2cBus} r32@0x${PN532_I2C_ADDRESS.toString(16)}`,
-        { stdio: 'pipe' },
-      )
-        .toString()
-        .trim()
+      const responseBuffer = Buffer.alloc(32)
+      this.bus.i2cReadSync(PN532_I2C_ADDRESS, 32, responseBuffer)
 
-      // Parse hex response
-      const responseBytes = result
-        .split(/\s+/)
-        .filter((s) => s.startsWith('0x'))
-        .map((s) => parseInt(s, 16))
-
+      // Convert buffer to array and parse
+      const responseBytes = Array.from(responseBuffer)
       return this.parseResponse(responseBytes)
     } catch {
       return null
@@ -400,6 +390,8 @@ export class NFCReaderTrigger implements Trigger {
       clearInterval(this.pollInterval)
       this.pollInterval = undefined
     }
+
+    this.closeBus()
 
     console.log('\n📡 NFC Reader stopped')
   }

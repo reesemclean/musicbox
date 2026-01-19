@@ -37,6 +37,11 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
 EOF
 
+# Install build tools for native Node modules (i2c-bus)
+on_chroot << EOF
+apt-get install -y build-essential python3
+EOF
+
 # Setup SSH authorized_keys for the musicbox user
 install -d -m 700 "${ROOTFS_DIR}/home/musicbox/.ssh"
 if [ -s files/authorized_keys ]; then
