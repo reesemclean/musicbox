@@ -58,8 +58,8 @@ COPY --from=builder /app/packages/server/.output ./.output
 COPY --from=builder /app/packages/server/drizzle ./drizzle
 COPY --from=builder /app/packages/server/package.json ./package.json
 
-# Copy bundled player
-COPY --from=builder /app/player-bundle ./data/player
+# Copy bundled player (outside /data so it's not overridden by volume mounts)
+COPY --from=builder /app/player-bundle ./player-bundle
 
 # Create directories for data persistence (including SSH keys for Ansible)
 RUN mkdir -p /app/data /app/data/ssh && \

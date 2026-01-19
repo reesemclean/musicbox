@@ -9,14 +9,13 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 
-// Player bundle location (relative to server root)
+// Player bundle location - kept outside /data so it's not overridden by volume mounts
 const PLAYER_BUNDLE_PATH = join(
   process.cwd(),
-  'data',
-  'player',
+  'player-bundle',
   'player.tar.gz',
 )
-const PLAYER_VERSION_PATH = join(process.cwd(), 'data', 'player', 'version.txt')
+const PLAYER_VERSION_PATH = join(process.cwd(), 'player-bundle', 'version.txt')
 
 let cachedVersion: string | null = null
 let cachedChecksum: string | null = null
