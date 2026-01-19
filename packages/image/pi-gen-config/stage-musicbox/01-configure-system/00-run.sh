@@ -50,3 +50,10 @@ EOF
 # Configure passwordless sudo for musicbox user (required for Ansible deployments)
 echo "musicbox ALL=(ALL) NOPASSWD: ALL" > "${ROOTFS_DIR}/etc/sudoers.d/010_musicbox-nopasswd"
 chmod 440 "${ROOTFS_DIR}/etc/sudoers.d/010_musicbox-nopasswd"
+
+# Disable WiFi power management (causes connection drops during Ansible)
+install -d -m 755 "${ROOTFS_DIR}/etc/NetworkManager/conf.d"
+cat > "${ROOTFS_DIR}/etc/NetworkManager/conf.d/wifi-powersave-off.conf" << 'EOF'
+[connection]
+wifi.powersave = 2
+EOF
