@@ -67,22 +67,34 @@ export class ButtonTrigger implements Trigger {
       console.log(`   - GPIO ${button.pin}: ${button.label}`)
     }
 
+    // Enable internal pull-ups on button pins (required since we don't have external resistors)
+    // Try pinctrl first (Bookworm), fall back to raspi-gpio (older Pi OS)
+    for (const button of this.buttons) {
+      try {
+        execSync(`pinctrl set ${button.pin} ip pu`, { stdio: 'pipe' })
+      } catch {
+        try {
+          execSync(`raspi-gpio set ${button.pin} ip pu`, { stdio: 'pipe' })
+        } catch {
+          console.log(`⚠️  Could not enable pull-up on GPIO ${button.pin}`)
+        }
+      }
+    }
+    console.log(`   Pull-ups enabled on button pins`)
+
     // Build list of pin offsets as positional arguments
     const pinArgs = this.buttons.map((b) => String(b.pin))
 
     // Start gpiomon to watch all button pins for both edges (press and release)
-    // libgpiod v2 syntax:
-    //   gpiomon -c <chip> -b pull-up -e both <line> [<line>...]
+    // Using libgpiod v1 syntax for compatibility:
+    //   gpiomon [--both-edges] <chip> <line> [<line>...]
+    // Note: v1 doesn't have --bias option, so hardware pull-ups are required
     try {
       this.monitorProcess = spawn(
         'gpiomon',
         [
-          '-c',
-          this.gpiochip, // --chip
-          '-b',
-          'pull-up', // --bias
-          '-e',
-          'both', // --edges (both falling=press and rising=release)
+          '--both-edges', // Watch both falling (press) and rising (release)
+          this.gpiochip, // chip name as positional arg
           ...pinArgs, // line offsets as positional args
         ],
         { stdio: ['ignore', 'pipe', 'pipe'] },

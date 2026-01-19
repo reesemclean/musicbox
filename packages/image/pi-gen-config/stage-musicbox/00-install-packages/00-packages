@@ -4,3 +4,4 @@ python3
 mpv
 alsa-utils
 i2c-tools
+gpiod
