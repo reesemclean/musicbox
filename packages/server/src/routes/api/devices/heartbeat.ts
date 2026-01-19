@@ -12,7 +12,7 @@ export const Route = createFileRoute('/api/devices/heartbeat')({
       POST: async ({ request }) => {
         try {
           const body = await request.json()
-          const { secret, ipAddress, currentSong } = body
+          const { secret, ipAddress, currentSong, playerVersion } = body
 
           if (!secret || !ipAddress) {
             return Response.json(
@@ -27,6 +27,7 @@ export const Route = createFileRoute('/api/devices/heartbeat')({
             secret,
             ipAddress,
             currentSong,
+            playerVersion,
           )
 
           return Response.json({ success: true })

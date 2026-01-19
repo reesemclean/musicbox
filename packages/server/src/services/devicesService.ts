@@ -90,6 +90,7 @@ export async function updateDeviceHeartbeat(
   secret: string,
   ipAddress: string,
   currentSong?: { title: string; artist?: string; isPlaying: boolean },
+  playerVersion?: string,
 ) {
   const now = new Date()
 
@@ -99,6 +100,7 @@ export async function updateDeviceHeartbeat(
       ipAddress,
       lastSeen: now,
       currentSong: currentSong ? JSON.stringify(currentSong) : null,
+      reportedPlayerVersion: playerVersion,
     })
     .where(eq(devices.secret, secret))
 

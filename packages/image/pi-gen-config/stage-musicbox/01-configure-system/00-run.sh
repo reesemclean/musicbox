@@ -31,16 +31,7 @@ on_chroot << EOF
 raspi-config nonint do_i2c 0
 EOF
 
-# Install Node.js 22 LTS
-on_chroot << EOF
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y nodejs
-EOF
-
-# Install build tools for native Node modules (i2c-bus)
-on_chroot << EOF
-apt-get install -y build-essential python3
-EOF
+# Note: Node.js and build tools removed - Go player is a static binary
 
 # Setup SSH authorized_keys for the musicbox user
 install -d -m 700 "${ROOTFS_DIR}/home/musicbox/.ssh"

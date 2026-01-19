@@ -18,6 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Generate player version
+        id: version
+        run: echo "player_version=$(date -u +%Y%m%d)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -37,6 +41,8 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}/server:${{ inputs.tag }}
             ghcr.io/${{ github.repository }}/server:${{ github.sha }}
+          build-args: |
+            PLAYER_VERSION=${{ steps.version.outputs.player_version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64

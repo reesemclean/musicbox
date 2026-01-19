@@ -1,6 +1,6 @@
 ---
 # MusicBox Player Role
-# Downloads and deploys the MusicBox player application
+# Downloads and deploys the MusicBox player Go binary
 
 - name: Check if player version file exists
   ansible.builtin.stat:
@@ -21,11 +21,11 @@
   ansible.builtin.debug:
     msg: 'Current: {{ current_player_version }}, Desired: {{ player_version }}'
 
-- name: Download player bundle
+- name: Download player binary
   ansible.builtin.get_url:
     url: '{{ server_url }}/api/player/download'
-    dest: /tmp/player.tar.gz
-    mode: '0644'
+    dest: /tmp/musicbox-player
+    mode: '0755'
   when: current_player_version != player_version
   register: player_download
 
@@ -46,29 +46,15 @@
     mode: '0755'
   become: yes
 
-- name: Remove old player dist (preserve node_modules for faster updates)
-  ansible.builtin.file:
-    path: /opt/musicbox/player/dist
-    state: absent
-  become: yes
-  when: player_download.changed
-
-- name: Extract player bundle
-  ansible.builtin.unarchive:
-    src: /tmp/player.tar.gz
-    dest: /opt/musicbox/player
+- name: Install player binary
+  ansible.builtin.copy:
+    src: /tmp/musicbox-player
+    dest: /opt/musicbox/player/musicbox-player
     remote_src: yes
     owner: musicbox
     group: musicbox
+    mode: '0755'
   become: yes
-  when: player_download.changed
-
-- name: Install native dependencies
-  ansible.builtin.command:
-    cmd: npm install --omit=dev
-    chdir: /opt/musicbox/player
-  become: yes
-  become_user: musicbox
   when: player_download.changed
   notify: Restart player service
 
@@ -82,9 +68,9 @@
   become: yes
   when: player_download.changed
 
-- name: Clean up downloaded bundle
+- name: Clean up downloaded binary
   ansible.builtin.file:
-    path: /tmp/player.tar.gz
+    path: /tmp/musicbox-player
     state: absent
   when: player_download.changed
 

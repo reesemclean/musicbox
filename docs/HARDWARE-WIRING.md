@@ -31,8 +31,11 @@ Complete wiring diagram for Raspberry Pi Zero 2 W with NFC reader, I2S amplifier
 
 - GPIO 2 (Pin 3) → SDA
 - GPIO 3 (Pin 5) → SCL
+- GPIO 17 (Pin 11) → RQ/IRQ (interrupt for card detection)
 - 5V (Pin 2) → VCC
 - GND (Pin 6) → GND
+
+**Note:** The RQ/IRQ pin enables interrupt-based card detection. Without it, the player must poll for cards. With it connected, the PN532 signals when a card is present, reducing CPU usage to near zero.
 
 **PN532 Mode Selection:**
 Set DIP switches or jumpers for I2C mode (consult your module's documentation).
@@ -79,29 +82,31 @@ All buttons connect between GPIO pin and GND (active-low with internal pull-ups)
 
 ## Pin Reference Table
 
-| Pin # | GPIO | Function | Connected To            |
-| ----- | ---- | -------- | ----------------------- |
-| 2     | 5V   | Power    | PN532 VCC               |
-| 3     | 2    | I2C SDA  | PN532 SDA               |
-| 4     | 5V   | Power    | MAX98357A VIN           |
-| 5     | 3    | I2C SCL  | PN532 SCL               |
-| 6     | GND  | Ground   | PN532 GND               |
-| 9     | GND  | Ground   | MAX98357A GND           |
-| 12    | 18   | I2S BCLK | MAX98357A BCLK          |
-| 14    | GND  | Ground   | All buttons common      |
-| 29    | 5    | GPIO     | Play/Pause button       |
-| 31    | 6    | GPIO     | Volume Up button        |
-| 33    | 13   | GPIO     | Volume Down button      |
-| 35    | 19   | I2S LRC  | MAX98357A LRC           |
-| 36    | 16   | GPIO     | Next Track button       |
-| 37    | 26   | GPIO     | Previous Track button   |
-| 40    | 21   | I2S DIN  | MAX98357A DIN           |
+| Pin # | GPIO | Function  | Connected To            |
+| ----- | ---- | --------- | ----------------------- |
+| 2     | 5V   | Power     | PN532 VCC               |
+| 3     | 2    | I2C SDA   | PN532 SDA               |
+| 4     | 5V   | Power     | MAX98357A VIN           |
+| 5     | 3    | I2C SCL   | PN532 SCL               |
+| 6     | GND  | Ground    | PN532 GND               |
+| 9     | GND  | Ground    | MAX98357A GND           |
+| 11    | 17   | NFC IRQ   | PN532 RQ/IRQ            |
+| 12    | 18   | I2S BCLK  | MAX98357A BCLK          |
+| 14    | GND  | Ground    | All buttons common      |
+| 29    | 5    | GPIO      | Play/Pause button       |
+| 31    | 6    | GPIO      | Volume Up button        |
+| 33    | 13   | GPIO      | Volume Down button      |
+| 35    | 19   | I2S LRC   | MAX98357A LRC           |
+| 36    | 16   | GPIO      | Next Track button       |
+| 37    | 26   | GPIO      | Previous Track button   |
+| 40    | 21   | I2S DIN   | MAX98357A DIN           |
 
 ## GPIO Usage Summary
 
 **Reserved for Hardware Interfaces:**
 
 - GPIO 2, 3: I2C (NFC reader)
+- GPIO 17: NFC IRQ (interrupt from PN532)
 - GPIO 18, 19, 21: I2S audio (MAX98357A)
 
 **Button Inputs:**
@@ -110,12 +115,12 @@ All buttons connect between GPIO pin and GND (active-low with internal pull-ups)
 
 **Available for Future Use:**
 
-- GPIO 4, 17, 27, 23, 24, 25, and others (see Pi 4 pinout)
+- GPIO 4, 27, 23, 24, 25, and others (see Pi pinout)
 
 ## Circuit Diagram
 
 ```
-Raspberry Pi 4
+Raspberry Pi
 ┌─────────────────────────────────────────┐
 │                                         │
 │  5V (2) ──────┬─────────────── PN532   │
@@ -123,6 +128,7 @@ Raspberry Pi 4
 │                                         │
 │  GPIO 2 (3) ──────────────── PN532 SDA │
 │  GPIO 3 (5) ──────────────── PN532 SCL │
+│  GPIO 17 (11) ─────────────── PN532 RQ │
 │                                         │
 │  GPIO 18 (12) ─────────── MAX98357A BCLK│
 │  GPIO 19 (35) ─────────── MAX98357A LRC │

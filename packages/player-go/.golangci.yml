@@ -1,0 +1,68 @@
+# golangci-lint configuration
+# https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Default linters
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Additional linters
+    - bodyclose      # Check HTTP response bodies are closed
+    - gocritic       # Opinionated linter
+    - gofmt          # Check formatting
+    - goimports      # Check imports
+    - gosec          # Security checks
+    - misspell       # Catch common typos
+    - unconvert      # Remove unnecessary conversions
+    - unparam        # Find unused parameters
+    - whitespace     # Check trailing whitespace
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment  # Not worth the noise
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - hugeParam       # Not critical for this project
+      - rangeValCopy    # Sometimes intentional
+
+  gosec:
+    excludes:
+      - G104  # Unhandled errors (too noisy for fire-and-forget operations)
+
+  misspell:
+    locale: US
+
+issues:
+  # Maximum issues count per one linter
+  max-issues-per-linter: 50
+
+  # Maximum count of issues with the same text
+  max-same-issues: 10
+
+  exclude-rules:
+    # Exclude some linters from running on tests
+    - path: _test\.go
+      linters:
+        - gosec
+        - unparam
+
+    # Ignore some errors in main.go (startup code)
+    - path: cmd/player/main.go
+      linters:
+        - gocritic
+      text: "exitAfterDefer"

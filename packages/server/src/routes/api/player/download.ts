@@ -2,7 +2,7 @@
  * Player download API route
  * GET /api/player/download
  *
- * Serves the bundled player tarball for device updates.
+ * Serves the player Go binary for device updates.
  */
 
 import { createReadStream } from 'node:fs'
@@ -20,29 +20,29 @@ export const Route = createFileRoute('/api/player/download')({
       GET: () => {
         if (!hasPlayerBundle()) {
           return Response.json(
-            { error: 'No player bundle available' },
+            { error: 'No player binary available' },
             { status: 404 },
           )
         }
 
-        const bundlePath = getPlayerBundlePath()
-        const bundleSize = getPlayerBundleSize()
+        const binaryPath = getPlayerBundlePath()
+        const binarySize = getPlayerBundleSize()
 
-        if (!bundlePath || !bundleSize) {
+        if (!binaryPath || !binarySize) {
           return Response.json(
-            { error: 'Player bundle not accessible' },
+            { error: 'Player binary not accessible' },
             { status: 500 },
           )
         }
 
-        const stream = createReadStream(bundlePath)
+        const stream = createReadStream(binaryPath)
         const webStream = Readable.toWeb(stream) as ReadableStream
 
         return new Response(webStream, {
           headers: {
-            'Content-Type': 'application/gzip',
-            'Content-Length': bundleSize.toString(),
-            'Content-Disposition': 'attachment; filename="player.tar.gz"',
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': binarySize.toString(),
+            'Content-Disposition': 'attachment; filename="musicbox-player"',
             'Cache-Control': 'public, max-age=31536000', // Cache for 1 year (versioned)
           },
         })

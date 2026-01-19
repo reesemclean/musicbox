@@ -1,4 +1,29 @@
-# Build stage
+# Go builder stage - builds ARM64 player binary
+FROM golang:1.23-alpine AS go-builder
+
+# Version passed from CI (e.g., 20260118-abc1234)
+ARG PLAYER_VERSION=dev
+
+WORKDIR /app
+
+# Copy Go module files
+COPY packages/player-go/go.mod packages/player-go/go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY packages/player-go/ ./
+
+# Save version for later stages
+RUN echo "${PLAYER_VERSION}" > /app/version.txt
+
+# Cross-compile for ARM64 (Raspberry Pi) with embedded version
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+    -ldflags "-s -w -X main.Version=${PLAYER_VERSION}" \
+    -o musicbox-player ./cmd/player
+
+# Node.js builder stage - builds server
 FROM node:22-alpine AS builder
 
 WORKDIR /app
@@ -10,7 +35,6 @@ RUN apk add --no-cache python3 make g++
 COPY package.json ./
 COPY packages/server/package.json ./packages/server/
 COPY packages/shared/package.json ./packages/shared/
-COPY packages/player/package.json ./packages/player/
 
 # Install dependencies (including devDependencies for build)
 RUN npm install
@@ -18,34 +42,12 @@ RUN npm install
 # Copy shared package source
 COPY packages/shared ./packages/shared
 
-# Copy player source files and build bundle
-COPY packages/player ./packages/player
-RUN npm run build:bundle --workspace=player
-
 # Copy server source files
 COPY packages/server ./packages/server
 
 # Build the application
 RUN npm run build --workspace=server
 
-# Create player bundle (dist contains the bundled player.js)
-# Generate a deployment-specific package.json with only runtime native dependencies
-# (shared workspace dep is bundled, only i2c-bus needs to be installed on Pi)
-RUN mkdir -p /app/player-bundle /tmp/player-deploy && \
-    cd /app/packages/player && \
-    cp -r dist /tmp/player-deploy/ && \
-    node -e " \
-      const pkg = require('./package.json'); \
-      const deployPkg = { \
-        name: pkg.name, \
-        version: pkg.version, \
-        type: pkg.type, \
-        dependencies: { 'i2c-bus': pkg.dependencies['i2c-bus'] } \
-      }; \
-      require('fs').writeFileSync('/tmp/player-deploy/package.json', JSON.stringify(deployPkg, null, 2)); \
-    " && \
-    tar -czf /app/player-bundle/player.tar.gz -C /tmp/player-deploy . && \
-    node -p "require('./package.json').version" > /app/player-bundle/version.txt
 
 # Production stage
 FROM node:22-alpine AS production
@@ -71,8 +73,9 @@ COPY --from=builder /app/packages/server/.output ./.output
 COPY --from=builder /app/packages/server/drizzle ./drizzle
 COPY --from=builder /app/packages/server/package.json ./package.json
 
-# Copy bundled player (outside /data so it's not overridden by volume mounts)
-COPY --from=builder /app/player-bundle ./player-bundle
+# Copy Go player binary and version (outside /data so it's not overridden by volume mounts)
+COPY --from=go-builder /app/musicbox-player ./player-bundle/musicbox-player
+COPY --from=go-builder /app/version.txt ./player-bundle/version.txt
 
 # Create directories for data persistence (including SSH keys for Ansible)
 RUN mkdir -p /app/data /app/data/ssh && \

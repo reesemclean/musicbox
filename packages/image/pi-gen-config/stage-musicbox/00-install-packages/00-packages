@@ -1,6 +1,5 @@
 curl
 jq
-python3
 mpv
 alsa-utils
 i2c-tools
