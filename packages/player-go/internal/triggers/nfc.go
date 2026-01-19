@@ -340,13 +340,11 @@ func (n *NFCTrigger) waitForCard() (string, error) {
 	}
 
 	// Parse card UID from response
-	cardID, err := n.parseCardUID(resp)
-	if err != nil {
-		slog.Debug("NFC Reader: Failed to parse card UID", "error", err)
-	} else if cardID != "" {
+	cardID := n.parseCardUID(resp)
+	if cardID != "" {
 		slog.Debug("NFC Reader: Card UID parsed", "cardId", cardID)
 	}
-	return cardID, err
+	return cardID, nil
 }
 
 // waitForIRQ waits for the IRQ pin to go low (active)
@@ -355,9 +353,9 @@ func (n *NFCTrigger) waitForIRQ(timeout time.Duration) bool {
 }
 
 // parseCardUID extracts the card UID from InListPassiveTarget response
-func (n *NFCTrigger) parseCardUID(resp []byte) (string, error) {
+func (n *NFCTrigger) parseCardUID(resp []byte) string {
 	if len(resp) < 1 || resp[0] == 0 {
-		return "", nil // No card found
+		return "" // No card found
 	}
 
 	// Response format:
@@ -368,12 +366,12 @@ func (n *NFCTrigger) parseCardUID(resp []byte) (string, error) {
 	// [5] = NFCID length
 	// [6...] = NFCID (UID)
 	if len(resp) < 6 {
-		return "", nil
+		return ""
 	}
 
 	uidLength := int(resp[5])
 	if len(resp) < 6+uidLength {
-		return "", nil
+		return ""
 	}
 
 	uid := resp[6 : 6+uidLength]
@@ -382,7 +380,7 @@ func (n *NFCTrigger) parseCardUID(resp []byte) (string, error) {
 		cardID += fmt.Sprintf("%02X", b)
 	}
 
-	return cardID, nil
+	return cardID
 }
 
 // handleCardDetected processes a detected card with debouncing

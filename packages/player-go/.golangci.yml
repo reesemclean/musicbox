@@ -1,15 +1,16 @@
 # golangci-lint configuration
 # https://golangci-lint.run/usage/configuration/
 
+version: "2"
+
 run:
   timeout: 5m
   modules-download-mode: readonly
 
 linters:
   enable:
-    # Default linters
+    # Default linters (enabled by default, listed explicitly)
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
@@ -17,35 +18,50 @@ linters:
     # Additional linters
     - bodyclose      # Check HTTP response bodies are closed
     - gocritic       # Opinionated linter
-    - gofmt          # Check formatting
-    - goimports      # Check imports
     - gosec          # Security checks
     - misspell       # Catch common typos
     - unconvert      # Remove unnecessary conversions
     - unparam        # Find unused parameters
     - whitespace     # Check trailing whitespace
 
-linters-settings:
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment  # Not worth the noise
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment  # Not worth the noise
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-    disabled-checks:
-      - hugeParam       # Not critical for this project
-      - rangeValCopy    # Sometimes intentional
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - hugeParam       # Not critical for this project
+        - rangeValCopy    # Sometimes intentional
 
-  gosec:
-    excludes:
-      - G104  # Unhandled errors (too noisy for fire-and-forget operations)
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net.Conn).Close
+        - (*net.UnixConn).Close
+        - os.Remove
+        - (periph.io/x/conn/v3/i2c.BusCloser).Close
 
-  misspell:
-    locale: US
+    gosec:
+      excludes:
+        - G104  # Unhandled errors
+        - G204  # Subprocess with variable
+        - G301  # Directory permissions
+        - G304  # File path from variable
+
+    misspell:
+      locale: US
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 issues:
   # Maximum issues count per one linter

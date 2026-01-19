@@ -35,13 +35,19 @@
         playerDeps = with pkgs; [
           mpv       # Audio playback with IPC control
         ];
+
+        # Go player dependencies
+        goDeps = with pkgs; [
+          go
+          golangci-lint
+        ];
         
       in {
         # Development shells
         devShells = {
           # Default: Everything for full-stack development
           default = pkgs.mkShell {
-            buildInputs = commonDeps ++ serverDeps ++ playerDeps;
+            buildInputs = commonDeps ++ serverDeps ++ playerDeps ++ goDeps;
             
             shellHook = ''
               echo "🎵 MusicBox Development Environment"

@@ -98,11 +98,11 @@ func getEnvBool(key string) bool {
 	return os.Getenv(key) == "true"
 }
 
-// getEnvBoolInverse returns false if env var equals "false", otherwise true (or default)
-func getEnvBoolInverse(key string, defaultVal bool) bool {
+// getEnvBoolInverse returns false if env var equals "false", otherwise true
+func getEnvBoolInverse(key string) bool {
 	val := os.Getenv(key)
 	if val == "" {
-		return defaultVal
+		return true
 	}
 	return val != "false"
 }
@@ -144,15 +144,15 @@ func Load() (*PlayerConfig, error) {
 					Enabled: getEnvBool("TRIGGER_KEYBOARD"),
 				},
 				HTTP: HTTPTriggerConfig{
-					Enabled: getEnvBoolInverse("TRIGGER_HTTP", true),
+					Enabled: getEnvBoolInverse("TRIGGER_HTTP"),
 					Port:    getEnvInt("HTTP_PORT", 8080),
 				},
 				NFC: NFCTriggerConfig{
-					Enabled: getEnvBoolInverse("TRIGGER_NFC", true),
+					Enabled: getEnvBoolInverse("TRIGGER_NFC"),
 					I2CBus:  getEnvInt("NFC_I2C_BUS", 1),
 				},
 				Buttons: ButtonTriggerConfig{
-					Enabled: getEnvBoolInverse("TRIGGER_BUTTONS", true),
+					Enabled: getEnvBoolInverse("TRIGGER_BUTTONS"),
 				},
 			},
 		}, nil
@@ -168,7 +168,7 @@ func Load() (*PlayerConfig, error) {
 		HTTPPort:     getEnvInt("HTTP_PORT", 8080),
 		Triggers: TriggersConfig{
 			Keyboard: KeyboardTriggerConfig{
-				Enabled: getEnvBoolInverse("TRIGGER_KEYBOARD", true),
+				Enabled: getEnvBoolInverse("TRIGGER_KEYBOARD"),
 			},
 			HTTP: HTTPTriggerConfig{
 				Enabled: getEnvBool("TRIGGER_HTTP"),
