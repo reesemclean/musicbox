@@ -67,35 +67,20 @@ export class ButtonTrigger implements Trigger {
       console.log(`   - GPIO ${button.pin}: ${button.label}`)
     }
 
-    // Enable internal pull-ups on button pins (required since we don't have external resistors)
-    // Try pinctrl first (Bookworm), fall back to raspi-gpio (older Pi OS)
-    for (const button of this.buttons) {
-      try {
-        execSync(`pinctrl set ${button.pin} ip pu`, { stdio: 'pipe' })
-      } catch {
-        try {
-          execSync(`raspi-gpio set ${button.pin} ip pu`, { stdio: 'pipe' })
-        } catch {
-          console.log(`⚠️  Could not enable pull-up on GPIO ${button.pin}`)
-        }
-      }
-    }
-    console.log(`   Pull-ups enabled on button pins`)
-
     // Build list of pin offsets as positional arguments
     const pinArgs = this.buttons.map((b) => String(b.pin))
 
-    // Start gpiomon to watch all button pins for both edges (press and release)
-    // Using libgpiod v1 syntax for compatibility:
-    //   gpiomon [--both-edges] <chip> <line> [<line>...]
-    // Note: v1 doesn't have --bias option, so hardware pull-ups are required
+    // Start gpiomon to watch all button pins
+    // Use --bias pull-up to enable internal pull-ups (buttons connect to GND when pressed)
+    // Use --falling-edge to detect button presses
     try {
       this.monitorProcess = spawn(
         'gpiomon',
         [
-          '--both-edges', // Watch both falling (press) and rising (release)
-          this.gpiochip, // chip name as positional arg
-          ...pinArgs, // line offsets as positional args
+          '--bias=pull-up',
+          '--falling-edge',
+          this.gpiochip,
+          ...pinArgs,
         ],
         { stdio: ['ignore', 'pipe', 'pipe'] },
       )
@@ -127,9 +112,8 @@ export class ButtonTrigger implements Trigger {
 
   /**
    * Handle GPIO event from gpiomon output
-   * Output format varies by libgpiod version:
-   * v1.x: "offset timestamp event_type"
-   * v2.x: "chip line timestamp event_type"
+   * We only listen for falling edges, so every event is a button press.
+   * Output format: look for a number that matches one of our button pins.
    */
   private handleGpioEvent(data: string): void {
     const lines = data.trim().split('\n')
@@ -137,26 +121,17 @@ export class ButtonTrigger implements Trigger {
     for (const line of lines) {
       if (!line.trim()) continue
 
-      // Parse the event - try to extract the GPIO offset/line number and event type
-      const parts = line.trim().split(/\s+/)
-      let pin: number | undefined
-      let isFalling = false
+      console.log(`🎮 GPIO event: ${line.trim()}`)
 
-      // Try to find the pin number and event type
+      // Parse the event - find a number that matches one of our button pins
+      const parts = line.trim().split(/\s+/)
       for (const part of parts) {
         const num = parseInt(part, 10)
         if (!isNaN(num) && this.buttons.some((b) => b.pin === num)) {
-          pin = num
-        }
-        if (part.toLowerCase() === 'falling') {
-          isFalling = true
+          this.handleButtonPress(num)
+          break
         }
       }
-
-      if (pin !== undefined && isFalling) {
-        this.handleButtonPress(pin)
-      }
-      // Rising edge (button release) - we don't need to track it for rapid press
     }
   }
 
