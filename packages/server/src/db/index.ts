@@ -27,3 +27,12 @@ console.log('[DB] Migrations applied successfully')
 import('@/lib/podcastScheduler').catch((err) => {
   console.error('[DB] Failed to start podcast scheduler:', err)
 })
+
+// Initialize Ansible service (generates SSH keys if needed)
+import('@/services/ansibleService')
+  .then(({ initializeAnsible }) => {
+    initializeAnsible()
+  })
+  .catch((err) => {
+    console.error('[DB] Failed to initialize Ansible:', err)
+  })
