@@ -90,8 +90,10 @@ RUN mkdir -p /app/data /app/data/ssh && \
 # Copy ansible configuration
 COPY --from=builder /app/packages/server/ansible ./ansible
 
-# Copy sound machine assets
-COPY --from=builder /app/packages/server/assets ./assets
+# Copy sound machine assets directory
+# Add audio files (mp3, wav, etc.) to packages/server/assets/soundmachine/
+RUN mkdir -p ./assets
+COPY --chown=nodejs:nodejs packages/server/assets ./assets
 
 USER nodejs
 
