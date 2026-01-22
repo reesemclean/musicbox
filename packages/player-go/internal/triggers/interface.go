@@ -15,6 +15,10 @@ type PlayerController interface {
 	VolumeDown() error
 	GetVolume() int
 	GetStatusJSON() ([]byte, error)
+
+	// Sound machine mode
+	ActivateSoundMachine() error
+	IsSoundMachineActive() bool
 }
 
 // Trigger is the interface for all input sources

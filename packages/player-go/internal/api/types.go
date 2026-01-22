@@ -127,3 +127,9 @@ type HeartbeatResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
 }
+
+// SoundMachineConfig represents the sound machine configuration
+type SoundMachineConfig struct {
+	SoundName string `json:"soundName"`
+	StreamURL string `json:"streamUrl"`
+}

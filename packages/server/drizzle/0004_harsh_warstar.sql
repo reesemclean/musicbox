@@ -1,0 +1,1 @@
+ALTER TABLE `devices` ADD `sound_machine_sound_name` text;

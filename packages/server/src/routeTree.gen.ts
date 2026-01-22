@@ -17,13 +17,15 @@ import { Route as LibraryDownloadsRouteImport } from './routes/_library/download
 import { Route as LibraryDevicesRouteImport } from './routes/_library/devices'
 import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
 import { Route as ApiStreamSongIdRouteImport } from './routes/api/stream/$songId'
+import { Route as ApiSoundmachineSoundsRouteImport } from './routes/api/soundmachine/sounds'
+import { Route as ApiSoundmachineConfigRouteImport } from './routes/api/soundmachine/config'
 import { Route as ApiPlayerVersionRouteImport } from './routes/api/player/version'
-import { Route as ApiPlayerDownloadRouteImport } from './routes/api/player/download'
 import { Route as ApiNfcScanRouteImport } from './routes/api/nfc/scan'
 import { Route as ApiDevicesHeartbeatRouteImport } from './routes/api/devices/heartbeat'
 import { Route as LibraryPlaylistIdRouteImport } from './routes/_library/playlist.$id'
 import { Route as ApiDevicesRegisterIndexRouteImport } from './routes/api/devices/register/index'
 import { Route as ApiStreamEpisodeEpisodeIdRouteImport } from './routes/api/stream/episode/$episodeId'
+import { Route as ApiSoundmachineStreamNameRouteImport } from './routes/api/soundmachine/stream/$name'
 import { Route as ApiDevicesRegisterDeviceIdStatusRouteImport } from './routes/api/devices/register/$deviceId/status'
 import { Route as ApiDevicesRegisterDeviceIdSshReadyRouteImport } from './routes/api/devices/register/$deviceId/ssh-ready'
 
@@ -66,14 +68,19 @@ const ApiStreamSongIdRoute = ApiStreamSongIdRouteImport.update({
   path: '/api/stream/$songId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSoundmachineSoundsRoute = ApiSoundmachineSoundsRouteImport.update({
+  id: '/api/soundmachine/sounds',
+  path: '/api/soundmachine/sounds',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSoundmachineConfigRoute = ApiSoundmachineConfigRouteImport.update({
+  id: '/api/soundmachine/config',
+  path: '/api/soundmachine/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPlayerVersionRoute = ApiPlayerVersionRouteImport.update({
   id: '/api/player/version',
   path: '/api/player/version',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPlayerDownloadRoute = ApiPlayerDownloadRouteImport.update({
-  id: '/api/player/download',
-  path: '/api/player/download',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiNfcScanRoute = ApiNfcScanRouteImport.update({
@@ -102,6 +109,12 @@ const ApiStreamEpisodeEpisodeIdRoute =
     path: '/api/stream/episode/$episodeId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiSoundmachineStreamNameRoute =
+  ApiSoundmachineStreamNameRouteImport.update({
+    id: '/api/soundmachine/stream/$name',
+    path: '/api/soundmachine/stream/$name',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiDevicesRegisterDeviceIdStatusRoute =
   ApiDevicesRegisterDeviceIdStatusRouteImport.update({
     id: '/api/devices/register/$deviceId/status',
@@ -125,9 +138,11 @@ export interface FileRoutesByFullPath {
   '/playlist/$id': typeof LibraryPlaylistIdRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
-  '/api/player/download': typeof ApiPlayerDownloadRoute
   '/api/player/version': typeof ApiPlayerVersionRoute
+  '/api/soundmachine/config': typeof ApiSoundmachineConfigRoute
+  '/api/soundmachine/sounds': typeof ApiSoundmachineSoundsRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
+  '/api/soundmachine/stream/$name': typeof ApiSoundmachineStreamNameRoute
   '/api/stream/episode/$episodeId': typeof ApiStreamEpisodeEpisodeIdRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
   '/api/devices/register/$deviceId/ssh-ready': typeof ApiDevicesRegisterDeviceIdSshReadyRoute
@@ -143,9 +158,11 @@ export interface FileRoutesByTo {
   '/playlist/$id': typeof LibraryPlaylistIdRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
-  '/api/player/download': typeof ApiPlayerDownloadRoute
   '/api/player/version': typeof ApiPlayerVersionRoute
+  '/api/soundmachine/config': typeof ApiSoundmachineConfigRoute
+  '/api/soundmachine/sounds': typeof ApiSoundmachineSoundsRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
+  '/api/soundmachine/stream/$name': typeof ApiSoundmachineStreamNameRoute
   '/api/stream/episode/$episodeId': typeof ApiStreamEpisodeEpisodeIdRoute
   '/api/devices/register': typeof ApiDevicesRegisterIndexRoute
   '/api/devices/register/$deviceId/ssh-ready': typeof ApiDevicesRegisterDeviceIdSshReadyRoute
@@ -163,9 +180,11 @@ export interface FileRoutesById {
   '/_library/playlist/$id': typeof LibraryPlaylistIdRoute
   '/api/devices/heartbeat': typeof ApiDevicesHeartbeatRoute
   '/api/nfc/scan': typeof ApiNfcScanRoute
-  '/api/player/download': typeof ApiPlayerDownloadRoute
   '/api/player/version': typeof ApiPlayerVersionRoute
+  '/api/soundmachine/config': typeof ApiSoundmachineConfigRoute
+  '/api/soundmachine/sounds': typeof ApiSoundmachineSoundsRoute
   '/api/stream/$songId': typeof ApiStreamSongIdRoute
+  '/api/soundmachine/stream/$name': typeof ApiSoundmachineStreamNameRoute
   '/api/stream/episode/$episodeId': typeof ApiStreamEpisodeEpisodeIdRoute
   '/api/devices/register/': typeof ApiDevicesRegisterIndexRoute
   '/api/devices/register/$deviceId/ssh-ready': typeof ApiDevicesRegisterDeviceIdSshReadyRoute
@@ -183,9 +202,11 @@ export interface FileRouteTypes {
     | '/playlist/$id'
     | '/api/devices/heartbeat'
     | '/api/nfc/scan'
-    | '/api/player/download'
     | '/api/player/version'
+    | '/api/soundmachine/config'
+    | '/api/soundmachine/sounds'
     | '/api/stream/$songId'
+    | '/api/soundmachine/stream/$name'
     | '/api/stream/episode/$episodeId'
     | '/api/devices/register'
     | '/api/devices/register/$deviceId/ssh-ready'
@@ -201,9 +222,11 @@ export interface FileRouteTypes {
     | '/playlist/$id'
     | '/api/devices/heartbeat'
     | '/api/nfc/scan'
-    | '/api/player/download'
     | '/api/player/version'
+    | '/api/soundmachine/config'
+    | '/api/soundmachine/sounds'
     | '/api/stream/$songId'
+    | '/api/soundmachine/stream/$name'
     | '/api/stream/episode/$episodeId'
     | '/api/devices/register'
     | '/api/devices/register/$deviceId/ssh-ready'
@@ -220,9 +243,11 @@ export interface FileRouteTypes {
     | '/_library/playlist/$id'
     | '/api/devices/heartbeat'
     | '/api/nfc/scan'
-    | '/api/player/download'
     | '/api/player/version'
+    | '/api/soundmachine/config'
+    | '/api/soundmachine/sounds'
     | '/api/stream/$songId'
+    | '/api/soundmachine/stream/$name'
     | '/api/stream/episode/$episodeId'
     | '/api/devices/register/'
     | '/api/devices/register/$deviceId/ssh-ready'
@@ -234,9 +259,11 @@ export interface RootRouteChildren {
   ApiHealthRoute: typeof ApiHealthRoute
   ApiDevicesHeartbeatRoute: typeof ApiDevicesHeartbeatRoute
   ApiNfcScanRoute: typeof ApiNfcScanRoute
-  ApiPlayerDownloadRoute: typeof ApiPlayerDownloadRoute
   ApiPlayerVersionRoute: typeof ApiPlayerVersionRoute
+  ApiSoundmachineConfigRoute: typeof ApiSoundmachineConfigRoute
+  ApiSoundmachineSoundsRoute: typeof ApiSoundmachineSoundsRoute
   ApiStreamSongIdRoute: typeof ApiStreamSongIdRoute
+  ApiSoundmachineStreamNameRoute: typeof ApiSoundmachineStreamNameRoute
   ApiStreamEpisodeEpisodeIdRoute: typeof ApiStreamEpisodeEpisodeIdRoute
   ApiDevicesRegisterIndexRoute: typeof ApiDevicesRegisterIndexRoute
   ApiDevicesRegisterDeviceIdSshReadyRoute: typeof ApiDevicesRegisterDeviceIdSshReadyRoute
@@ -301,18 +328,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStreamSongIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/soundmachine/sounds': {
+      id: '/api/soundmachine/sounds'
+      path: '/api/soundmachine/sounds'
+      fullPath: '/api/soundmachine/sounds'
+      preLoaderRoute: typeof ApiSoundmachineSoundsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/soundmachine/config': {
+      id: '/api/soundmachine/config'
+      path: '/api/soundmachine/config'
+      fullPath: '/api/soundmachine/config'
+      preLoaderRoute: typeof ApiSoundmachineConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/player/version': {
       id: '/api/player/version'
       path: '/api/player/version'
       fullPath: '/api/player/version'
       preLoaderRoute: typeof ApiPlayerVersionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/player/download': {
-      id: '/api/player/download'
-      path: '/api/player/download'
-      fullPath: '/api/player/download'
-      preLoaderRoute: typeof ApiPlayerDownloadRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/nfc/scan': {
@@ -348,6 +382,13 @@ declare module '@tanstack/react-router' {
       path: '/api/stream/episode/$episodeId'
       fullPath: '/api/stream/episode/$episodeId'
       preLoaderRoute: typeof ApiStreamEpisodeEpisodeIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/soundmachine/stream/$name': {
+      id: '/api/soundmachine/stream/$name'
+      path: '/api/soundmachine/stream/$name'
+      fullPath: '/api/soundmachine/stream/$name'
+      preLoaderRoute: typeof ApiSoundmachineStreamNameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/devices/register/$deviceId/status': {
@@ -393,9 +434,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiHealthRoute: ApiHealthRoute,
   ApiDevicesHeartbeatRoute: ApiDevicesHeartbeatRoute,
   ApiNfcScanRoute: ApiNfcScanRoute,
-  ApiPlayerDownloadRoute: ApiPlayerDownloadRoute,
   ApiPlayerVersionRoute: ApiPlayerVersionRoute,
+  ApiSoundmachineConfigRoute: ApiSoundmachineConfigRoute,
+  ApiSoundmachineSoundsRoute: ApiSoundmachineSoundsRoute,
   ApiStreamSongIdRoute: ApiStreamSongIdRoute,
+  ApiSoundmachineStreamNameRoute: ApiSoundmachineStreamNameRoute,
   ApiStreamEpisodeEpisodeIdRoute: ApiStreamEpisodeEpisodeIdRoute,
   ApiDevicesRegisterIndexRoute: ApiDevicesRegisterIndexRoute,
   ApiDevicesRegisterDeviceIdSshReadyRoute:

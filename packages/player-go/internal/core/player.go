@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/reesemclean/musicbox/packages/player-go/internal/api"
 	"github.com/reesemclean/musicbox/packages/player-go/internal/audio"
@@ -13,6 +14,10 @@ import (
 type PlayerCore struct {
 	audioEngine  *audio.Engine
 	serverClient *api.Client
+
+	// Sound machine mode
+	soundMachineMu     sync.Mutex
+	soundMachineActive bool
 }
 
 // NewPlayerCore creates a new player core
@@ -167,12 +172,25 @@ func (p *PlayerCore) Play() error {
 }
 
 // Pause pauses playback
+// If sound machine is active, it deactivates it
 func (p *PlayerCore) Pause() error {
+	// Deactivate sound machine mode if active
+	if p.IsSoundMachineActive() {
+		p.DeactivateSoundMachine()
+		// Stop playback completely for sound machine (not just pause)
+		return p.audioEngine.Stop()
+	}
 	return p.audioEngine.Pause()
 }
 
 // TogglePlayPause toggles between play and pause
+// If sound machine is active, it stops it instead
 func (p *PlayerCore) TogglePlayPause() error {
+	// If sound machine is active, stop it
+	if p.IsSoundMachineActive() {
+		p.DeactivateSoundMachine()
+		return p.audioEngine.Stop()
+	}
 	return p.audioEngine.TogglePlayPause()
 }
 
@@ -233,6 +251,72 @@ func (p *PlayerCore) VolumeUp() error {
 // VolumeDown decreases the volume
 func (p *PlayerCore) VolumeDown() error {
 	return p.audioEngine.VolumeDown(10)
+}
+
+// ActivateSoundMachine activates sound machine mode
+// Fetches the configured sound from the server and plays it in a loop
+func (p *PlayerCore) ActivateSoundMachine() error {
+	p.soundMachineMu.Lock()
+	if p.soundMachineActive {
+		p.soundMachineMu.Unlock()
+		slog.Info("Sound machine already active")
+		return nil
+	}
+	p.soundMachineMu.Unlock()
+
+	slog.Info("Activating sound machine mode")
+
+	// Fetch sound machine config from server
+	config, err := p.serverClient.GetSoundMachineConfig()
+	if err != nil {
+		slog.Error("Failed to get sound machine config", "error", err)
+		p.audioEngine.PlayErrorBeep()
+		return err
+	}
+
+	slog.Info("Sound machine config received", "soundName", config.SoundName, "streamUrl", config.StreamURL)
+
+	// Mark as active before starting playback
+	p.soundMachineMu.Lock()
+	p.soundMachineActive = true
+	p.soundMachineMu.Unlock()
+
+	// Play the sound in a loop
+	err = p.audioEngine.PlayLooping(audio.SongInfo{
+		ID:        0, // Sound machine sounds don't have IDs
+		Title:     config.SoundName,
+		StreamURL: config.StreamURL,
+	})
+	if err != nil {
+		p.soundMachineMu.Lock()
+		p.soundMachineActive = false
+		p.soundMachineMu.Unlock()
+		slog.Error("Failed to start sound machine playback", "error", err)
+		p.audioEngine.PlayErrorBeep()
+		return err
+	}
+
+	slog.Info("Sound machine activated", "sound", config.SoundName)
+	return nil
+}
+
+// DeactivateSoundMachine deactivates sound machine mode
+func (p *PlayerCore) DeactivateSoundMachine() {
+	p.soundMachineMu.Lock()
+	wasActive := p.soundMachineActive
+	p.soundMachineActive = false
+	p.soundMachineMu.Unlock()
+
+	if wasActive {
+		slog.Info("Sound machine deactivated")
+	}
+}
+
+// IsSoundMachineActive returns whether sound machine mode is active
+func (p *PlayerCore) IsSoundMachineActive() bool {
+	p.soundMachineMu.Lock()
+	defer p.soundMachineMu.Unlock()
+	return p.soundMachineActive
 }
 
 // Shutdown shuts down the player

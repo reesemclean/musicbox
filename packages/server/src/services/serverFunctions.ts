@@ -5,8 +5,15 @@ import * as devicesService from './devicesService.js'
 import * as ansibleService from './ansibleService.js'
 import * as podcastService from './podcastService.js'
 import { db } from '@/db'
-import { cards, downloadQueue, libraryVersion, playHistory } from '@/db/schema'
+import {
+  cards,
+  devices,
+  downloadQueue,
+  libraryVersion,
+  playHistory,
+} from '@/db/schema'
 import { nfcQueue } from '@/lib/nfc-queue'
+import * as soundMachine from '@/lib/soundmachine'
 
 // ============================================================================
 // NFC Scanning
@@ -440,8 +447,8 @@ export const getSSHPublicKey = createServerFn().handler(() => {
  * Get devices ready for deployment
  */
 export const getDeployableDevices = createServerFn().handler(async () => {
-  const devices = await ansibleService.getDeployableDevices()
-  return { devices }
+  const deployableDevices = await ansibleService.getDeployableDevices()
+  return { devices: deployableDevices }
 })
 
 // ============================================================================
@@ -566,4 +573,75 @@ export const updatePodcastFeed = createServerFn({ method: 'POST' })
       throw new Error('Podcast feed not found')
     }
     return { feed }
+  })
+
+// ============================================================================
+// Sound Machine
+// ============================================================================
+
+/**
+ * Get available sound machine sounds
+ */
+export const getSoundMachineSounds = createServerFn().handler(async () => {
+  return soundMachine.getSoundMachineSounds()
+})
+
+/**
+ * Get a device's sound machine setting
+ */
+export const getDeviceSoundMachineSetting = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      deviceId: z.number(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const device = await devicesService.getDeviceById(data.deviceId)
+    if (!device) {
+      throw new Error('Device not found')
+    }
+
+    const sounds = soundMachine.getSoundMachineSounds()
+    let currentSound = device.soundMachineSoundName
+
+    // If configured sound doesn't exist, fall back to default
+    if (!currentSound || !soundMachine.soundExists(currentSound)) {
+      const defaultSound = soundMachine.getDefaultSound()
+      currentSound = defaultSound?.name || null
+    }
+
+    return {
+      deviceId: device.id,
+      soundName: currentSound,
+      availableSounds: sounds,
+    }
+  })
+
+/**
+ * Update a device's sound machine setting
+ */
+export const updateDeviceSoundMachineSetting = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      deviceId: z.number(),
+      soundName: z.string().nullable(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    // Verify the sound exists (if not null)
+    if (data.soundName && !soundMachine.soundExists(data.soundName)) {
+      throw new Error(`Sound "${data.soundName}" not found`)
+    }
+
+    const result = await db
+      .update(devices)
+      .set({ soundMachineSoundName: data.soundName })
+      .where(eq(devices.id, data.deviceId))
+      .returning()
+
+    if (result.length === 0) {
+      throw new Error('Device not found')
+    }
+
+    return { success: true, soundName: data.soundName }
   })

@@ -57,6 +57,8 @@ export const devices = sqliteTable('devices', {
   lastDeployedAt: integer('last_deployed_at', { mode: 'timestamp' }),
   lastDeployedVersion: text('last_deployed_version'),
   deploymentStatus: text('deployment_status', { enum: deploymentStatus }),
+  // Sound machine settings
+  soundMachineSoundName: text('sound_machine_sound_name'), // e.g., "waves"
   createdAt: integer('created_at', { mode: 'timestamp' }).default(
     sql`(unixepoch())`,
   ),

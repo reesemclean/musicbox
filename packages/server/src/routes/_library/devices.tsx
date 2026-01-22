@@ -15,6 +15,7 @@ import {
   Download,
   Loader2,
   MoreVertical,
+  Music,
   Pause,
   Play,
   Rocket,
@@ -28,23 +29,42 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   approveDevice,
   cancelDeployment,
   deleteDevice,
   getDeploymentRuns,
+  getDeviceSoundMachineSetting,
   getDevices,
   getPendingDevices,
+  getSoundMachineSounds,
   rejectDevice,
   sendDeviceCommand,
   triggerDeployment,
+  updateDeviceSoundMachineSetting,
 } from '@/services/serverFunctions'
 
 const devicesQueryOptions = queryOptions({
@@ -82,11 +102,35 @@ function DevicesPage() {
     null,
   )
   const [showDeploymentHistory, setShowDeploymentHistory] = useState(false)
+  const [soundMachineDialogDeviceId, setSoundMachineDialogDeviceId] = useState<
+    number | null
+  >(null)
+  const [selectedSoundName, setSelectedSoundName] = useState<string | null>(
+    null,
+  )
 
   const { data: devices } = useSuspenseQuery(devicesQueryOptions)
   const { data: pendingDevices } = useQuery(pendingDevicesQueryOptions)
   const { data: deploymentRunsData } = useQuery(deploymentRunsQueryOptions)
   const queryClient = useQueryClient()
+
+  // Sound machine queries
+  const { data: soundMachineSounds } = useQuery({
+    queryKey: ['soundMachineSounds'],
+    queryFn: getSoundMachineSounds,
+  })
+
+  const { data: deviceSoundSetting, isLoading: isLoadingDeviceSoundSetting } =
+    useQuery({
+      queryKey: ['deviceSoundMachineSetting', soundMachineDialogDeviceId],
+      queryFn: () =>
+        soundMachineDialogDeviceId
+          ? getDeviceSoundMachineSetting({
+              data: { deviceId: soundMachineDialogDeviceId },
+            })
+          : null,
+      enabled: soundMachineDialogDeviceId !== null,
+    })
 
   const commandMutation = useMutation({
     mutationFn: sendDeviceCommand,
@@ -160,6 +204,21 @@ function DevicesPage() {
     },
   })
 
+  const soundMachineMutation = useMutation({
+    mutationFn: updateDeviceSoundMachineSetting,
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['deviceSoundMachineSetting', soundMachineDialogDeviceId],
+      })
+      setSoundMachineDialogDeviceId(null)
+      setSelectedSoundName(null)
+    },
+    onError: (error: any) => {
+      console.error('Failed to update sound machine setting:', error)
+      alert('Failed to update sound machine setting: ' + error.message)
+    },
+  })
+
   const handleCancelDeployment = (runId: number) => {
     if (confirm('Are you sure you want to cancel this deployment?')) {
       cancelMutation.mutate({ data: { runId } })
@@ -200,6 +259,20 @@ function DevicesPage() {
     playbook: 'site' | 'deploy-player' | 'sync-config' = 'site',
   ) => {
     deployMutation.mutate({ data: { deviceId, playbook } })
+  }
+
+  const handleOpenSoundMachineSettings = (deviceId: number) => {
+    setSoundMachineDialogDeviceId(deviceId)
+    setSelectedSoundName(null) // Reset selection when opening
+  }
+
+  const handleSaveSoundMachineSetting = () => {
+    if (soundMachineDialogDeviceId === null) return
+
+    const soundName = selectedSoundName ?? deviceSoundSetting?.soundName ?? null
+    soundMachineMutation.mutate({
+      data: { deviceId: soundMachineDialogDeviceId, soundName },
+    })
   }
 
   const getDeploymentStatusBadge = (status?: string | null) => {
@@ -646,6 +719,13 @@ function DevicesPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem
+                        onClick={() => handleOpenSoundMachineSettings(device.id)}
+                      >
+                        <Music className="h-4 w-4 mr-2" />
+                        Sound Machine Settings
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
                         onClick={() => handleDeploy(device.id, 'site')}
                         disabled={deployMutation.isPending}
                       >
@@ -666,6 +746,7 @@ function DevicesPage() {
                         <Download className="h-4 w-4 mr-2" />
                         Sync Config Only
                       </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={() => handleDelete(device.id, device.name)}
                         disabled={deleteMutation.isPending}
@@ -682,6 +763,94 @@ function DevicesPage() {
           })}
         </div>
       )}
+
+      {/* Sound Machine Settings Dialog */}
+      <Dialog
+        open={soundMachineDialogDeviceId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSoundMachineDialogDeviceId(null)
+            setSelectedSoundName(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sound Machine Settings</DialogTitle>
+            <DialogDescription>
+              Configure the white noise sound that plays when holding the play
+              button for 3 seconds.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {isLoadingDeviceSoundSetting ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="sound-select">Sound</Label>
+                  <Select
+                    value={
+                      selectedSoundName ??
+                      deviceSoundSetting?.soundName ??
+                      undefined
+                    }
+                    onValueChange={setSelectedSoundName}
+                  >
+                    <SelectTrigger id="sound-select" className="w-full">
+                      <SelectValue placeholder="Select a sound..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {soundMachineSounds && soundMachineSounds.length > 0 ? (
+                        soundMachineSounds.map((sound) => (
+                          <SelectItem key={sound.name} value={sound.name}>
+                            {sound.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="_none" disabled>
+                          No sounds available
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    Sounds are stored in the server's assets/soundmachine folder.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSoundMachineDialogDeviceId(null)
+                setSelectedSoundName(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveSoundMachineSetting}
+              disabled={soundMachineMutation.isPending}
+            >
+              {soundMachineMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

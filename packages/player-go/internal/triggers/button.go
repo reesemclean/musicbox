@@ -17,6 +17,8 @@ const (
 	restartPressesNeeded = 5
 	restartWindowMs      = 3000
 	volumeDownPin        = 13
+	playPausePin         = 5
+	longPressDuration    = 3 * time.Second
 )
 
 type buttonConfig struct {
@@ -36,6 +38,12 @@ type ButtonTrigger struct {
 	stopCh         chan struct{}
 	stopped        bool
 	wg             sync.WaitGroup
+
+	// Long press tracking for play/pause button
+	playButtonPressed   bool
+	playButtonPressTime time.Time
+	longPressTimer      *time.Timer
+	longPressTriggered  bool
 }
 
 // NewButtonTrigger creates a new button trigger
@@ -82,8 +90,14 @@ func (b *ButtonTrigger) Start(player PlayerController) error {
 			continue
 		}
 
-		// Configure pin with pull-up and falling edge detection
-		if err := pin.In(gpio.PullUp, gpio.FallingEdge); err != nil {
+		// Play/pause button uses BothEdges for long press detection
+		// Other buttons use FallingEdge only
+		edgeType := gpio.FallingEdge
+		if btn.pin == playPausePin {
+			edgeType = gpio.BothEdges
+		}
+
+		if err := pin.In(gpio.PullUp, edgeType); err != nil {
 			slog.Warn("Button trigger: Failed to configure pin", "pin", btn.pin, "error", err)
 			continue
 		}
@@ -93,7 +107,11 @@ func (b *ButtonTrigger) Start(player PlayerController) error {
 
 		// Start a goroutine to monitor this pin
 		b.wg.Add(1)
-		go b.monitorPin(pin, btn.pin)
+		if btn.pin == playPausePin {
+			go b.monitorPlayPausePin(pin)
+		} else {
+			go b.monitorPin(pin, btn.pin)
+		}
 	}
 
 	if len(b.pins) == 0 {
@@ -144,6 +162,119 @@ func (b *ButtonTrigger) monitorPin(pin gpio.PinIO, pinNum int) {
 			slog.Debug("Button trigger: Edge detected on pin", "gpio", pinNum)
 			b.handleButtonPress(pinNum)
 		}
+	}
+}
+
+// monitorPlayPausePin watches the play/pause button with long press detection
+// Long press (3s) activates sound machine mode
+// Short press toggles play/pause
+func (b *ButtonTrigger) monitorPlayPausePin(pin gpio.PinIO) {
+	defer b.wg.Done()
+
+	slog.Debug("Button trigger: Starting play/pause monitor with long press detection")
+
+	for {
+		select {
+		case <-b.stopCh:
+			slog.Debug("Button trigger: Play/pause monitor stopping")
+			b.cancelLongPressTimer()
+			return
+		default:
+		}
+
+		// Wait for edge (press or release) with timeout
+		if pin.WaitForEdge(500 * time.Millisecond) {
+			// With pull-up, Low = pressed, High = released
+			isPressed := pin.Read() == gpio.Low
+			b.handlePlayPauseEdge(isPressed)
+		}
+	}
+}
+
+// handlePlayPauseEdge handles press/release events for the play/pause button
+func (b *ButtonTrigger) handlePlayPauseEdge(isPressed bool) {
+	now := time.Now()
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if isPressed {
+		// Button pressed - start long press timer
+		if b.playButtonPressed {
+			// Already tracking a press, ignore (debounce)
+			return
+		}
+
+		// Check debounce from last release
+		timeSinceLast := now.Sub(b.lastPressTime[playPausePin])
+		if timeSinceLast < debounceMs*time.Millisecond {
+			slog.Debug("Button trigger: Play/pause debouncing", "timeSinceLast", timeSinceLast)
+			return
+		}
+
+		b.playButtonPressed = true
+		b.playButtonPressTime = now
+		b.longPressTriggered = false
+
+		slog.Debug("Button trigger: Play/pause pressed, starting long press timer")
+
+		// Start a timer for long press detection
+		b.longPressTimer = time.AfterFunc(longPressDuration, func() {
+			b.mu.Lock()
+			if b.playButtonPressed && !b.longPressTriggered {
+				b.longPressTriggered = true
+				b.mu.Unlock()
+
+				slog.Info("Long press detected on play/pause - activating sound machine")
+				if b.player != nil {
+					if err := b.player.ActivateSoundMachine(); err != nil {
+						slog.Error("Failed to activate sound machine", "error", err)
+					}
+				}
+			} else {
+				b.mu.Unlock()
+			}
+		})
+	} else {
+		// Button released
+		if !b.playButtonPressed {
+			// Wasn't tracking a press, ignore
+			return
+		}
+
+		pressDuration := now.Sub(b.playButtonPressTime)
+		wasLongPress := b.longPressTriggered
+
+		// Reset press tracking
+		b.playButtonPressed = false
+		b.lastPressTime[playPausePin] = now
+
+		// Cancel timer if still running
+		if b.longPressTimer != nil {
+			b.longPressTimer.Stop()
+			b.longPressTimer = nil
+		}
+
+		slog.Debug("Button trigger: Play/pause released", "duration", pressDuration, "wasLongPress", wasLongPress)
+
+		// If it wasn't a long press, execute normal toggle
+		if !wasLongPress {
+			slog.Info("Button pressed", "label", "Play/Pause", "gpio", playPausePin)
+			if b.player != nil {
+				_ = b.player.TogglePlayPause()
+			}
+		}
+	}
+}
+
+// cancelLongPressTimer safely cancels the long press timer
+func (b *ButtonTrigger) cancelLongPressTimer() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.longPressTimer != nil {
+		b.longPressTimer.Stop()
+		b.longPressTimer = nil
 	}
 }
 

@@ -90,6 +90,9 @@ RUN mkdir -p /app/data /app/data/ssh && \
 # Copy ansible configuration
 COPY --from=builder /app/packages/server/ansible ./ansible
 
+# Copy sound machine assets
+COPY --from=builder /app/packages/server/assets ./assets
+
 USER nodejs
 
 # Environment variables

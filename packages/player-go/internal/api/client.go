@@ -134,6 +134,49 @@ func (c *Client) GetServerURL() string {
 	return c.serverURL
 }
 
+// GetSoundMachineConfig fetches the sound machine configuration for this device
+func (c *Client) GetSoundMachineConfig() (*SoundMachineConfig, error) {
+	slog.Debug("Fetching sound machine config")
+
+	url := fmt.Sprintf("%s/api/soundmachine/config", c.serverURL)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add device secret header for authentication
+	req.Header.Set("X-Device-Secret", c.deviceSecret)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		slog.Error("Network error fetching sound machine config", "error", err)
+		return nil, fmt.Errorf("%w: %v", ErrNetworkError, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		slog.Error("Failed to get sound machine config",
+			"status", resp.StatusCode,
+			"body", string(body))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var config SoundMachineConfig
+	if err := json.Unmarshal(body, &config); err != nil {
+		slog.Error("Invalid JSON response", "error", err, "body", string(body))
+		return nil, ErrInvalidResponse
+	}
+
+	slog.Debug("Sound machine config received", "soundName", config.SoundName, "streamUrl", config.StreamURL)
+	return &config, nil
+}
+
 // SendHeartbeat sends a heartbeat to the server
 func (c *Client) SendHeartbeat(ipAddress string, currentSong *HeartbeatSongInfo, playerVersion string) error {
 	slog.Debug("Sending heartbeat", "ipAddress", ipAddress, "hasSong", currentSong != nil, "version", playerVersion)

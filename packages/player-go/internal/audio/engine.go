@@ -420,6 +420,51 @@ func (e *Engine) Play(song SongInfo) error {
 	return nil
 }
 
+// PlayLooping plays a single song in an infinite loop (for sound machine)
+func (e *Engine) PlayLooping(song SongInfo) error {
+	slog.Debug("PlayLooping called", "title", song.Title, "url", song.StreamURL)
+
+	if !e.isInitialized {
+		slog.Debug("Engine not initialized, initializing now")
+		if err := e.Initialize(); err != nil {
+			return err
+		}
+	}
+
+	// Fade out if playing
+	if e.IsPlaying() {
+		slog.Debug("Fading out current playback")
+		e.fadeVolume(e.currentVolume, 0, 50*time.Millisecond)
+	}
+
+	// Store as 1-item playlist
+	e.mu.Lock()
+	e.playlist = []SongInfo{song}
+	e.mu.Unlock()
+
+	// Load the file
+	slog.Debug("Loading file into mpv for looping", "url", song.StreamURL)
+	_, err := e.sendCommand([]interface{}{"loadfile", song.StreamURL, "replace"}, false)
+	if err != nil {
+		return err
+	}
+
+	// Enable infinite loop for this file
+	slog.Debug("Setting loop-file to inf")
+	_, err = e.sendCommand([]interface{}{"set_property", "loop-file", "inf"}, false)
+	if err != nil {
+		slog.Warn("Failed to set loop-file property", "error", err)
+		// Continue anyway - playback will work, just won't loop
+	}
+
+	// Fade in
+	slog.Debug("Fading in")
+	e.fadeVolume(0, e.currentVolume, 50*time.Millisecond)
+
+	slog.Info("Looping playback started", "title", song.Title, "volume", e.currentVolume)
+	return nil
+}
+
 // LoadPlaylist loads a playlist of songs
 func (e *Engine) LoadPlaylist(songs []SongInfo) error {
 	if len(songs) == 0 {
@@ -560,6 +605,9 @@ func (e *Engine) Stop() error {
 
 	_, _ = e.sendCommand([]interface{}{"stop"}, false)
 	_, _ = e.sendCommand([]interface{}{"set_property", "volume", float64(e.currentVolume)}, false)
+
+	// Reset loop-file property (in case it was set by PlayLooping)
+	_, _ = e.sendCommand([]interface{}{"set_property", "loop-file", "no"}, false)
 
 	e.mu.Lock()
 	e.playlist = nil

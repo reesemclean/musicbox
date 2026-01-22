@@ -2,7 +2,7 @@
  * Ansible Service - Push-based deployment to Raspberry Pi devices
  */
 
-import {  spawn } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { and, desc, eq, isNotNull } from 'drizzle-orm'
@@ -59,7 +59,6 @@ export function initializeAnsible(): void {
   }
 
   // Log ansible-playbook availability
-  const { execSync } = require('node:child_process')
   try {
     const version = execSync('ansible-playbook --version', {
       encoding: 'utf8',
