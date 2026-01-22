@@ -26,11 +26,15 @@ type toneSpec struct {
 	volume      float64
 }
 
+// TonePlayFunc is a function that plays a tone file at the current volume
+type TonePlayFunc func(filePath string)
+
 // ToneGenerator generates and plays WAV tones
 type ToneGenerator struct {
 	mu          sync.Mutex
 	tones       map[string]string // name -> file path
 	initialized bool
+	playFunc    TonePlayFunc // Function to play tones (set by Engine)
 }
 
 // NewToneGenerator creates a new tone generator
@@ -38,6 +42,14 @@ func NewToneGenerator() *ToneGenerator {
 	return &ToneGenerator{
 		tones: make(map[string]string),
 	}
+}
+
+// SetPlayFunc sets the function used to play tones
+// This allows the Engine to inject mpv-based playback
+func (t *ToneGenerator) SetPlayFunc(f TonePlayFunc) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.playFunc = f
 }
 
 // Initialize generates all tone WAV files
@@ -194,10 +206,12 @@ func (t *ToneGenerator) writeWav(filePath string, samples []float64) error {
 	return w.Flush()
 }
 
-// play plays a pre-generated tone using aplay
+// play plays a pre-generated tone
+// Uses the injected play function (mpv) if available, falls back to aplay
 func (t *ToneGenerator) play(name string) {
 	t.mu.Lock()
 	filePath, ok := t.tones[name]
+	playFunc := t.playFunc
 	t.mu.Unlock()
 
 	if !ok {
@@ -205,7 +219,13 @@ func (t *ToneGenerator) play(name string) {
 		return
 	}
 
-	// Fire and forget
+	// Use mpv-based playback if available (respects volume)
+	if playFunc != nil {
+		playFunc(filePath)
+		return
+	}
+
+	// Fallback to aplay (fixed volume)
 	cmd := exec.Command("aplay", "-q", filePath)
 	_ = cmd.Start()
 }

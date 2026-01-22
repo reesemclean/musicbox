@@ -815,7 +815,35 @@ func (e *Engine) VolumeDown(amount int) error {
 
 // InitializeTones initializes the tone generator
 func (e *Engine) InitializeTones() error {
+	// Set up the tone play function to use mpv with current volume
+	e.toneGenerator.SetPlayFunc(func(filePath string) {
+		e.playToneFile(filePath)
+	})
 	return e.toneGenerator.Initialize()
+}
+
+// playToneFile plays a tone file through a separate mpv process at the current volume
+func (e *Engine) playToneFile(filePath string) {
+	e.mu.Lock()
+	volume := e.currentVolume
+	e.mu.Unlock()
+
+	// Spawn a quick mpv process for the tone with the current volume
+	// This doesn't interfere with the main playback
+	volumeStr := fmt.Sprintf("--volume=%d", volume)
+	cmd := exec.Command("mpv",
+		"--no-terminal",
+		"--no-video",
+		"--really-quiet",
+		volumeStr,
+		filePath,
+	)
+	_ = cmd.Start()
+
+	// Don't wait - let it play in the background
+	go func() {
+		_ = cmd.Wait()
+	}()
 }
 
 // PlayStartupChime plays the startup chime
