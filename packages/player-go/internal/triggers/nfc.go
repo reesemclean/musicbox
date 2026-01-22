@@ -34,6 +34,12 @@ const (
 	irqGPIO = 17
 
 	nfcDebounceMs = 2000
+
+	// Error handling constants
+	nfcMinBackoff           = 1 * time.Second
+	nfcMaxBackoff           = 30 * time.Second
+	nfcErrorLogInterval     = 30 * time.Second // Only log errors every 30s
+	nfcReinitThreshold      = 5                // Reinitialize after 5 consecutive errors
 )
 
 // NFCTrigger handles NFC card reading via PN532 I2C with IRQ-based detection
@@ -48,6 +54,11 @@ type NFCTrigger struct {
 	stopCh       chan struct{}
 	lastCardID   string
 	lastCardTime time.Time
+
+	// Error tracking for resilience
+	consecutiveErrors int
+	lastErrorLog      time.Time
+	backoffDuration   time.Duration
 }
 
 // NewNFCTrigger creates a new NFC trigger
@@ -258,19 +269,110 @@ func (n *NFCTrigger) waitForCardLoop() {
 		n.mu.Unlock()
 
 		// Send InListPassiveTarget command and wait for card via IRQ
-		slog.Debug("NFC Reader: Waiting for card...")
 		cardID, err := n.waitForCard()
 		if err != nil {
-			slog.Debug("NFC Reader: Wait for card error", "error", err)
-			// Timeout or error - just try again
+			n.handleError(err)
 			continue
 		}
+
+		// Success - reset error tracking
+		if n.consecutiveErrors > 0 {
+			slog.Info("NFC Reader: Connection recovered after errors", "previousErrors", n.consecutiveErrors)
+		}
+		n.consecutiveErrors = 0
+		n.backoffDuration = 0
 
 		if cardID != "" {
 			slog.Debug("NFC Reader: Card detected", "cardId", cardID)
 			n.handleCardDetected(cardID)
 		}
 	}
+}
+
+// handleError implements backoff and reinitialization on errors
+func (n *NFCTrigger) handleError(err error) {
+	n.consecutiveErrors++
+
+	// Log errors with throttling to avoid spam
+	now := time.Now()
+	if now.Sub(n.lastErrorLog) >= nfcErrorLogInterval {
+		slog.Warn("NFC Reader: I2C errors occurring",
+			"consecutiveErrors", n.consecutiveErrors,
+			"lastError", err)
+		n.lastErrorLog = now
+	}
+
+	// Try to reinitialize after threshold
+	if n.consecutiveErrors >= nfcReinitThreshold {
+		slog.Info("NFC Reader: Attempting reinitialization after consecutive errors",
+			"errors", n.consecutiveErrors)
+		n.tryReinitialize()
+		n.consecutiveErrors = 0
+	}
+
+	// Apply backoff
+	if n.backoffDuration == 0 {
+		n.backoffDuration = nfcMinBackoff
+	} else {
+		n.backoffDuration *= 2
+		if n.backoffDuration > nfcMaxBackoff {
+			n.backoffDuration = nfcMaxBackoff
+		}
+	}
+
+	// Wait with backoff, but check stopCh
+	select {
+	case <-n.stopCh:
+		return
+	case <-time.After(n.backoffDuration):
+	}
+}
+
+// tryReinitialize attempts to close and reopen the I2C connection
+func (n *NFCTrigger) tryReinitialize() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	// Close existing connection
+	if n.bus != nil {
+		n.bus.Close()
+		n.bus = nil
+	}
+
+	// Wait a moment for hardware to settle
+	time.Sleep(500 * time.Millisecond)
+
+	// Try to reopen
+	busName := fmt.Sprintf("%d", n.i2cBusNumber)
+	bus, err := i2creg.Open(busName)
+	if err != nil {
+		slog.Warn("NFC Reader: Reinitialization failed - could not open I2C bus", "error", err)
+		return
+	}
+	n.bus = bus
+	n.dev = i2c.Dev{Bus: bus, Addr: pn532I2CAddress}
+
+	// Wake up and reconfigure PN532
+	n.wakeup()
+	time.Sleep(50 * time.Millisecond)
+
+	if _, err := n.getFirmwareVersion(); err != nil {
+		slog.Warn("NFC Reader: Reinitialization failed - PN532 not responding", "error", err)
+		n.bus.Close()
+		n.bus = nil
+		return
+	}
+
+	if err := n.samConfig(); err != nil {
+		slog.Warn("NFC Reader: Reinitialization failed - SAM config error", "error", err)
+		n.bus.Close()
+		n.bus = nil
+		return
+	}
+
+	_ = n.setPassiveActivationRetries(0xFF)
+
+	slog.Info("NFC Reader: Successfully reinitialized")
 }
 
 // waitForCard sends InListPassiveTarget and waits for IRQ to signal card detection
@@ -280,36 +382,29 @@ func (n *NFCTrigger) waitForCard() (string, error) {
 	}
 
 	// Build and send InListPassiveTarget command
-	slog.Debug("NFC Reader: Sending InListPassiveTarget command")
 	frame := n.buildFrame(pn532CommandInListPassiveTarget, []byte{
 		0x01, // Max 1 card
 		0x00, // 106 kbps type A (ISO14443A)
 	})
 
 	if err := n.dev.Tx(frame, nil); err != nil {
-		slog.Debug("NFC Reader: Failed to send command", "error", err)
 		return "", err
 	}
 
 	// Wait for ACK (first IRQ pulse)
-	slog.Debug("NFC Reader: Waiting for ACK IRQ")
 	if !n.waitForIRQ(500 * time.Millisecond) {
 		return "", fmt.Errorf("timeout waiting for ACK")
 	}
 
 	// Read and verify ACK
-	slog.Debug("NFC Reader: Reading ACK")
 	ackBuf := make([]byte, 7)
 	if err := n.dev.Tx(nil, ackBuf); err != nil {
-		slog.Debug("NFC Reader: Failed to read ACK", "error", err)
 		return "", err
 	}
-	slog.Debug("NFC Reader: ACK received", "data", fmt.Sprintf("%x", ackBuf))
 
 	// Now wait for response (card detected) - this can take a long time
 	// Use longer timeout since we're waiting for a card to be presented
 	// Check stopCh periodically
-	slog.Debug("NFC Reader: Waiting for card IRQ (blocking until card present)")
 	for {
 		select {
 		case <-n.stopCh:
@@ -319,32 +414,23 @@ func (n *NFCTrigger) waitForCard() (string, error) {
 
 		// Wait for IRQ with timeout so we can check stopCh
 		if n.waitForIRQ(1 * time.Second) {
-			slog.Debug("NFC Reader: IRQ received - card may be present")
 			break // IRQ fired - card detected or timeout
 		}
 	}
 
 	// Read response
-	slog.Debug("NFC Reader: Reading response")
 	respBuf := make([]byte, 32)
 	if err := n.dev.Tx(nil, respBuf); err != nil {
-		slog.Debug("NFC Reader: Failed to read response", "error", err)
 		return "", err
 	}
-	slog.Debug("NFC Reader: Response received", "data", fmt.Sprintf("%x", respBuf))
 
 	resp, err := n.parseResponse(respBuf)
 	if err != nil {
-		slog.Debug("NFC Reader: Failed to parse response", "error", err)
 		return "", err
 	}
 
 	// Parse card UID from response
-	cardID := n.parseCardUID(resp)
-	if cardID != "" {
-		slog.Debug("NFC Reader: Card UID parsed", "cardId", cardID)
-	}
-	return cardID, nil
+	return n.parseCardUID(resp), nil
 }
 
 // waitForIRQ waits for the IRQ pin to go low (active)

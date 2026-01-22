@@ -23,6 +23,11 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -ldflags "-s -w -X main.Version=${PLAYER_VERSION}" \
     -o musicbox-player ./cmd/player
 
+# Build hardware test utility
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+    -ldflags "-s -w" \
+    -o musicbox-hwtest ./cmd/hwtest
+
 # Node.js builder stage - builds server
 FROM node:22-alpine AS builder
 
@@ -73,8 +78,9 @@ COPY --from=builder /app/packages/server/.output ./.output
 COPY --from=builder /app/packages/server/drizzle ./drizzle
 COPY --from=builder /app/packages/server/package.json ./package.json
 
-# Copy Go player binary and version (outside /data so it's not overridden by volume mounts)
+# Copy Go binaries and version (outside /data so it's not overridden by volume mounts)
 COPY --from=go-builder /app/musicbox-player ./player-bundle/musicbox-player
+COPY --from=go-builder /app/musicbox-hwtest ./player-bundle/musicbox-hwtest
 COPY --from=go-builder /app/version.txt ./player-bundle/version.txt
 
 # Create directories for data persistence (including SSH keys for Ansible)

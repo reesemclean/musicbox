@@ -20,7 +20,7 @@ Complete wiring diagram for Raspberry Pi Zero 2 W with NFC reader, I2S amplifier
 ### Ground Rail
 
 - Pin 6 (GND) → PN532 GND
-- Pin 9 (GND) → MAX98357A GND
+- Pin 39 (GND) → MAX98357A GND (adjacent to Pin 40/DIN for short runs)
 - Pin 14 (GND) → All button common ground
 
 **Note:** Use Pin 14 (GND) as a common ground bus for all 5 buttons. You can use a breadboard rail or wire them together.
@@ -51,7 +51,7 @@ Set DIP switches or jumpers for I2C mode (consult your module's documentation).
 **Power:**
 
 - 5V (Pin 4) → VIN
-- GND (Pin 9) → GND
+- GND (Pin 39) → GND
 
 **Speaker Output:**
 
@@ -89,7 +89,6 @@ All buttons connect between GPIO pin and GND (active-low with internal pull-ups)
 | 4     | 5V   | Power     | MAX98357A VIN           |
 | 5     | 3    | I2C SCL   | PN532 SCL               |
 | 6     | GND  | Ground    | PN532 GND               |
-| 9     | GND  | Ground    | MAX98357A GND           |
 | 11    | 17   | NFC IRQ   | PN532 RQ/IRQ            |
 | 12    | 18   | I2S BCLK  | MAX98357A BCLK          |
 | 14    | GND  | Ground    | All buttons common      |
@@ -99,6 +98,7 @@ All buttons connect between GPIO pin and GND (active-low with internal pull-ups)
 | 35    | 19   | I2S LRC   | MAX98357A LRC           |
 | 36    | 16   | GPIO      | Next Track button       |
 | 37    | 26   | GPIO      | Previous Track button   |
+| 39    | GND  | Ground    | MAX98357A GND           |
 | 40    | 21   | I2S DIN   | MAX98357A DIN           |
 
 ## GPIO Usage Summary
@@ -120,33 +120,38 @@ All buttons connect between GPIO pin and GND (active-low with internal pull-ups)
 ## Circuit Diagram
 
 ```
-Raspberry Pi
-┌─────────────────────────────────────────┐
-│                                         │
-│  5V (2) ──────┬─────────────── PN532   │
-│               └─────────────── MAX98357A│
-│                                         │
-│  GPIO 2 (3) ──────────────── PN532 SDA │
-│  GPIO 3 (5) ──────────────── PN532 SCL │
-│  GPIO 17 (11) ─────────────── PN532 RQ │
-│                                         │
-│  GPIO 18 (12) ─────────── MAX98357A BCLK│
-│  GPIO 19 (35) ─────────── MAX98357A LRC │
-│  GPIO 21 (40) ─────────── MAX98357A DIN │
-│                                         │
-│  GPIO 5 (29) ──[Button]──┐             │
-│  GPIO 6 (31) ──[Button]──┤             │
-│  GPIO 13 (33) ─[Button]──┼── GND (14)  │
-│  GPIO 16 (36) ─[Button]──┤             │
-│  GPIO 26 (37) ─[Button]──┘             │
-│                                         │
-│  GND (6) ──────────────────── PN532    │
-│  GND (9) ──────────────────── MAX98357A│
-│  GND (14) ─────────────────── Buttons  │
-│                                         │
-└─────────────────────────────────────────┘
+Raspberry Pi (Pin Layout - Optimized for MAX98357A near Pin 40)
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  ┌──── PN532 NFC (I2C) ────┐    ┌──── MAX98357A (I2S) ────┐   │
+│  │                         │    │                          │   │
+│  │  5V (Pin 2) ─────► VCC  │    │  5V (Pin 4) ──────► VIN  │   │
+│  │  GPIO 2 (Pin 3) ─► SDA  │    │                          │   │
+│  │  GPIO 3 (Pin 5) ─► SCL  │    │  GPIO 18 (Pin 12) ► BCLK │   │
+│  │  GND (Pin 6) ────► GND  │    │  GPIO 19 (Pin 35) ► LRC  │   │
+│  │  GPIO 17 (Pin 11) ► IRQ │    │  GND (Pin 39) ────► GND  │   │
+│  │                         │    │  GPIO 21 (Pin 40) ► DIN  │   │
+│  └─────────────────────────┘    │                          │   │
+│                                 │  [Speaker +] ◄──── +     │   │
+│                                 │  [Speaker -] ◄──── -     │   │
+│  ┌──── Buttons ────────────┐    └──────────────────────────┘   │
+│  │                         │                                   │
+│  │  GPIO 5 (Pin 29) ─► Play/Pause  ──┐                        │
+│  │  GPIO 6 (Pin 31) ─► Vol Up     ───┤                        │
+│  │  GPIO 13 (Pin 33) ► Vol Down   ───┼───► GND (Pin 14)       │
+│  │  GPIO 16 (Pin 36) ► Next       ───┤                        │
+│  │  GPIO 26 (Pin 37) ► Previous   ───┘                        │
+│  │                         │                                   │
+│  └─────────────────────────┘                                   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 
-MAX98357A ──[Speaker]── (4-8Ω, 3W)
+MAX98357A Wiring Summary (optimized short runs):
+  Pin 35 (LRC) ─────┐
+  Pin 39 (GND) ─────┼──► MAX98357A (clustered near pin 40)
+  Pin 40 (DIN) ─────┘
+  Pin 4  (5V)  ─────────► VIN (longer run, unavoidable)
+  Pin 12 (BCLK) ────────► BCLK (hardware I2S constraint)
 ```
 
 ## Software Configuration

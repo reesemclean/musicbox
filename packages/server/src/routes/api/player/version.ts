@@ -7,7 +7,6 @@
 
 import { createFileRoute } from '@tanstack/react-router'
 import {
-  getPlayerBundleSize,
   getPlayerChecksum,
   getPlayerVersion,
   hasPlayerBundle,
@@ -27,8 +26,6 @@ export const Route = createFileRoute('/api/player/version')({
         return Response.json({
           version: getPlayerVersion(),
           checksum: getPlayerChecksum(),
-          size: getPlayerBundleSize(),
-          downloadUrl: '/api/player/download',
         })
       },
     },

@@ -1,7 +1,8 @@
 .PHONY: build build-arm64 clean run test dist lint fmt vet check ci
 
-# Binary name
+# Binary names
 BINARY_NAME=musicbox-player
+HWTEST_NAME=musicbox-hwtest
 
 # Build flags
 LDFLAGS=-ldflags "-s -w"
@@ -9,10 +10,12 @@ LDFLAGS=-ldflags "-s -w"
 # Build for current platform
 build:
 	go build $(LDFLAGS) -o dist/$(BINARY_NAME) ./cmd/player
+	go build $(LDFLAGS) -o dist/$(HWTEST_NAME) ./cmd/hwtest
 
 # Cross-compile for Raspberry Pi (ARM64)
 build-arm64:
 	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-arm64 ./cmd/player
+	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/$(HWTEST_NAME)-arm64 ./cmd/hwtest
 
 # Build for both platforms
 build-all: build build-arm64

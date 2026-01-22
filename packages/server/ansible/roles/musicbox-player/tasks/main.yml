@@ -1,6 +1,6 @@
 ---
 # MusicBox Player Role
-# Downloads and deploys the MusicBox player Go binary
+# Deploys the MusicBox player Go binary via direct copy
 
 - name: Check if player version file exists
   ansible.builtin.stat:
@@ -21,20 +21,12 @@
   ansible.builtin.debug:
     msg: 'Current: {{ current_player_version }}, Desired: {{ player_version }}'
 
-- name: Download player binary
-  ansible.builtin.get_url:
-    url: '{{ server_url }}/api/player/download'
-    dest: /tmp/musicbox-player
-    mode: '0755'
-  when: current_player_version != player_version
-  register: player_download
-
 - name: Stop player service before update
   ansible.builtin.systemd:
     name: musicbox-player
     state: stopped
   become: yes
-  when: player_download.changed
+  when: current_player_version != player_version
   ignore_errors: yes
 
 - name: Create player directory
@@ -48,14 +40,13 @@
 
 - name: Install player binary
   ansible.builtin.copy:
-    src: /tmp/musicbox-player
+    src: /app/player-bundle/musicbox-player
     dest: /opt/musicbox/player/musicbox-player
-    remote_src: yes
     owner: musicbox
     group: musicbox
     mode: '0755'
   become: yes
-  when: player_download.changed
+  when: current_player_version != player_version
   notify: Restart player service
 
 - name: Write version file
@@ -66,13 +57,17 @@
     group: musicbox
     mode: '0644'
   become: yes
-  when: player_download.changed
+  when: current_player_version != player_version
 
-- name: Clean up downloaded binary
-  ansible.builtin.file:
-    path: /tmp/musicbox-player
-    state: absent
-  when: player_download.changed
+- name: Install hwtest binary to PATH
+  ansible.builtin.copy:
+    src: /app/player-bundle/musicbox-hwtest
+    dest: /usr/local/bin/musicbox-hwtest
+    owner: root
+    group: root
+    mode: '0755'
+  become: yes
+  when: current_player_version != player_version
 
 - name: Save device secret to config
   ansible.builtin.copy:
