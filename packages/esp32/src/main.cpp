@@ -1,13 +1,35 @@
 #include <Arduino.h>
-#include <SPIFFS.h>
-#include "Audio.h"
+#include <Wire.h>
+#include <Adafruit_PN532.h>
 
-// I2S pins for MAX98357A
-#define I2S_BCLK 4
-#define I2S_LRC  5
-#define I2S_DOUT 6
+// I2C pins for PN532
+#define I2C_SDA 8
+#define I2C_SCL 9
 
-Audio audio;
+#define DEBOUNCE_MS 2000
+
+Adafruit_PN532 nfc(I2C_SDA, I2C_SCL);
+
+// Debounce state
+static uint8_t last_uid[7];
+static uint8_t last_uid_len = 0;
+static unsigned long last_read_time = 0;
+
+static bool is_same_card(uint8_t *uid, uint8_t len) {
+    if (len != last_uid_len) return false;
+    for (int i = 0; i < len; i++) {
+        if (uid[i] != last_uid[i]) return false;
+    }
+    return true;
+}
+
+static void save_card(uint8_t *uid, uint8_t len) {
+    last_uid_len = len;
+    for (int i = 0; i < len; i++) {
+        last_uid[i] = uid[i];
+    }
+    last_read_time = millis();
+}
 
 void setup() {
     Serial.begin(115200);
@@ -21,34 +43,42 @@ void setup() {
         Serial.println("PSRAM: Not found");
     }
 
-    // Initialize SPIFFS
-    if (!SPIFFS.begin(true)) {
-        Serial.println("SPIFFS mount failed");
+    // Initialize PN532
+    Serial.println("Initializing PN532...");
+    nfc.begin();
+
+    uint32_t versiondata = nfc.getFirmwareVersion();
+    if (!versiondata) {
+        Serial.println("PN532 not found - check wiring and I2C mode");
         return;
     }
-    Serial.println("SPIFFS mounted");
 
-    // List files
-    File root = SPIFFS.open("/");
-    File file = root.openNextFile();
-    while (file) {
-        Serial.printf("  %s (%d bytes)\n", file.name(), file.size());
-        file = root.openNextFile();
-    }
+    Serial.printf("Found PN532 - Firmware v%d.%d\n",
+        (versiondata >> 8) & 0xFF,
+        versiondata & 0xFF);
 
-    // Initialize audio
-    audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-    audio.setVolume(5);  // 0-21
-
-    // Play MP3 from SPIFFS
-    if (SPIFFS.exists("/test.mp3")) {
-        Serial.println("Playing /test.mp3...");
-        audio.connecttoFS(SPIFFS, "/test.mp3");
-    } else {
-        Serial.println("File /test.mp3 not found!");
-    }
+    // Configure for ISO14443A (NFC Type A cards)
+    nfc.SAMConfig();
+    Serial.println("Waiting for NFC card...");
 }
 
 void loop() {
-    audio.loop();
+    uint8_t uid[7];
+    uint8_t uidLength;
+
+    if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 100)) {
+        // Check debounce: ignore same card within window
+        if (is_same_card(uid, uidLength) && (millis() - last_read_time < DEBOUNCE_MS)) {
+            return;
+        }
+
+        // New card or debounce expired
+        save_card(uid, uidLength);
+
+        Serial.print("Card detected - UID: ");
+        for (int i = 0; i < uidLength; i++) {
+            Serial.printf("%02X", uid[i]);
+        }
+        Serial.println();
+    }
 }

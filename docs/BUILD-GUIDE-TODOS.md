@@ -15,10 +15,10 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 ## Phase 3: NFC Reader
 
-- [ ] **Step 3.1**: PN532 Wiring (I2C Mode)
-- [ ] **Step 3.2**: PN532 Communication Test
-- [ ] **Step 3.3**: NFC Card Reading Test
-- [ ] **Step 3.4**: NFC Debouncing
+- [x] **Step 3.1**: PN532 Wiring (I2C Mode)
+- [x] **Step 3.2**: PN532 Communication Test
+- [x] **Step 3.3**: NFC Card Reading Test
+- [x] **Step 3.4**: NFC Debouncing
 
 ## Phase 4: Button Input
 
