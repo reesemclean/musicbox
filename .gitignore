@@ -3,6 +3,7 @@
 .pioenvs/
 .piolibdeps/
 compile_commands.json
+data/
 
 # Nix/direnv
 .direnv/
