@@ -5,7 +5,7 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 ## Phase 1: ESP32 Foundation
 
 - [x] **Step 1.1**: ESP32 Hello World
-- [ ] **Step 1.2**: PSRAM Verification
+- [x] **Step 1.2**: PSRAM Verification
 
 ## Phase 2: Audio Output
 

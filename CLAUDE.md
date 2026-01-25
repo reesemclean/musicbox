@@ -16,3 +16,7 @@ When working on this project, read the following files into context:
 1. Follow the ESP32 Build Guide step-by-step
 2. After completing and verifying each step, mark it as complete in `docs/BUILD-GUIDE-TODOS.md`
 3. Commit the step with a message referencing the step number (e.g., "Step 1.1: ESP32 Hello World")
+
+## Code Style
+
+- Write C-style C++ as much as possible (prefer C idioms, simple structs, functions over classes)
