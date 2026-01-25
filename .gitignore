@@ -1,62 +1,19 @@
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+compile_commands.json
 
-# Testing
-coverage/
-
-# Production
-dist/
-build/
-.output/
-.vercel/
-.vinxi/
-
-# Exception: Keep player bundle (needed for Nix packaging)
-!player/dist/
-!player/dist/**
-
-# Misc
-.DS_Store
-*.pem
-
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Local env files
-.env
-.env*.local
-
-# Music library (local development)
-library/
-*.mp3
-*.m4a
-*.flac
-
-# Database
-*.db
-*.db-shm
-*.db-wal
+# Nix/direnv
+.direnv/
+result
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
-# Nix
-result
-result-*
-.direnv/
+# macOS
+.DS_Store
 
-# Player config
-device-configs/
-
-# Image builder
-build-config.json
-
-outputs/
+# Secrets
+secrets.h

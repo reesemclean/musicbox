@@ -10,56 +10,22 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        
-        # Common dependencies for both server and player
-        commonDeps = with pkgs; [
-          nodejs_22
-          nodePackages.typescript
-          nodePackages.typescript-language-server
-        ];
-        
-        # Python with ytmusicapi
-        pythonWithPackages = pkgs.python311.withPackages (ps: with ps; [
-          ytmusicapi
-        ]);
-
-        # Server-specific dependencies
-        serverDeps = with pkgs; [
-          pythonWithPackages
-          yt-dlp
-          ffmpeg
-          sqlite
-        ];
-        
-        # Player-specific dependencies
-        playerDeps = with pkgs; [
-          mpv       # Audio playback with IPC control
-        ];
-
-        # Go player dependencies
-        goDeps = with pkgs; [
-          go
-          golangci-lint
-        ];
-        
       in {
-        # Development shells
-        devShells = {
-          # Default: Everything for full-stack development
-          default = pkgs.mkShell {
-            buildInputs = commonDeps ++ serverDeps ++ playerDeps ++ goDeps;
-            
-            shellHook = ''
-              echo "🎵 MusicBox Development Environment"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "Node: $(node --version)"
-              echo "Python: $(python3 --version)"
-              echo ""
-              echo "Commands:"
-              echo "  npm run dev:server    # Start server"
-              echo "  npm run dev:player    # Start player"
-            '';
-          };
+        devShells.default = pkgs.mkShell {
+          buildInputs = with pkgs; [
+            # ESP32 Development
+            platformio-core
+          ];
+
+          shellHook = ''
+            echo "MusicBox Development Environment"
+            echo "================================="
+            echo ""
+            echo "ESP32 Development:"
+            echo "  pio run          # Build firmware"
+            echo "  pio run -t upload # Upload to device"
+            echo "  pio device monitor # Serial monitor"
+          '';
         };
       }
     );
