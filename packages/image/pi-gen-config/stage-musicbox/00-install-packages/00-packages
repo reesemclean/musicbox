@@ -1,6 +1,0 @@
-curl
-jq
-mpv
-alsa-utils
-i2c-tools
-gpiod
