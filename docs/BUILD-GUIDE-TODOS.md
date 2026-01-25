@@ -9,8 +9,8 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 ## Phase 2: Audio Output
 
-- [ ] **Step 2.1**: MAX98357A Wiring
-- [ ] **Step 2.2**: I2S Audio Test
+- [x] **Step 2.1**: MAX98357A Wiring
+- [x] **Step 2.2**: I2S Audio Test
 - [ ] **Step 2.3**: MP3 Playback Test
 
 ## Phase 3: NFC Reader
