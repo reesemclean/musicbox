@@ -22,9 +22,9 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 ## Phase 4: Button Input
 
-- [ ] **Step 4.1**: Button Wiring
-- [ ] **Step 4.2**: Button Input Test
-- [ ] **Step 4.3**: Long Press Detection
+- [x] **Step 4.1**: Button Wiring
+- [x] **Step 4.2**: Button Input Test
+- [x] **Step 4.3**: Long Press Detection
 
 ## Phase 5: SD Card Storage
 

@@ -1,84 +1,68 @@
 #include <Arduino.h>
-#include <Wire.h>
-#include <Adafruit_PN532.h>
+#include <Button2.h>
 
-// I2C pins for PN532
-#define I2C_SDA 8
-#define I2C_SCL 9
+// Button pins
+#define BTN_PLAY   10
+#define BTN_VOL_UP 11
+#define BTN_VOL_DN 12
+#define BTN_NEXT   13
+#define BTN_PREV   14
 
-#define DEBOUNCE_MS 2000
+Button2 btnPlay, btnVolUp, btnVolDn, btnNext, btnPrev;
 
-Adafruit_PN532 nfc(I2C_SDA, I2C_SCL);
-
-// Debounce state
-static uint8_t last_uid[7];
-static uint8_t last_uid_len = 0;
-static unsigned long last_read_time = 0;
-
-static bool is_same_card(uint8_t *uid, uint8_t len) {
-    if (len != last_uid_len) return false;
-    for (int i = 0; i < len; i++) {
-        if (uid[i] != last_uid[i]) return false;
-    }
-    return true;
+void onPlayClick(Button2 &btn) {
+    Serial.println("Play/Pause: click");
 }
 
-static void save_card(uint8_t *uid, uint8_t len) {
-    last_uid_len = len;
-    for (int i = 0; i < len; i++) {
-        last_uid[i] = uid[i];
-    }
-    last_read_time = millis();
+void onPlayLongPress(Button2 &btn) {
+    Serial.println("Play/Pause: LONG PRESS");
+}
+
+void onVolUpClick(Button2 &btn) {
+    Serial.println("Volume Up: click");
+}
+
+void onVolDnClick(Button2 &btn) {
+    Serial.println("Volume Down: click");
+}
+
+void onNextClick(Button2 &btn) {
+    Serial.println("Next: click");
+}
+
+void onPrevClick(Button2 &btn) {
+    Serial.println("Prev: click");
 }
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
     Serial.println("MusicBox ESP32 Starting...");
+    Serial.println("Button test - press any button");
 
-    // PSRAM check
-    if (psramFound()) {
-        Serial.printf("PSRAM: %d bytes\n", ESP.getPsramSize());
-    } else {
-        Serial.println("PSRAM: Not found");
-    }
+    // Initialize buttons (active low with internal pull-up)
+    btnPlay.begin(BTN_PLAY, INPUT_PULLUP, true);
+    btnVolUp.begin(BTN_VOL_UP, INPUT_PULLUP, true);
+    btnVolDn.begin(BTN_VOL_DN, INPUT_PULLUP, true);
+    btnNext.begin(BTN_NEXT, INPUT_PULLUP, true);
+    btnPrev.begin(BTN_PREV, INPUT_PULLUP, true);
 
-    // Initialize PN532
-    Serial.println("Initializing PN532...");
-    nfc.begin();
+    // Play button: click and long press (3 seconds, triggers immediately)
+    btnPlay.setClickHandler(onPlayClick);
+    btnPlay.setLongClickTime(3000);
+    btnPlay.setLongClickDetectedHandler(onPlayLongPress);
 
-    uint32_t versiondata = nfc.getFirmwareVersion();
-    if (!versiondata) {
-        Serial.println("PN532 not found - check wiring and I2C mode");
-        return;
-    }
-
-    Serial.printf("Found PN532 - Firmware v%d.%d\n",
-        (versiondata >> 8) & 0xFF,
-        versiondata & 0xFF);
-
-    // Configure for ISO14443A (NFC Type A cards)
-    nfc.SAMConfig();
-    Serial.println("Waiting for NFC card...");
+    // Other buttons: click only
+    btnVolUp.setClickHandler(onVolUpClick);
+    btnVolDn.setClickHandler(onVolDnClick);
+    btnNext.setClickHandler(onNextClick);
+    btnPrev.setClickHandler(onPrevClick);
 }
 
 void loop() {
-    uint8_t uid[7];
-    uint8_t uidLength;
-
-    if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 100)) {
-        // Check debounce: ignore same card within window
-        if (is_same_card(uid, uidLength) && (millis() - last_read_time < DEBOUNCE_MS)) {
-            return;
-        }
-
-        // New card or debounce expired
-        save_card(uid, uidLength);
-
-        Serial.print("Card detected - UID: ");
-        for (int i = 0; i < uidLength; i++) {
-            Serial.printf("%02X", uid[i]);
-        }
-        Serial.println();
-    }
+    btnPlay.loop();
+    btnVolUp.loop();
+    btnVolDn.loop();
+    btnNext.loop();
+    btnPrev.loop();
 }
