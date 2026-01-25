@@ -28,9 +28,9 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 ## Phase 5: SD Card Storage
 
-- [ ] **Step 5.1**: SD Card Module Wiring
-- [ ] **Step 5.2**: SD Card Mount Test
-- [ ] **Step 5.3**: SD Card Read/Write Test
+- [x] **Step 5.1**: SD Card Module Wiring
+- [x] **Step 5.2**: SD Card Mount Test
+- [x] **Step 5.3**: SD Card Read/Write Test
 
 ## Phase 6: WiFi Connectivity
 
