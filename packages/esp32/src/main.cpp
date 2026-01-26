@@ -1,114 +1,159 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
+#include <Adafruit_PN532.h>
+#include <Button2.h>
+#include "Audio.h"
+#include "secrets.h"
 
-// SD Card SPI pins
+// Pin definitions
+#define I2S_BCLK 4
+#define I2S_LRC  5
+#define I2S_DOUT 6
+
+#define I2C_SDA 8
+#define I2C_SCL 9
+
+#define BTN_PLAY   10
+#define BTN_VOL_UP 11
+#define BTN_VOL_DN 12
+#define BTN_NEXT   13
+#define BTN_PREV   14
+
 #define SD_CLK  38
 #define SD_MOSI 39
 #define SD_MISO 40
 #define SD_CS   41
 
+// Objects
+Adafruit_PN532 nfc(I2C_SDA, I2C_SCL);
+Audio audio;
+Button2 btnPlay, btnVolUp, btnVolDn, btnNext, btnPrev;
+
+// State
+bool nfc_ok = false;
+
+// Button handlers
+void onPlayClick(Button2 &btn) {
+    Serial.println("Play/Pause: click");
+}
+
+void onPlayLongPress(Button2 &btn) {
+    Serial.println("Play/Pause: LONG PRESS");
+}
+
+void onVolUpClick(Button2 &btn) {
+    Serial.println("Volume Up: click");
+}
+
+void onVolDnClick(Button2 &btn) {
+    Serial.println("Volume Down: click");
+}
+
+void onNextClick(Button2 &btn) {
+    Serial.println("Next: click");
+}
+
+void onPrevClick(Button2 &btn) {
+    Serial.println("Prev: click");
+}
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    Serial.println("MusicBox ESP32 Starting...");
+    Serial.println("\n========== COMPONENT TEST ==========\n");
 
-    // Initialize SPI with custom pins
+    // PSRAM
+    Serial.print("PSRAM: ");
+    if (psramFound()) {
+        Serial.printf("OK (%d bytes)\n", ESP.getPsramSize());
+    } else {
+        Serial.println("NOT FOUND");
+    }
+
+    // WiFi
+    Serial.print("WiFi: ");
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    for (int i = 0; i < 20 && WiFi.status() != WL_CONNECTED; i++) {
+        delay(500);
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("OK (IP: %s)\n", WiFi.localIP().toString().c_str());
+    } else {
+        Serial.println("FAILED");
+    }
+
+    // SD Card
+    Serial.print("SD Card: ");
     SPI.begin(SD_CLK, SD_MISO, SD_MOSI, SD_CS);
-
-    // Initialize SD card
-    Serial.println("Initializing SD card...");
-    if (!SD.begin(SD_CS)) {
-        Serial.println("SD card mount failed!");
-        return;
+    if (SD.begin(SD_CS)) {
+        Serial.printf("OK (%llu MB)\n", SD.cardSize() / (1024 * 1024));
+    } else {
+        Serial.println("NOT FOUND");
     }
 
-    // Card info
-    uint8_t cardType = SD.cardType();
-    if (cardType == CARD_NONE) {
-        Serial.println("No SD card attached");
-        return;
+    // NFC
+    Serial.print("NFC: ");
+    nfc.begin();
+    uint32_t ver = nfc.getFirmwareVersion();
+    if (ver) {
+        nfc_ok = true;
+        nfc.SAMConfig();
+        Serial.printf("OK (v%d.%d)\n", (ver >> 8) & 0xFF, ver & 0xFF);
+    } else {
+        Serial.println("NOT FOUND");
     }
 
-    Serial.print("SD Card Type: ");
-    if (cardType == CARD_MMC) Serial.println("MMC");
-    else if (cardType == CARD_SD) Serial.println("SDSC");
-    else if (cardType == CARD_SDHC) Serial.println("SDHC");
-    else Serial.println("UNKNOWN");
+    // Audio
+    Serial.print("Audio: ");
+    audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+    audio.setVolume(5);
+    Serial.println("OK");
 
-    uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-    uint64_t totalBytes = SD.totalBytes() / (1024 * 1024);
-    uint64_t usedBytes = SD.usedBytes() / (1024 * 1024);
+    // Buttons
+    Serial.print("Buttons: ");
+    btnPlay.begin(BTN_PLAY, INPUT_PULLUP, true);
+    btnVolUp.begin(BTN_VOL_UP, INPUT_PULLUP, true);
+    btnVolDn.begin(BTN_VOL_DN, INPUT_PULLUP, true);
+    btnNext.begin(BTN_NEXT, INPUT_PULLUP, true);
+    btnPrev.begin(BTN_PREV, INPUT_PULLUP, true);
 
-    Serial.printf("Card Size: %llu MB\n", cardSize);
-    Serial.printf("Total Space: %llu MB\n", totalBytes);
-    Serial.printf("Used Space: %llu MB\n", usedBytes);
+    btnPlay.setClickHandler(onPlayClick);
+    btnPlay.setLongClickTime(3000);
+    btnPlay.setLongClickDetectedHandler(onPlayLongPress);
+    btnVolUp.setClickHandler(onVolUpClick);
+    btnVolDn.setClickHandler(onVolDnClick);
+    btnNext.setClickHandler(onNextClick);
+    btnPrev.setClickHandler(onPrevClick);
+    Serial.println("OK");
 
-    // List root directory
-    Serial.println("\nRoot directory:");
-    File root = SD.open("/");
-    File file = root.openNextFile();
-    while (file) {
-        Serial.printf("  %s (%d bytes)\n", file.name(), file.size());
-        file = root.openNextFile();
-    }
-
-    Serial.println("\nSD card ready!");
-
-    // Read/write test
-    Serial.println("\nRunning read/write test...");
-
-    const char *testFile = "/test_rw.bin";
-    const size_t testSize = 1024 * 1024;  // 1MB
-
-    // Write test
-    File f = SD.open(testFile, FILE_WRITE);
-    if (!f) {
-        Serial.println("Failed to open file for writing");
-        return;
-    }
-
-    uint8_t buf[512];
-    unsigned long startWrite = millis();
-    for (size_t i = 0; i < testSize; i += sizeof(buf)) {
-        for (size_t j = 0; j < sizeof(buf); j++) {
-            buf[j] = (uint8_t)((i + j) & 0xFF);
-        }
-        f.write(buf, sizeof(buf));
-    }
-    f.close();
-    unsigned long writeTime = millis() - startWrite;
-    Serial.printf("Write: %d KB in %lu ms (%.1f KB/s)\n",
-        testSize / 1024, writeTime, (float)testSize / writeTime);
-
-    // Read and verify test
-    f = SD.open(testFile, FILE_READ);
-    if (!f) {
-        Serial.println("Failed to open file for reading");
-        return;
-    }
-
-    bool passed = true;
-    unsigned long startRead = millis();
-    for (size_t i = 0; i < testSize && passed; i += sizeof(buf)) {
-        f.read(buf, sizeof(buf));
-        for (size_t j = 0; j < sizeof(buf) && passed; j++) {
-            if (buf[j] != (uint8_t)((i + j) & 0xFF)) {
-                passed = false;
-            }
-        }
-    }
-    f.close();
-    unsigned long readTime = millis() - startRead;
-    Serial.printf("Read: %d KB in %lu ms (%.1f KB/s)\n",
-        testSize / 1024, readTime, (float)testSize / readTime);
-
-    // Cleanup
-    SD.remove(testFile);
-
-    Serial.printf("SD card test: %s\n", passed ? "PASSED" : "FAILED");
+    Serial.println("\n========== TEST COMPLETE ==========");
+    Serial.println("Press buttons or tap NFC card\n");
 }
 
 void loop() {
-    delay(1000);
+    audio.loop();
+
+    btnPlay.loop();
+    btnVolUp.loop();
+    btnVolDn.loop();
+    btnNext.loop();
+    btnPrev.loop();
+
+    // NFC check (less frequent to not block buttons)
+    static unsigned long lastNfc = 0;
+    if (nfc_ok && millis() - lastNfc > 300) {
+        lastNfc = millis();
+        uint8_t uid[7];
+        uint8_t uidLen;
+        if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 50)) {
+            Serial.print("NFC Card: ");
+            for (int i = 0; i < uidLen; i++) Serial.printf("%02X", uid[i]);
+            Serial.println();
+            delay(500);
+        }
+    }
 }
