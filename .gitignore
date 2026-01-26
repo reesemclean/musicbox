@@ -4,6 +4,7 @@
 .piolibdeps/
 compile_commands.json
 data/
+.cache/
 
 # Nix/direnv
 .direnv/
