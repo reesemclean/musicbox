@@ -40,7 +40,7 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 ## Phase 7: API Service Foundation
 
-- [ ] **Step 7.1**: Hono Project Bootstrap
+- [x] **Step 7.1**: Hono Project Bootstrap
 - [ ] **Step 7.2**: Database Setup
 - [ ] **Step 7.3**: WebSocket Server
 - [ ] **Step 7.4**: Songs Table & Streaming
