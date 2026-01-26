@@ -36,7 +36,7 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 - [x] **Step 6.1**: WiFi Connection
 - [x] **Step 6.2**: HTTP Client Test
-- [ ] **Step 6.3**: WiFi Reconnection
+- [x] **Step 6.3**: WiFi Reconnection
 
 ## Phase 7: API Service Foundation
 
