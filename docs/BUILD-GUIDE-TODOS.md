@@ -42,7 +42,7 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 - [x] **Step 7.1**: Hono Project Bootstrap
 - [x] **Step 7.2**: Database Setup
-- [ ] **Step 7.3**: WebSocket Server
+- [x] **Step 7.3**: WebSocket Server
 - [ ] **Step 7.4**: Songs Table & Streaming
 - [ ] **Step 7.5**: Cards Table & Mapping
 - [ ] **Step 7.6**: Playlists Tables
