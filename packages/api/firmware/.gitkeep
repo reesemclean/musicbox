@@ -1,0 +1,6 @@
+# Firmware files go here
+# - firmware.bin: The compiled ESP32 firmware binary
+# - manifest.json: {"version": "X.Y.Z"}
+#
+# These files are typically copied here during CI/CD build process
+# from the packages/esp32 PlatformIO build output.

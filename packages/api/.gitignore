@@ -32,3 +32,7 @@ lerna-debug.log*
 
 # media files
 data/
+
+# firmware (built artifacts, copied from esp32 package during deploy)
+firmware/*.bin
+firmware/*.json
