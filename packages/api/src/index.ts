@@ -5,6 +5,7 @@ import { logger } from 'hono/logger'
 import { cors } from 'hono/cors'
 import { WebSocketServer } from 'ws'
 import { mediaRoutes } from './routes/media.js'
+import { playlistRoutes } from './routes/playlists.js'
 
 const app = new Hono()
 
@@ -16,14 +17,23 @@ app.get('/health', (c) => {
 })
 
 app.route('/api/media', mediaRoutes)
+app.route('/api/playlists', playlistRoutes)
 
 // Create raw HTTP server for WebSocket support
 const server = createServer(async (req, res) => {
+  // Collect request body
+  const chunks: Buffer[] = []
+  for await (const chunk of req) {
+    chunks.push(chunk)
+  }
+  const body = Buffer.concat(chunks)
+
   // Let Hono handle HTTP requests
   const response = await app.fetch(
     new Request(`http://localhost${req.url}`, {
       method: req.method,
       headers: req.headers as HeadersInit,
+      body: ['GET', 'HEAD'].includes(req.method || '') ? undefined : body,
     })
   )
 

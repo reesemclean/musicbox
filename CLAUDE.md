@@ -57,3 +57,10 @@ Songs, podcasts, and sound machine sounds are stored in a single `media` table w
 - If file already gone, still remove DB entry
 - Upload failures: cleanup partial files
 - System files (sound machine): prevent deletion via API
+
+### Podcast Management (Future)
+When implementing podcast support:
+- Add `podcastFeeds` table (name, feedUrl, imageUrl, retentionCount, lastFetchedAt)
+- Add `podcastEpisodeFeeds` linking table (mediaId → feedId) to keep `media` table generic
+- Retention policy: auto-delete oldest episodes beyond retentionCount
+- Dynamic playlist items: support "newest from feed X" references (feedId + position instead of mediaId)

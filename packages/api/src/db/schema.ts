@@ -12,6 +12,19 @@ export const media = sqliteTable('media', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 
+export const playlists = sqliteTable('playlists', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+})
+
+export const playlistMedia = sqliteTable('playlist_media', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  playlistId: integer('playlist_id').notNull().references(() => playlists.id, { onDelete: 'cascade' }),
+  mediaId: integer('media_id').notNull().references(() => media.id, { onDelete: 'cascade' }),
+  position: integer('position').notNull(),
+})
+
 export const devices = sqliteTable('devices', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   mac: text('mac').notNull().unique(),
