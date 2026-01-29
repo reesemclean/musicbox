@@ -10,6 +10,11 @@ When working on this project, read the following files into context:
 ## Project Structure
 
 - `packages/esp32/` - ESP32 PlatformIO project for the hardware player
+- `packages/api/` - Hono API server with SQLite database
+
+## Control Plane Design
+
+When building the Control Plane (web UI), use the design from the existing prototype as reference. Add specific design details here as we get to Phase 8.
 
 ## Development Workflow
 
