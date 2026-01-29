@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws'
 import { mediaRoutes } from './routes/media.js'
 import { playlistRoutes } from './routes/playlists.js'
 import { cardRoutes } from './routes/cards.js'
+import { firmwareRoutes } from './routes/firmware.js'
 
 const app = new Hono()
 
@@ -20,6 +21,7 @@ app.get('/health', (c) => {
 app.route('/api/media', mediaRoutes)
 app.route('/api/playlists', playlistRoutes)
 app.route('/api/cards', cardRoutes)
+app.route('/api/firmware', firmwareRoutes)
 
 // Create raw HTTP server for WebSocket support
 const server = createServer(async (req, res) => {

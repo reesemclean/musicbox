@@ -49,6 +49,15 @@ export const cards = sqliteTable('cards', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 
+export const firmware = sqliteTable('firmware', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  version: text('version').notNull().unique(), // semver, e.g. "1.0.0"
+  sha256: text('sha256').notNull(),
+  fileData: blob('file_data', { mode: 'buffer' }).notNull(),
+  fileSize: integer('file_size').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+})
+
 export const devices = sqliteTable('devices', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   mac: text('mac').notNull().unique(),
