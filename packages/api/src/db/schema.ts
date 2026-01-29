@@ -12,6 +12,14 @@ export const media = sqliteTable('media', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 
+export const podcastFeeds = sqliteTable('podcast_feeds', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  feedUrl: text('feed_url').notNull().unique(),
+  imageUrl: text('image_url'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+})
+
 export const playlists = sqliteTable('playlists', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
@@ -23,6 +31,22 @@ export const playlistMedia = sqliteTable('playlist_media', {
   playlistId: integer('playlist_id').notNull().references(() => playlists.id, { onDelete: 'cascade' }),
   mediaId: integer('media_id').notNull().references(() => media.id, { onDelete: 'cascade' }),
   position: integer('position').notNull(),
+})
+
+export const cards = sqliteTable('cards', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  uid: text('uid').notNull().unique(), // NFC card UID (hex string)
+  name: text('name'), // friendly name
+
+  // Content - only one should be set
+  mediaId: integer('media_id').references(() => media.id, { onDelete: 'set null' }),
+  playlistId: integer('playlist_id').references(() => playlists.id, { onDelete: 'set null' }),
+  podcastFeedId: integer('podcast_feed_id').references(() => podcastFeeds.id, { onDelete: 'set null' }),
+
+  // Playback settings
+  volume: integer('volume'), // 0-21, null = use current volume
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 
 export const devices = sqliteTable('devices', {

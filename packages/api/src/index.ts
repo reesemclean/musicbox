@@ -6,6 +6,7 @@ import { cors } from 'hono/cors'
 import { WebSocketServer } from 'ws'
 import { mediaRoutes } from './routes/media.js'
 import { playlistRoutes } from './routes/playlists.js'
+import { cardRoutes } from './routes/cards.js'
 
 const app = new Hono()
 
@@ -18,6 +19,7 @@ app.get('/health', (c) => {
 
 app.route('/api/media', mediaRoutes)
 app.route('/api/playlists', playlistRoutes)
+app.route('/api/cards', cardRoutes)
 
 // Create raw HTTP server for WebSocket support
 const server = createServer(async (req, res) => {
