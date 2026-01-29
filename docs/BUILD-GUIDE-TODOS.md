@@ -50,7 +50,7 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 ## Phase 8: Control Plane Foundation
 
-- [ ] **Step 8.1**: TanStack Start Project Bootstrap
+- [x] **Step 8.1**: TanStack Start Project Bootstrap
 - [ ] **Step 8.2**: API Client Setup
 - [ ] **Step 8.3**: Songs Library Page
 - [ ] **Step 8.4**: Song Upload
