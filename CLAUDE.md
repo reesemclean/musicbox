@@ -25,3 +25,35 @@ When building the Control Plane (web UI), use the design from the existing proto
 ## Code Style
 
 - Write C-style C++ as much as possible (prefer C idioms, simple structs, functions over classes)
+
+## Media Storage Design
+
+### Unified Media Table
+Songs, podcasts, and sound machine sounds are stored in a single `media` table with a `type` discriminator. Type-specific metadata (artist, album, podcast show name, etc.) stored in JSON `metadata` field.
+
+### File Storage
+- Files stored on disk, not in database (keeps DB lean, handles large podcast files)
+- File path stored in DB `filePath` column
+- Directory structure:
+  ```
+  data/
+    songs/<uuid>.mp3
+    podcasts/<uuid>.mp3
+    soundmachine/<name>.mp3  (pre-bundled)
+  ```
+
+### Sound Machine Sounds
+- Pre-bundled in `data/soundmachine/`
+- Seeded into DB on first run
+- Marked with `system: true` in metadata to prevent deletion
+
+### Missing File Handling
+- Check file exists before streaming
+- Return 404 with clear error if file missing
+- Optional: health check endpoint to scan for orphaned DB entries
+
+### File Cleanup on Delete
+- Delete file first, then DB entry
+- If file already gone, still remove DB entry
+- Upload failures: cleanup partial files
+- System files (sound machine): prevent deletion via API

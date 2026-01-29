@@ -29,3 +29,6 @@ lerna-debug.log*
 
 # database
 *.db
+
+# media files
+data/

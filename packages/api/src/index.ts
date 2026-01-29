@@ -1,8 +1,10 @@
 import { createServer } from 'node:http'
+import { Readable } from 'node:stream'
 import { Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { cors } from 'hono/cors'
 import { WebSocketServer } from 'ws'
+import { mediaRoutes } from './routes/media.js'
 
 const app = new Hono()
 
@@ -12,6 +14,8 @@ app.use('*', cors())
 app.get('/health', (c) => {
   return c.json({ status: 'ok' })
 })
+
+app.route('/api/media', mediaRoutes)
 
 // Create raw HTTP server for WebSocket support
 const server = createServer(async (req, res) => {
@@ -28,8 +32,22 @@ const server = createServer(async (req, res) => {
     res.setHeader(key, value)
   })
 
-  const body = await response.arrayBuffer()
-  res.end(Buffer.from(body))
+  // Handle streaming responses
+  if (response.body) {
+    const reader = response.body.getReader()
+    const push = async () => {
+      const { done, value } = await reader.read()
+      if (done) {
+        res.end()
+        return
+      }
+      res.write(value)
+      await push()
+    }
+    await push()
+  } else {
+    res.end()
+  }
 })
 
 // WebSocket server on /ws/device path
