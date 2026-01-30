@@ -1,13 +1,27 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Music, Search, Upload, Loader2, Pencil, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type Media } from '@/lib/api-client'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
+const songsQueryOptions = queryOptions({
+  queryKey: ['media', 'songs'],
+  queryFn: async () => {
+    const { data, error } = await api.GET('/api/media', {
+      params: { query: { type: 'song' } },
+    })
+    if (error) throw new Error('Failed to load songs')
+    return data
+  },
+})
+
 export const Route = createFileRoute('/_library/')({
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(songsQueryOptions)
+  },
   component: SongsLibraryPage,
 })
 
@@ -18,16 +32,7 @@ function SongsLibraryPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
 
-  const { data: songs, isLoading, error } = useQuery({
-    queryKey: ['media', 'songs'],
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/media', {
-        params: { query: { type: 'song' } },
-      })
-      if (error) throw new Error('Failed to load songs')
-      return data
-    },
-  })
+  const { data: songs } = useSuspenseQuery(songsQueryOptions)
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -116,23 +121,11 @@ function SongsLibraryPage() {
         </div>
       </div>
 
-      {isLoading && (
-        <div className="text-center py-12 text-muted-foreground">
-          Loading songs...
-        </div>
-      )}
-
-      {error && (
-        <div className="text-center py-12 text-destructive">
-          Error: {error instanceof Error ? error.message : 'Failed to load'}
-        </div>
-      )}
-
-      {songs && songs.length === 0 && !isLoading && (
+      {songs.length === 0 && (
         <EmptyState onUpload={() => fileInputRef.current?.click()} />
       )}
 
-      {filteredSongs && filteredSongs.length > 0 && (
+      {filteredSongs.length > 0 && (
         <SongsTable
           songs={filteredSongs}
           onEdit={setEditingSong}
@@ -140,7 +133,7 @@ function SongsLibraryPage() {
         />
       )}
 
-      {songs && songs.length > 0 && filteredSongs?.length === 0 && (
+      {songs.length > 0 && filteredSongs.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
           No songs match your search.
         </div>

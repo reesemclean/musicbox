@@ -1,13 +1,25 @@
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ListMusic, Plus, Trash2, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type Playlist } from '@/lib/api-client'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
+export const playlistsQueryOptions = queryOptions({
+  queryKey: ['playlists'],
+  queryFn: async () => {
+    const { data, error } = await api.GET('/api/playlists')
+    if (error) throw new Error('Failed to load playlists')
+    return data
+  },
+})
+
 export const Route = createFileRoute('/_library/playlists')({
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(playlistsQueryOptions)
+  },
   component: PlaylistsPage,
 })
 
@@ -15,14 +27,7 @@ function PlaylistsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [deletingPlaylist, setDeletingPlaylist] = useState<Playlist | null>(null)
 
-  const { data: playlists, isLoading, error } = useQuery({
-    queryKey: ['playlists'],
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/playlists')
-      if (error) throw new Error('Failed to load playlists')
-      return data
-    },
-  })
+  const { data: playlists } = useSuspenseQuery(playlistsQueryOptions)
 
   return (
     <div>
@@ -34,23 +39,11 @@ function PlaylistsPage() {
         </Button>
       </div>
 
-      {isLoading && (
-        <div className="text-center py-12 text-muted-foreground">
-          Loading playlists...
-        </div>
-      )}
-
-      {error && (
-        <div className="text-center py-12 text-destructive">
-          Error: {error instanceof Error ? error.message : 'Failed to load'}
-        </div>
-      )}
-
-      {playlists && playlists.length === 0 && !isLoading && (
+      {playlists.length === 0 && (
         <EmptyState onCreate={() => setShowCreate(true)} />
       )}
 
-      {playlists && playlists.length > 0 && (
+      {playlists.length > 0 && (
         <PlaylistsTable playlists={playlists} onDelete={setDeletingPlaylist} />
       )}
 
