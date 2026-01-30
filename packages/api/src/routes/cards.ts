@@ -224,6 +224,12 @@ cardRoutes.post(
   describeRoute({
     tags: ['Cards'],
     summary: 'Create card',
+    requestBody: {
+      required: true,
+      content: {
+        'application/json': { schema: resolver(createCardSchema) },
+      },
+    },
     responses: {
       201: {
         description: 'Created card',

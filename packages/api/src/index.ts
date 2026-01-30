@@ -62,34 +62,62 @@ const server = createServer(async (req, res) => {
   }
 })
 
-// WebSocket server on /ws/device path
-const wss = new WebSocketServer({ noServer: true })
+// WebSocket servers for devices and control plane
+const deviceWss = new WebSocketServer({ noServer: true })
+const controlWss = new WebSocketServer({ noServer: true })
 
-wss.on('connection', (ws) => {
-  console.log('[WS] Client connected')
+// Device WebSocket - receives events from ESP32 devices
+deviceWss.on('connection', (ws) => {
+  console.log('[WS:Device] Client connected')
 
   ws.on('message', (data) => {
     const message = data.toString()
-    console.log('[WS] Received:', message)
+    console.log('[WS:Device] Received:', message)
 
-    // Echo back for testing
-    ws.send(`echo: ${message}`)
+    try {
+      const event = JSON.parse(message)
+
+      // Forward card_scanned events to all control plane clients
+      if (event.type === 'card_scanned') {
+        const payload = JSON.stringify({
+          type: 'card_scanned',
+          uid: event.uid,
+          timestamp: Date.now(),
+        })
+        controlWss.clients.forEach((client) => {
+          if (client.readyState === 1) { // WebSocket.OPEN
+            client.send(payload)
+          }
+        })
+      }
+    } catch {
+      console.log('[WS:Device] Non-JSON message:', message)
+    }
   })
 
   ws.on('close', () => {
-    console.log('[WS] Client disconnected')
+    console.log('[WS:Device] Client disconnected')
   })
+})
 
-  ws.on('error', (err) => {
-    console.error('[WS] Error:', err)
+// Control plane WebSocket - sends events to web UI
+controlWss.on('connection', (ws) => {
+  console.log('[WS:Control] Client connected')
+
+  ws.on('close', () => {
+    console.log('[WS:Control] Client disconnected')
   })
 })
 
 // Handle WebSocket upgrade requests
 server.on('upgrade', (req, socket, head) => {
   if (req.url === '/ws/device') {
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req)
+    deviceWss.handleUpgrade(req, socket, head, (ws) => {
+      deviceWss.emit('connection', ws, req)
+    })
+  } else if (req.url === '/ws/control') {
+    controlWss.handleUpgrade(req, socket, head, (ws) => {
+      controlWss.emit('connection', ws, req)
     })
   } else {
     socket.destroy()
@@ -99,5 +127,6 @@ server.on('upgrade', (req, socket, head) => {
 const PORT = 3001
 server.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`)
-  console.log(`WebSocket available at ws://localhost:${PORT}/ws/device`)
+  console.log(`Device WebSocket: ws://localhost:${PORT}/ws/device`)
+  console.log(`Control WebSocket: ws://localhost:${PORT}/ws/control`)
 })

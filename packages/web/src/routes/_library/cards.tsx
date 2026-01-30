@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { queryOptions, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CreditCard, Music, ListMusic, Mic, Trash2, Loader2, X } from 'lucide-react'
+import { queryOptions, useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { CreditCard, Music, ListMusic, Mic, Trash2, Loader2, X, Plus, Wifi } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 type Card = {
   id: number
@@ -17,11 +18,43 @@ type Card = {
   createdAt: string
 }
 
+type Media = {
+  id: number
+  type: 'song' | 'podcast' | 'soundmachine'
+  title: string
+  metadata: unknown
+}
+
+type Playlist = {
+  id: number
+  name: string
+}
+
 const cardsQueryOptions = queryOptions({
   queryKey: ['cards'],
   queryFn: async () => {
     const { data, error } = await api.GET('/api/cards')
     if (error) throw new Error('Failed to load cards')
+    return data
+  },
+})
+
+const songsQueryOptions = queryOptions({
+  queryKey: ['media', 'songs'],
+  queryFn: async () => {
+    const { data, error } = await api.GET('/api/media', {
+      params: { query: { type: 'song' } },
+    })
+    if (error) throw new Error('Failed to load songs')
+    return data
+  },
+})
+
+const playlistsQueryOptions = queryOptions({
+  queryKey: ['playlists'],
+  queryFn: async () => {
+    const { data, error } = await api.GET('/api/playlists')
+    if (error) throw new Error('Failed to load playlists')
     return data
   },
 })
@@ -35,6 +68,7 @@ export const Route = createFileRoute('/_library/cards')({
 
 function CardsPage() {
   const [deletingCard, setDeletingCard] = useState<Card | null>(null)
+  const [showRegister, setShowRegister] = useState(false)
 
   const { data: cards } = useSuspenseQuery(cardsQueryOptions)
 
@@ -42,10 +76,14 @@ function CardsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Cards</h1>
+        <Button onClick={() => setShowRegister(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Register Card
+        </Button>
       </div>
 
       {cards.length === 0 ? (
-        <EmptyState />
+        <EmptyState onRegister={() => setShowRegister(true)} />
       ) : (
         <CardsTable cards={cards as Card[]} onDelete={setDeletingCard} />
       )}
@@ -56,18 +94,26 @@ function CardsPage() {
           onClose={() => setDeletingCard(null)}
         />
       )}
+
+      {showRegister && (
+        <RegisterCardDialog onClose={() => setShowRegister(false)} />
+      )}
     </div>
   )
 }
 
-function EmptyState() {
+function EmptyState({ onRegister }: { onRegister: () => void }) {
   return (
     <div className="text-center py-12">
       <CreditCard className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
       <h2 className="text-lg font-semibold mb-2">No cards registered</h2>
-      <p className="text-muted-foreground">
-        Scan an NFC card on your device to register it.
+      <p className="text-muted-foreground mb-4">
+        Register an NFC card to link it with your music.
       </p>
+      <Button onClick={onRegister}>
+        <Plus className="h-4 w-4 mr-2" />
+        Register Card
+      </Button>
     </div>
   )
 }
@@ -150,6 +196,299 @@ function CardRow({
         </Button>
       </td>
     </tr>
+  )
+}
+
+type RegistrationStep = 'waiting' | 'configure'
+
+function RegisterCardDialog({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState<RegistrationStep>('waiting')
+  const [scannedUid, setScannedUid] = useState<string | null>(null)
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  const wsRef = useRef<WebSocket | null>(null)
+  const queryClient = useQueryClient()
+
+  // Fetch songs and playlists for the configure step (non-suspense to avoid flash)
+  const { data: songs = [], isLoading: songsLoading } = useQuery(songsQueryOptions)
+  const { data: playlists = [], isLoading: playlistsLoading } = useQuery(playlistsQueryOptions)
+  const isLoading = songsLoading || playlistsLoading
+
+  // Connect to WebSocket for card scan events with auto-reconnect
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws/control'
+    let reconnectTimeout: ReturnType<typeof setTimeout>
+    let mounted = true
+    let ws: WebSocket | null = null
+
+    const connect = () => {
+      if (!mounted) return
+
+      ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        if (mounted) setWsStatus('connected')
+      }
+
+      ws.onmessage = (event) => {
+        if (!mounted) return
+        try {
+          const data = JSON.parse(event.data)
+          if (data.type === 'card_scanned' && data.uid) {
+            setScannedUid(data.uid)
+            setStep('configure')
+          }
+        } catch {
+          // Ignore non-JSON messages
+        }
+      }
+
+      ws.onclose = () => {
+        if (mounted) {
+          setWsStatus('disconnected')
+          reconnectTimeout = setTimeout(connect, 1000)
+        }
+      }
+
+      ws.onerror = () => {
+        ws?.close()
+      }
+    }
+
+    connect()
+
+    return () => {
+      mounted = false
+      clearTimeout(reconnectTimeout)
+      if (ws) {
+        ws.onclose = null // Prevent reconnect on intentional close
+        ws.close()
+      }
+    }
+  }, [])
+
+  // Simulate card scan for testing
+  const simulateScan = () => {
+    const fakeUid = `SIM${Date.now().toString(16).toUpperCase()}`
+    setScannedUid(fakeUid)
+    setStep('configure')
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-background border border-border rounded-lg p-6 w-full max-w-lg">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Register Card</h2>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {step === 'waiting' && (
+          <WaitingForScan
+            wsStatus={wsStatus}
+            onSimulate={simulateScan}
+            onClose={onClose}
+          />
+        )}
+
+        {step === 'configure' && scannedUid && (
+          <ConfigureCard
+            uid={scannedUid}
+            songs={songs as Media[]}
+            playlists={playlists as Playlist[]}
+            isLoading={isLoading}
+            onSuccess={() => {
+              queryClient.invalidateQueries({ queryKey: ['cards'] })
+              onClose()
+            }}
+            onBack={() => {
+              setStep('waiting')
+              setScannedUid(null)
+            }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function WaitingForScan({
+  wsStatus,
+  onSimulate,
+  onClose,
+}: {
+  wsStatus: 'connecting' | 'connected' | 'disconnected'
+  onSimulate: () => void
+  onClose: () => void
+}) {
+  const statusColor = wsStatus === 'connected' ? 'bg-green-500' : wsStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
+
+  return (
+    <div className="text-center py-8">
+      <div className="relative inline-block mb-6">
+        <CreditCard className="h-16 w-16 text-muted-foreground animate-pulse" />
+        <div className={`absolute -top-1 -right-1 h-4 w-4 rounded-full ${statusColor}`}>
+          <Wifi className="h-3 w-3 text-white m-0.5" />
+        </div>
+      </div>
+      <h3 className="text-lg font-medium mb-2">Waiting for card scan...</h3>
+      <p className="text-muted-foreground mb-6">
+        Tap an NFC card on your MusicBox device
+      </p>
+      <div className="flex justify-center gap-2">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="secondary" onClick={onSimulate}>
+          Simulate Scan
+        </Button>
+      </div>
+      {wsStatus === 'disconnected' && (
+        <p className="text-sm text-red-600 mt-4">
+          WebSocket disconnected. Make sure the API server is running.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ConfigureCard({
+  uid,
+  songs,
+  playlists,
+  isLoading,
+  onSuccess,
+  onBack,
+}: {
+  uid: string
+  songs: Media[]
+  playlists: Playlist[]
+  isLoading: boolean
+  onSuccess: () => void
+  onBack: () => void
+}) {
+  const [name, setName] = useState('')
+  const [contentType, setContentType] = useState<'song' | 'playlist'>('song')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const body = contentType === 'song'
+        ? { uid, name: name || undefined, type: 'media' as const, mediaId: selectedId! }
+        : { uid, name: name || undefined, type: 'playlist' as const, playlistId: selectedId! }
+
+      const { error } = await api.POST('/api/cards', { body })
+      if (error) throw new Error('Failed to create card')
+    },
+    onSuccess: () => {
+      toast.success('Card registered successfully')
+      onSuccess()
+    },
+    onError: () => {
+      toast.error('Failed to register card')
+    },
+  })
+
+  const items = contentType === 'song' ? songs : playlists
+
+  return (
+    <div>
+      <div className="mb-6">
+        <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+          <CreditCard className="h-8 w-8 text-muted-foreground" />
+          <div>
+            <div className="font-medium">Card Detected</div>
+            <code className="text-sm text-muted-foreground">{uid}</code>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="text-sm font-medium mb-1 block">Card Name (optional)</label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., Kids Music Card"
+          />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium mb-2 block">Link to</label>
+          <div className="flex gap-2 mb-3">
+            <Button
+              variant={contentType === 'song' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => { setContentType('song'); setSelectedId(null) }}
+            >
+              <Music className="h-4 w-4 mr-1" />
+              Song
+            </Button>
+            <Button
+              variant={contentType === 'playlist' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => { setContentType('playlist'); setSelectedId(null) }}
+            >
+              <ListMusic className="h-4 w-4 mr-1" />
+              Playlist
+            </Button>
+          </div>
+
+          <div className="border border-border rounded-lg max-h-48 overflow-y-auto">
+            {isLoading ? (
+              <div className="p-4 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading...
+              </div>
+            ) : items.length === 0 ? (
+              <div className="p-4 text-center text-muted-foreground text-sm">
+                No {contentType === 'song' ? 'songs' : 'playlists'} available
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {items.map((item) => {
+                  const itemId = item.id
+                  const itemName = 'title' in item ? item.title : item.name
+                  const isSelected = selectedId === itemId
+
+                  return (
+                    <button
+                      key={itemId}
+                      onClick={() => setSelectedId(itemId)}
+                      className={`w-full px-4 py-2 text-left text-sm hover:bg-muted/50 flex items-center gap-2 ${isSelected ? 'bg-accent' : ''}`}
+                    >
+                      {contentType === 'song' ? (
+                        <Music className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ListMusic className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span className={isSelected ? 'font-medium' : ''}>{itemName}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-between mt-6">
+        <Button variant="outline" onClick={onBack}>
+          Back
+        </Button>
+        <Button
+          onClick={() => createMutation.mutate()}
+          disabled={!selectedId || createMutation.isPending}
+        >
+          {createMutation.isPending ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : null}
+          Register Card
+        </Button>
+      </div>
+    </div>
   )
 }
 
