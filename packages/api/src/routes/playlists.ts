@@ -1,13 +1,15 @@
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { describeRoute, resolver } from 'hono-openapi'
+import { sValidator } from '@hono/standard-validator'
 import { z } from 'zod'
 import { eq, asc, and } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { playlists, playlistMedia, media } from '../db/schema.js'
+import { mediaTypeSchema } from '../types/media.js'
 
 export const playlistRoutes = new Hono()
 
-// Validation schemas
+// Schemas
 const idParamSchema = z.object({
   id: z.string().regex(/^\d+$/).transform(Number),
 })
@@ -22,23 +24,81 @@ const updatePlaylistSchema = z.object({
 
 const addMediaSchema = z.object({
   mediaId: z.number(),
-  position: z.number().optional(), // If not provided, append to end
+  position: z.number().optional(),
 })
 
 const reorderSchema = z.object({
-  mediaIds: z.array(z.number()), // Array of media IDs in desired order
+  mediaIds: z.array(z.number()),
+})
+
+const playlistSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  createdAt: z.string().datetime(),
+})
+
+const mediaSchema = z.object({
+  id: z.number(),
+  type: mediaTypeSchema,
+  title: z.string(),
+  duration: z.number().nullable(),
+  mimeType: z.string().nullable(),
+  fileSize: z.number().nullable(),
+  filePath: z.string(),
+  metadata: z.unknown().nullable(),
+  createdAt: z.string().datetime(),
+})
+
+const playlistWithMediaSchema = playlistSchema.extend({
+  items: z.array(mediaSchema.extend({ position: z.number() })),
+})
+
+const errorSchema = z.object({
+  error: z.string(),
+})
+
+const successSchema = z.object({
+  success: z.boolean(),
 })
 
 // List all playlists
-playlistRoutes.get('/', async (c) => {
-  const items = await db.select().from(playlists)
-  return c.json(items)
-})
+playlistRoutes.get(
+  '/',
+  describeRoute({
+    tags: ['Playlists'],
+    summary: 'List all playlists',
+    responses: {
+      200: {
+        description: 'List of playlists',
+        content: { 'application/json': { schema: resolver(z.array(playlistSchema)) } },
+      },
+    },
+  }),
+  async (c) => {
+    const items = await db.select().from(playlists)
+    return c.json(items)
+  }
+)
 
 // Get single playlist with media
 playlistRoutes.get(
   '/:id',
-  zValidator('param', idParamSchema),
+  describeRoute({
+    tags: ['Playlists'],
+    summary: 'Get playlist by ID',
+    description: 'Get a playlist with its media items',
+    responses: {
+      200: {
+        description: 'Playlist with media',
+        content: { 'application/json': { schema: resolver(playlistWithMediaSchema) } },
+      },
+      404: {
+        description: 'Playlist not found',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
+    },
+  }),
+  sValidator('param', idParamSchema),
   async (c) => {
     const { id } = c.req.valid('param')
 
@@ -48,7 +108,6 @@ playlistRoutes.get(
       return c.json({ error: 'Playlist not found' }, 404)
     }
 
-    // Get media items in order
     const items = await db
       .select({
         position: playlistMedia.position,
@@ -69,12 +128,20 @@ playlistRoutes.get(
 // Create playlist
 playlistRoutes.post(
   '/',
-  zValidator('json', createPlaylistSchema),
+  describeRoute({
+    tags: ['Playlists'],
+    summary: 'Create playlist',
+    responses: {
+      201: {
+        description: 'Created playlist',
+        content: { 'application/json': { schema: resolver(playlistSchema) } },
+      },
+    },
+  }),
+  sValidator('json', createPlaylistSchema),
   async (c) => {
     const { name } = c.req.valid('json')
-
     const [created] = await db.insert(playlists).values({ name }).returning()
-
     return c.json(created, 201)
   }
 )
@@ -82,8 +149,22 @@ playlistRoutes.post(
 // Update playlist
 playlistRoutes.patch(
   '/:id',
-  zValidator('param', idParamSchema),
-  zValidator('json', updatePlaylistSchema),
+  describeRoute({
+    tags: ['Playlists'],
+    summary: 'Update playlist',
+    responses: {
+      200: {
+        description: 'Updated playlist',
+        content: { 'application/json': { schema: resolver(playlistSchema) } },
+      },
+      404: {
+        description: 'Playlist not found',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  sValidator('json', updatePlaylistSchema),
   async (c) => {
     const { id } = c.req.valid('param')
     const updates = c.req.valid('json')
@@ -105,10 +186,23 @@ playlistRoutes.patch(
 // Delete playlist
 playlistRoutes.delete(
   '/:id',
-  zValidator('param', idParamSchema),
+  describeRoute({
+    tags: ['Playlists'],
+    summary: 'Delete playlist',
+    responses: {
+      200: {
+        description: 'Success',
+        content: { 'application/json': { schema: resolver(successSchema) } },
+      },
+      404: {
+        description: 'Playlist not found',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
+    },
+  }),
+  sValidator('param', idParamSchema),
   async (c) => {
     const { id } = c.req.valid('param')
-
     const [deleted] = await db.delete(playlists).where(eq(playlists.id, id)).returning()
 
     if (!deleted) {
@@ -122,25 +216,41 @@ playlistRoutes.delete(
 // Add media to playlist
 playlistRoutes.post(
   '/:id/media',
-  zValidator('param', idParamSchema),
-  zValidator('json', addMediaSchema),
+  describeRoute({
+    tags: ['Playlists'],
+    summary: 'Add media to playlist',
+    responses: {
+      201: {
+        description: 'Added to playlist',
+        content: { 'application/json': { schema: resolver(z.object({
+          id: z.number(),
+          playlistId: z.number(),
+          mediaId: z.number(),
+          position: z.number(),
+        })) } },
+      },
+      404: {
+        description: 'Not found',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  sValidator('json', addMediaSchema),
   async (c) => {
     const { id } = c.req.valid('param')
     const { mediaId, position } = c.req.valid('json')
 
-    // Verify playlist exists
     const [playlist] = await db.select().from(playlists).where(eq(playlists.id, id)).limit(1)
     if (!playlist) {
       return c.json({ error: 'Playlist not found' }, 404)
     }
 
-    // Verify media exists
     const [mediaItem] = await db.select().from(media).where(eq(media.id, mediaId)).limit(1)
     if (!mediaItem) {
       return c.json({ error: 'Media not found' }, 404)
     }
 
-    // Get current max position if not provided
     let pos = position
     if (pos === undefined) {
       const existing = await db
@@ -164,7 +274,17 @@ playlistRoutes.post(
 // Remove media from playlist
 playlistRoutes.delete(
   '/:id/media/:mediaId',
-  zValidator('param', z.object({
+  describeRoute({
+    tags: ['Playlists'],
+    summary: 'Remove media from playlist',
+    responses: {
+      200: {
+        description: 'Success',
+        content: { 'application/json': { schema: resolver(successSchema) } },
+      },
+    },
+  }),
+  sValidator('param', z.object({
     id: z.string().regex(/^\d+$/).transform(Number),
     mediaId: z.string().regex(/^\d+$/).transform(Number),
   })),
@@ -184,16 +304,26 @@ playlistRoutes.delete(
   }
 )
 
-// Reorder playlist - pass array of media IDs in desired order
+// Reorder playlist
 playlistRoutes.put(
   '/:id/reorder',
-  zValidator('param', idParamSchema),
-  zValidator('json', reorderSchema),
+  describeRoute({
+    tags: ['Playlists'],
+    summary: 'Reorder playlist media',
+    description: 'Pass array of media IDs in desired order',
+    responses: {
+      200: {
+        description: 'Success',
+        content: { 'application/json': { schema: resolver(successSchema) } },
+      },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  sValidator('json', reorderSchema),
   async (c) => {
     const { id } = c.req.valid('param')
     const { mediaIds } = c.req.valid('json')
 
-    // Delete existing entries and re-insert with new positions
     await db.delete(playlistMedia).where(eq(playlistMedia.playlistId, id))
 
     const newEntries = mediaIds.map((mediaId, index) => ({

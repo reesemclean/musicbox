@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import { describeRoute, resolver } from 'hono-openapi'
+import { z } from 'zod'
 import { readFileSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join, dirname } from 'node:path'
@@ -45,33 +47,80 @@ function loadFirmware() {
 // Load on module init
 firmwareInfo = loadFirmware()
 
-// Get current firmware info
-firmwareRoutes.get('/latest.json', (c) => {
-  if (!firmwareInfo) {
-    return c.json({ error: 'No firmware available' }, 404)
-  }
-
-  return c.json({
-    version: firmwareInfo.version,
-    sha256: firmwareInfo.sha256,
-    fileSize: firmwareInfo.fileSize,
-  })
+// Schemas
+const firmwareInfoSchema = z.object({
+  version: z.string(),
+  sha256: z.string(),
+  fileSize: z.number(),
 })
+
+const errorSchema = z.object({
+  error: z.string(),
+})
+
+// Get current firmware info
+firmwareRoutes.get(
+  '/latest',
+  describeRoute({
+    tags: ['Firmware'],
+    summary: 'Get latest firmware info',
+    description: 'Returns metadata about the currently deployed firmware',
+    responses: {
+      200: {
+        description: 'Firmware info',
+        content: { 'application/json': { schema: resolver(firmwareInfoSchema) } },
+      },
+      404: {
+        description: 'No firmware available',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
+    },
+  }),
+  (c) => {
+    if (!firmwareInfo) {
+      return c.json({ error: 'No firmware available' }, 404)
+    }
+
+    return c.json({
+      version: firmwareInfo.version,
+      sha256: firmwareInfo.sha256,
+      fileSize: firmwareInfo.fileSize,
+    })
+  }
+)
 
 // Download firmware binary
-firmwareRoutes.get('/firmware.bin', (c) => {
-  if (!firmwareInfo) {
-    return c.json({ error: 'No firmware available' }, 404)
-  }
-
-  return new Response(new Uint8Array(firmwareInfo.data), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/octet-stream',
-      'Content-Length': firmwareInfo.fileSize.toString(),
-      'Content-Disposition': `attachment; filename="firmware-${firmwareInfo.version}.bin"`,
-      'X-SHA256': firmwareInfo.sha256,
-      'X-Version': firmwareInfo.version,
+firmwareRoutes.get(
+  '/download',
+  describeRoute({
+    tags: ['Firmware'],
+    summary: 'Download firmware binary',
+    description: 'Download the firmware binary file for OTA updates',
+    responses: {
+      200: {
+        description: 'Firmware binary',
+        content: { 'application/octet-stream': {} },
+      },
+      404: {
+        description: 'No firmware available',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
     },
-  })
-})
+  }),
+  (c) => {
+    if (!firmwareInfo) {
+      return c.json({ error: 'No firmware available' }, 404)
+    }
+
+    return new Response(new Uint8Array(firmwareInfo.data), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': firmwareInfo.fileSize.toString(),
+        'Content-Disposition': `attachment; filename="firmware-${firmwareInfo.version}.bin"`,
+        'X-SHA256': firmwareInfo.sha256,
+        'X-Version': firmwareInfo.version,
+      },
+    })
+  }
+)

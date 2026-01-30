@@ -36,3 +36,6 @@ data/
 # firmware (built artifacts, copied from esp32 package during deploy)
 firmware/*.bin
 firmware/*.json
+
+# generated intermediate files
+openapi.json

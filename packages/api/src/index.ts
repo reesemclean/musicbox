@@ -1,27 +1,25 @@
 import { createServer } from 'node:http'
-import { Readable } from 'node:stream'
-import { Hono } from 'hono'
-import { logger } from 'hono/logger'
-import { cors } from 'hono/cors'
+import { openAPIRouteHandler } from 'hono-openapi'
 import { WebSocketServer } from 'ws'
-import { mediaRoutes } from './routes/media.js'
-import { playlistRoutes } from './routes/playlists.js'
-import { cardRoutes } from './routes/cards.js'
-import { firmwareRoutes } from './routes/firmware.js'
+import { createApp } from './app.js'
 
-const app = new Hono()
+const app = createApp()
 
-app.use('*', logger())
-app.use('*', cors())
-
-app.get('/health', (c) => {
-  return c.json({ status: 'ok' })
-})
-
-app.route('/api/media', mediaRoutes)
-app.route('/api/playlists', playlistRoutes)
-app.route('/api/cards', cardRoutes)
-app.route('/api/firmware', firmwareRoutes)
+// OpenAPI spec
+app.get(
+  '/openapi.json',
+  openAPIRouteHandler(app, {
+    documentation: {
+      openapi: '3.1.0',
+      info: {
+        title: 'MusicBox API',
+        version: '1.0.0',
+        description: 'API for MusicBox NFC music player',
+      },
+      servers: [{ url: 'http://localhost:3001', description: 'Local development' }],
+    },
+  })
+)
 
 // Create raw HTTP server for WebSocket support
 const server = createServer(async (req, res) => {

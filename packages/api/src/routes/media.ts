@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { describeRoute, resolver } from 'hono-openapi'
+import { sValidator } from '@hono/standard-validator'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { createReadStream, existsSync, statSync } from 'node:fs'
@@ -10,7 +11,7 @@ import { mediaTypeSchema } from '../types/media.js'
 
 export const mediaRoutes = new Hono()
 
-// Validation schemas
+// Schemas
 const idParamSchema = z.object({
   id: z.string().regex(/^\d+$/).transform(Number),
 })
@@ -19,10 +20,39 @@ const listQuerySchema = z.object({
   type: mediaTypeSchema.optional(),
 })
 
+const mediaSchema = z.object({
+  id: z.number(),
+  type: mediaTypeSchema,
+  title: z.string(),
+  duration: z.number().nullable(),
+  mimeType: z.string().nullable(),
+  fileSize: z.number().nullable(),
+  filePath: z.string(),
+  metadata: z.unknown().nullable(),
+  createdAt: z.string().datetime(),
+})
+
+const errorSchema = z.object({
+  error: z.string(),
+})
+
 // Stream media file
 mediaRoutes.get(
   '/stream/:id',
-  zValidator('param', idParamSchema),
+  describeRoute({
+    tags: ['Media'],
+    summary: 'Stream media file',
+    description: 'Stream audio/video file with range request support',
+    responses: {
+      200: { description: 'Media stream' },
+      206: { description: 'Partial content (range request)' },
+      404: {
+        description: 'Media not found',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
+    },
+  }),
+  sValidator('param', idParamSchema),
   async (c) => {
     const { id } = c.req.valid('param')
 
@@ -76,7 +106,18 @@ mediaRoutes.get(
 // List all media (optionally filter by type)
 mediaRoutes.get(
   '/',
-  zValidator('query', listQuerySchema),
+  describeRoute({
+    tags: ['Media'],
+    summary: 'List all media',
+    description: 'Get all media items, optionally filtered by type',
+    responses: {
+      200: {
+        description: 'List of media items',
+        content: { 'application/json': { schema: resolver(z.array(mediaSchema)) } },
+      },
+    },
+  }),
+  sValidator('query', listQuerySchema),
   async (c) => {
     const { type } = c.req.valid('query')
 
@@ -91,7 +132,22 @@ mediaRoutes.get(
 // Get single media item
 mediaRoutes.get(
   '/:id',
-  zValidator('param', idParamSchema),
+  describeRoute({
+    tags: ['Media'],
+    summary: 'Get media by ID',
+    description: 'Get a single media item by its ID',
+    responses: {
+      200: {
+        description: 'Media item',
+        content: { 'application/json': { schema: resolver(mediaSchema) } },
+      },
+      404: {
+        description: 'Media not found',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
+    },
+  }),
+  sValidator('param', idParamSchema),
   async (c) => {
     const { id } = c.req.valid('param')
 

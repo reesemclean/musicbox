@@ -6,14 +6,18 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "generate": "tsx scripts/generate-clients.ts",
+    "generate:check": "npm run generate && git diff --exit-code ../web/src/lib/api-types.ts ../esp32/src/generated/api_types.h || (echo 'Generated files are out of date. Run npm run generate in packages/api' && exit 1)"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",
+    "@hono/standard-validator": "^0.2.2",
     "@hono/zod-validator": "^0.7.6",
     "better-sqlite3": "^12.6.2",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.11.5",
+    "hono-openapi": "^1.2.0",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
   },
@@ -22,6 +26,7 @@
     "@types/node": "^20.11.17",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.8",
+    "openapi-typescript": "^7.10.1",
     "tsx": "^4.7.1",
     "typescript": "^5.8.3"
   }
