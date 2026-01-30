@@ -131,6 +131,12 @@ playlistRoutes.post(
   describeRoute({
     tags: ['Playlists'],
     summary: 'Create playlist',
+    requestBody: {
+      required: true,
+      content: {
+        'application/json': { schema: resolver(createPlaylistSchema) },
+      },
+    },
     responses: {
       201: {
         description: 'Created playlist',
