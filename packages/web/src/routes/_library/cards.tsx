@@ -375,9 +375,13 @@ function ConfigureCard({
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      // Default name to the selected content's name if not provided
+      const selectedItem = items.find((item) => item.id === selectedId)
+      const cardName = name || ('title' in selectedItem! ? selectedItem.title : selectedItem!.name)
+
       const body = contentType === 'song'
-        ? { uid, name: name || undefined, type: 'media' as const, mediaId: selectedId! }
-        : { uid, name: name || undefined, type: 'playlist' as const, playlistId: selectedId! }
+        ? { uid, name: cardName, type: 'media' as const, mediaId: selectedId! }
+        : { uid, name: cardName, type: 'playlist' as const, playlistId: selectedId! }
 
       const { error } = await api.POST('/api/cards', { body })
       if (error) throw new Error('Failed to create card')
