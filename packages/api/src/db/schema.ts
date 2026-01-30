@@ -17,6 +17,8 @@ export const podcastFeeds = sqliteTable('podcast_feeds', {
   name: text('name').notNull(),
   feedUrl: text('feed_url').notNull().unique(),
   imageUrl: text('image_url'),
+  retentionCount: integer('retention_count').notNull().default(3),
+  lastFetchedAt: integer('last_fetched_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 

@@ -35,6 +35,10 @@
 #define API_PATH_API_DOWNLOADS_BY_PARAM_RETRY "/api/downloads/{id}/retry"
 #define API_PATH_API_DOWNLOADS_ALBUM "/api/downloads/album"
 #define API_PATH_API_DOWNLOADS_BY_PARAM "/api/downloads/{id}"
+#define API_PATH_API_PODCASTS "/api/podcasts"
+#define API_PATH_API_PODCASTS_BY_PARAM "/api/podcasts/{id}"
+#define API_PATH_API_PODCASTS_BY_PARAM_REFRESH "/api/podcasts/{id}/refresh"
+#define API_PATH_API_PODCASTS_REFRESH "/api/podcasts/refresh"
 
 // Card lookup response types
 typedef enum {

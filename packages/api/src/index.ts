@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { openAPIRouteHandler } from 'hono-openapi'
 import { WebSocketServer } from 'ws'
 import { createApp } from './app.js'
+import { refreshAllFeeds } from './services/podcastService.js'
 
 const app = createApp()
 
@@ -129,4 +130,16 @@ server.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`)
   console.log(`Device WebSocket: ws://localhost:${PORT}/ws/device`)
   console.log(`Control WebSocket: ws://localhost:${PORT}/ws/control`)
+
+  // Hourly podcast feed refresh
+  const HOUR_MS = 60 * 60 * 1000
+  setInterval(async () => {
+    console.log('[Podcasts] Running hourly feed refresh...')
+    try {
+      const result = await refreshAllFeeds()
+      console.log(`[Podcasts] Refreshed ${result.succeeded}/${result.total} feeds`)
+    } catch (error) {
+      console.error('[Podcasts] Hourly refresh failed:', error)
+    }
+  }, HOUR_MS)
 })

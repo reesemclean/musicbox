@@ -437,6 +437,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/podcasts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List podcast feeds
+         * @description Get all podcast feed subscriptions
+         */
+        get: operations["getApiPodcasts"];
+        put?: never;
+        /**
+         * Add podcast feed
+         * @description Subscribe to a new podcast feed
+         */
+        post: operations["postApiPodcasts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/podcasts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get podcast feed
+         * @description Get a podcast feed with its episodes
+         */
+        get: operations["getApiPodcastsById"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete podcast feed
+         * @description Unsubscribe from a podcast feed and delete its episodes
+         */
+        delete: operations["deleteApiPodcastsById"];
+        options?: never;
+        head?: never;
+        /**
+         * Update podcast feed
+         * @description Update feed name or retention count
+         */
+        patch: operations["patchApiPodcastsById"];
+        trace?: never;
+    };
+    "/api/podcasts/{id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh podcast feed
+         * @description Fetch new episodes for a podcast feed
+         */
+        post: operations["postApiPodcastsByIdRefresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/podcasts/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh all feeds
+         * @description Fetch new episodes for all podcast feeds
+         */
+        post: operations["postApiPodcastsRefresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1713,6 +1805,259 @@ export interface operations {
                 content: {
                     "application/json": {
                         success: boolean;
+                    };
+                };
+            };
+        };
+    };
+    getApiPodcasts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of podcast feeds */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: number;
+                        name: string;
+                        feedUrl: string;
+                        imageUrl: string | null;
+                        retentionCount: number;
+                        lastFetchedAt: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        episodeCount?: number;
+                    }[];
+                };
+            };
+        };
+    };
+    postApiPodcasts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            /** @description Feed added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: number;
+                        name: string;
+                        imageUrl: string | null;
+                    };
+                };
+            };
+            /** @description Invalid feed or already exists */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
+    getApiPodcastsById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Podcast feed with episodes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: number;
+                        name: string;
+                        feedUrl: string;
+                        imageUrl: string | null;
+                        retentionCount: number;
+                        lastFetchedAt: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        episodeCount?: number;
+                        episodes: {
+                            id: number;
+                            title: string;
+                            duration: number | null;
+                            mimeType: string | null;
+                            fileSize: number | null;
+                            filePath: string;
+                            metadata: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Feed not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
+    deleteApiPodcastsById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feed deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: boolean;
+                    };
+                };
+            };
+        };
+    };
+    patchApiPodcastsById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            /** @description Feed updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: number;
+                        name: string;
+                        feedUrl: string;
+                        imageUrl: string | null;
+                        retentionCount: number;
+                        lastFetchedAt: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        episodeCount?: number;
+                    };
+                };
+            };
+            /** @description Feed not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
+    postApiPodcastsByIdRefresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feed refreshed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: boolean;
+                    };
+                };
+            };
+            /** @description Feed not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
+    postApiPodcastsRefresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feeds refreshed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        succeeded: number;
+                        failed: number;
+                        total: number;
                     };
                 };
             };
