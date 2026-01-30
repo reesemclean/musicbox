@@ -349,7 +349,10 @@ export interface operations {
     };
     getApiMedia: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Filter by media type */
+                type?: "song" | "podcast" | "soundmachine";
+            };
             header?: never;
             path?: never;
             cookie?: never;

@@ -110,6 +110,15 @@ mediaRoutes.get(
     tags: ['Media'],
     summary: 'List all media',
     description: 'Get all media items, optionally filtered by type',
+    parameters: [
+      {
+        name: 'type',
+        in: 'query',
+        required: false,
+        schema: { type: 'string', enum: ['song', 'podcast', 'soundmachine'] },
+        description: 'Filter by media type',
+      },
+    ],
     responses: {
       200: {
         description: 'List of media items',
