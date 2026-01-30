@@ -82,10 +82,18 @@ export interface paths {
         get: operations["getApiMediaById"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete media
+         * @description Delete a media item and its file from disk
+         */
+        delete: operations["deleteApiMediaById"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update media metadata
+         * @description Update title and metadata for a media item
+         */
+        patch: operations["patchApiMediaById"];
         trace?: never;
     };
     "/api/playlists": {
@@ -453,6 +461,90 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Media item */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: number;
+                        /** @enum {string} */
+                        type: "song" | "podcast" | "soundmachine";
+                        title: string;
+                        duration: number | null;
+                        mimeType: string | null;
+                        fileSize: number | null;
+                        filePath: string;
+                        metadata: unknown | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                    };
+                };
+            };
+            /** @description Media not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
+    deleteApiMediaById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: boolean;
+                    };
+                };
+            };
+            /** @description Media not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
+    patchApiMediaById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            /** @description Updated media item */
             200: {
                 headers: {
                     [name: string]: unknown;

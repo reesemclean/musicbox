@@ -291,3 +291,111 @@ mediaRoutes.post(
     }
   }
 )
+
+// Update media metadata schema
+const updateMediaSchema = z.object({
+  title: z.string().min(1).optional(),
+  metadata: z.object({
+    artist: z.string().nullable().optional(),
+    album: z.string().nullable().optional(),
+    year: z.number().nullable().optional(),
+    genre: z.string().nullable().optional(),
+  }).optional(),
+})
+
+// Update media metadata
+mediaRoutes.patch(
+  '/:id',
+  describeRoute({
+    tags: ['Media'],
+    summary: 'Update media metadata',
+    description: 'Update title and metadata for a media item',
+    requestBody: {
+      required: true,
+      content: {
+        'application/json': { schema: resolver(updateMediaSchema) },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Updated media item',
+        content: { 'application/json': { schema: resolver(mediaSchema) } },
+      },
+      404: {
+        description: 'Media not found',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  sValidator('json', updateMediaSchema),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const updates = c.req.valid('json')
+
+    // Get existing item
+    const [existing] = await db.select().from(media).where(eq(media.id, id)).limit(1)
+    if (!existing) {
+      return c.json({ error: 'Media not found' }, 404)
+    }
+
+    // Merge metadata
+    const newMetadata = updates.metadata
+      ? { ...(existing.metadata as object || {}), ...updates.metadata }
+      : existing.metadata
+
+    const [updated] = await db
+      .update(media)
+      .set({
+        title: updates.title ?? existing.title,
+        metadata: newMetadata,
+      })
+      .where(eq(media.id, id))
+      .returning()
+
+    return c.json(updated)
+  }
+)
+
+const successSchema = z.object({
+  success: z.boolean(),
+})
+
+// Delete media
+mediaRoutes.delete(
+  '/:id',
+  describeRoute({
+    tags: ['Media'],
+    summary: 'Delete media',
+    description: 'Delete a media item and its file from disk',
+    responses: {
+      200: {
+        description: 'Success',
+        content: { 'application/json': { schema: resolver(successSchema) } },
+      },
+      404: {
+        description: 'Media not found',
+        content: { 'application/json': { schema: resolver(errorSchema) } },
+      },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  async (c) => {
+    const { id } = c.req.valid('param')
+
+    // Get item to find file path
+    const [item] = await db.select().from(media).where(eq(media.id, id)).limit(1)
+    if (!item) {
+      return c.json({ error: 'Media not found' }, 404)
+    }
+
+    // Delete file first, then DB entry
+    if (existsSync(item.filePath)) {
+      unlinkSync(item.filePath)
+    }
+
+    await db.delete(media).where(eq(media.id, id))
+
+    return c.json({ success: true })
+  }
+)
