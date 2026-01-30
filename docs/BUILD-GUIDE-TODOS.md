@@ -55,8 +55,8 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 - [x] **Step 8.3**: Songs Library Page
 - [x] **Step 8.4**: Song Upload
 - [x] **Step 8.5**: Song Management
-- [ ] **Step 8.6**: Playlists Page
-- [ ] **Step 8.7**: Playlist Detail Page
+- [x] **Step 8.6**: Playlists Page
+- [x] **Step 8.7**: Playlist Detail Page
 - [ ] **Step 8.8**: Cards Page
 - [ ] **Step 8.9**: Card Registration Flow
 - [ ] **Step 8.10**: Devices Page

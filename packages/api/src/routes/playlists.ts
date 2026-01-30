@@ -225,6 +225,12 @@ playlistRoutes.post(
   describeRoute({
     tags: ['Playlists'],
     summary: 'Add media to playlist',
+    requestBody: {
+      required: true,
+      content: {
+        'application/json': { schema: resolver(addMediaSchema) },
+      },
+    },
     responses: {
       201: {
         description: 'Added to playlist',
@@ -317,6 +323,12 @@ playlistRoutes.put(
     tags: ['Playlists'],
     summary: 'Reorder playlist media',
     description: 'Pass array of media IDs in desired order',
+    requestBody: {
+      required: true,
+      content: {
+        'application/json': { schema: resolver(reorderSchema) },
+      },
+    },
     responses: {
       200: {
         description: 'Success',

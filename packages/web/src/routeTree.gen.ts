@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LibraryRouteImport } from './routes/_library'
 import { Route as LibraryIndexRouteImport } from './routes/_library/index'
 import { Route as LibraryPlaylistsRouteImport } from './routes/_library/playlists'
+import { Route as LibraryPlaylistsIndexRouteImport } from './routes/_library/playlists.index'
+import { Route as LibraryPlaylistsPlaylistIdRouteImport } from './routes/_library/playlists.$playlistId'
 
 const LibraryRoute = LibraryRouteImport.update({
   id: '/_library',
@@ -27,27 +29,49 @@ const LibraryPlaylistsRoute = LibraryPlaylistsRouteImport.update({
   path: '/playlists',
   getParentRoute: () => LibraryRoute,
 } as any)
+const LibraryPlaylistsIndexRoute = LibraryPlaylistsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LibraryPlaylistsRoute,
+} as any)
+const LibraryPlaylistsPlaylistIdRoute =
+  LibraryPlaylistsPlaylistIdRouteImport.update({
+    id: '/$playlistId',
+    path: '/$playlistId',
+    getParentRoute: () => LibraryPlaylistsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LibraryIndexRoute
-  '/playlists': typeof LibraryPlaylistsRoute
+  '/playlists': typeof LibraryPlaylistsRouteWithChildren
+  '/playlists/$playlistId': typeof LibraryPlaylistsPlaylistIdRoute
+  '/playlists/': typeof LibraryPlaylistsIndexRoute
 }
 export interface FileRoutesByTo {
-  '/playlists': typeof LibraryPlaylistsRoute
   '/': typeof LibraryIndexRoute
+  '/playlists/$playlistId': typeof LibraryPlaylistsPlaylistIdRoute
+  '/playlists': typeof LibraryPlaylistsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_library': typeof LibraryRouteWithChildren
-  '/_library/playlists': typeof LibraryPlaylistsRoute
+  '/_library/playlists': typeof LibraryPlaylistsRouteWithChildren
   '/_library/': typeof LibraryIndexRoute
+  '/_library/playlists/$playlistId': typeof LibraryPlaylistsPlaylistIdRoute
+  '/_library/playlists/': typeof LibraryPlaylistsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/playlists'
+  fullPaths: '/' | '/playlists' | '/playlists/$playlistId' | '/playlists/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/playlists' | '/'
-  id: '__root__' | '/_library' | '/_library/playlists' | '/_library/'
+  to: '/' | '/playlists/$playlistId' | '/playlists'
+  id:
+    | '__root__'
+    | '/_library'
+    | '/_library/playlists'
+    | '/_library/'
+    | '/_library/playlists/$playlistId'
+    | '/_library/playlists/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,16 +101,43 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryPlaylistsRouteImport
       parentRoute: typeof LibraryRoute
     }
+    '/_library/playlists/': {
+      id: '/_library/playlists/'
+      path: '/'
+      fullPath: '/playlists/'
+      preLoaderRoute: typeof LibraryPlaylistsIndexRouteImport
+      parentRoute: typeof LibraryPlaylistsRoute
+    }
+    '/_library/playlists/$playlistId': {
+      id: '/_library/playlists/$playlistId'
+      path: '/$playlistId'
+      fullPath: '/playlists/$playlistId'
+      preLoaderRoute: typeof LibraryPlaylistsPlaylistIdRouteImport
+      parentRoute: typeof LibraryPlaylistsRoute
+    }
   }
 }
 
+interface LibraryPlaylistsRouteChildren {
+  LibraryPlaylistsPlaylistIdRoute: typeof LibraryPlaylistsPlaylistIdRoute
+  LibraryPlaylistsIndexRoute: typeof LibraryPlaylistsIndexRoute
+}
+
+const LibraryPlaylistsRouteChildren: LibraryPlaylistsRouteChildren = {
+  LibraryPlaylistsPlaylistIdRoute: LibraryPlaylistsPlaylistIdRoute,
+  LibraryPlaylistsIndexRoute: LibraryPlaylistsIndexRoute,
+}
+
+const LibraryPlaylistsRouteWithChildren =
+  LibraryPlaylistsRoute._addFileChildren(LibraryPlaylistsRouteChildren)
+
 interface LibraryRouteChildren {
-  LibraryPlaylistsRoute: typeof LibraryPlaylistsRoute
+  LibraryPlaylistsRoute: typeof LibraryPlaylistsRouteWithChildren
   LibraryIndexRoute: typeof LibraryIndexRoute
 }
 
 const LibraryRouteChildren: LibraryRouteChildren = {
-  LibraryPlaylistsRoute: LibraryPlaylistsRoute,
+  LibraryPlaylistsRoute: LibraryPlaylistsRouteWithChildren,
   LibraryIndexRoute: LibraryIndexRoute,
 }
 
