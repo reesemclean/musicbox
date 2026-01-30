@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { Music, Search } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Music, Search, Upload, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { api, type Media } from '@/lib/api-client'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/_library/')({
   component: SongsLibraryPage,
@@ -11,6 +13,8 @@ export const Route = createFileRoute('/_library/')({
 
 function SongsLibraryPage() {
   const [search, setSearch] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
 
   const { data: songs, isLoading, error } = useQuery({
     queryKey: ['media', 'songs'],
@@ -23,6 +27,51 @@ function SongsLibraryPage() {
     },
   })
 
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/media`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      )
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Upload failed')
+      }
+
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['media', 'songs'] })
+      toast.success('Song uploaded successfully')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Upload failed')
+    },
+  })
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files?.length) return
+
+    for (const file of files) {
+      if (!file.type.startsWith('audio/')) {
+        toast.error(`Not an audio file: ${file.name}`)
+        continue
+      }
+      uploadMutation.mutate(file)
+    }
+
+    // Reset input
+    e.target.value = ''
+  }
+
   const filteredSongs = songs?.filter((song) =>
     song.title.toLowerCase().includes(search.toLowerCase()) ||
     (song.metadata as any)?.artist?.toLowerCase().includes(search.toLowerCase()) ||
@@ -33,14 +82,35 @@ function SongsLibraryPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">All Songs</h1>
-        <div className="relative w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search songs..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+        <div className="flex items-center gap-3">
+          <div className="relative w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search songs..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
           />
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadMutation.isPending}
+          >
+            {uploadMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4 mr-2" />
+            )}
+            Upload
+          </Button>
         </div>
       </div>
 
@@ -56,8 +126,8 @@ function SongsLibraryPage() {
         </div>
       )}
 
-      {songs && songs.length === 0 && (
-        <EmptyState />
+      {songs && songs.length === 0 && !isLoading && (
+        <EmptyState onUpload={() => fileInputRef.current?.click()} />
       )}
 
       {filteredSongs && filteredSongs.length > 0 && (
@@ -73,14 +143,18 @@ function SongsLibraryPage() {
   )
 }
 
-function EmptyState() {
+function EmptyState({ onUpload }: { onUpload: () => void }) {
   return (
     <div className="text-center py-12">
       <Music className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
       <h2 className="text-lg font-semibold mb-2">No songs yet</h2>
-      <p className="text-muted-foreground">
+      <p className="text-muted-foreground mb-4">
         Upload some music to get started.
       </p>
+      <Button onClick={onUpload}>
+        <Upload className="h-4 w-4 mr-2" />
+        Upload Songs
+      </Button>
     </div>
   )
 }

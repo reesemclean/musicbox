@@ -57,7 +57,11 @@ export interface paths {
          */
         get: operations["getApiMedia"];
         put?: never;
-        post?: never;
+        /**
+         * Upload media file
+         * @description Upload an audio file (MP3, M4A, FLAC, WAV, OGG). Metadata is extracted automatically.
+         */
+        post: operations["postApiMedia"];
         delete?: never;
         options?: never;
         head?: never;
@@ -378,6 +382,61 @@ export interface operations {
                         /** Format: date-time */
                         createdAt: string;
                     }[];
+                };
+            };
+        };
+    };
+    postApiMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description Audio file
+                     */
+                    file: string;
+                    /** @description Optional title override */
+                    title?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Uploaded media item */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: number;
+                        /** @enum {string} */
+                        type: "song" | "podcast" | "soundmachine";
+                        title: string;
+                        duration: number | null;
+                        mimeType: string | null;
+                        fileSize: number | null;
+                        filePath: string;
+                        metadata: unknown | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                    };
+                };
+            };
+            /** @description Invalid file or request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
             };
         };
