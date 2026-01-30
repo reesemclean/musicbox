@@ -61,3 +61,18 @@ export const devices = sqliteTable('devices', {
   soundMachineSound: text('sound_machine_sound'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
+
+export const downloadQueue = sqliteTable('download_queue', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  videoId: text('video_id').notNull().unique(),
+  title: text('title').notNull(),
+  artist: text('artist'),
+  album: text('album'),
+  thumbnailUrl: text('thumbnail_url'),
+  playlistId: integer('playlist_id').references(() => playlists.id, { onDelete: 'set null' }),
+  trackPosition: integer('track_position'),
+  status: text('status', { enum: ['pending', 'downloading', 'failed'] }).notNull().default('pending'),
+  progress: integer('progress').notNull().default(0),
+  error: text('error'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+})

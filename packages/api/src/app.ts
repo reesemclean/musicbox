@@ -7,6 +7,8 @@ import { mediaRoutes } from './routes/media.js'
 import { playlistRoutes } from './routes/playlists.js'
 import { cardRoutes } from './routes/cards.js'
 import { firmwareRoutes } from './routes/firmware.js'
+import { deviceRoutes } from './routes/devices.js'
+import { downloadRoutes } from './routes/downloads.js'
 
 const healthSchema = z.object({
   status: z.string(),
@@ -40,6 +42,8 @@ export function createApp() {
   app.route('/api/playlists', playlistRoutes)
   app.route('/api/cards', cardRoutes)
   app.route('/api/firmware', firmwareRoutes)
+  app.route('/api/devices', deviceRoutes)
+  app.route('/api/downloads', downloadRoutes)
 
   return app
 }

@@ -27,6 +27,14 @@
 #define API_PATH_API_CARDS_BY_PARAM "/api/cards/{id}"
 #define API_PATH_API_FIRMWARE_LATEST "/api/firmware/latest"
 #define API_PATH_API_FIRMWARE_DOWNLOAD "/api/firmware/download"
+#define API_PATH_API_DEVICES "/api/devices"
+#define API_PATH_API_DEVICES_BY_PARAM "/api/devices/{id}"
+#define API_PATH_API_DOWNLOADS_SEARCH "/api/downloads/search"
+#define API_PATH_API_DOWNLOADS "/api/downloads"
+#define API_PATH_API_DOWNLOADS_QUEUE "/api/downloads/queue"
+#define API_PATH_API_DOWNLOADS_BY_PARAM_RETRY "/api/downloads/{id}/retry"
+#define API_PATH_API_DOWNLOADS_ALBUM "/api/downloads/album"
+#define API_PATH_API_DOWNLOADS_BY_PARAM "/api/downloads/{id}"
 
 // Card lookup response types
 typedef enum {

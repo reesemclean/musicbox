@@ -14,6 +14,7 @@ export type PlaylistWithMedia = operations['getApiPlaylistsById']['responses']['
 export type Card = operations['getApiCards']['responses']['200']['content']['application/json'][number]
 export type CardLookup = operations['getApiCardsLookupByUid']['responses']['200']['content']['application/json']
 export type FirmwareInfo = operations['getApiFirmwareLatest']['responses']['200']['content']['application/json']
+export type Device = operations['getApiDevices']['responses']['200']['content']['application/json'][number]
 
 // Helper to extract data or throw on error
 export async function unwrap<T>(

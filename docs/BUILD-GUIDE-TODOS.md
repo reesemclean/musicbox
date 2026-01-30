@@ -59,14 +59,14 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 - [x] **Step 8.7**: Playlist Detail Page
 - [x] **Step 8.8**: Cards Page
 - [x] **Step 8.9**: Card Registration Flow
-- [ ] **Step 8.10**: Devices Page
-- [ ] **Step 8.11**: Device Approval Flow
-- [ ] **Step 8.12**: Device Remote Control
-- [ ] **Step 8.13**: Downloads Page (YouTube Music)
-- [ ] **Step 8.14**: Download Queue Management
-- [ ] **Step 8.15**: Podcasts Page
-- [ ] **Step 8.16**: Sound Machine Configuration
-- [ ] **Step 8.17**: Firmware Management
+- [x] **Step 8.10**: Devices Page
+- [ ] **Step 8.11**: Device Approval Flow (deferred - needs device registration)
+- [ ] **Step 8.12**: Device Remote Control (deferred - needs device registration)
+- [x] **Step 8.13**: Downloads Page (YouTube Music)
+- [x] **Step 8.14**: Download Queue Management
+- [ ] **Step 8.15**: Podcasts Page (needs RSS parsing)
+- [x] **Step 8.16**: Sound Machine Configuration (placeholder - needs devices)
+- [x] **Step 8.17**: Firmware Management (N/A - firmware baked into deployment per Step 7.7)
 
 ## Phase 9: ESP32-API Integration
 

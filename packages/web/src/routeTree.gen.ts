@@ -11,8 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LibraryRouteImport } from './routes/_library'
 import { Route as LibraryIndexRouteImport } from './routes/_library/index'
+import { Route as LibraryPodcastsRouteImport } from './routes/_library/podcasts'
 import { Route as LibraryPlaylistsRouteImport } from './routes/_library/playlists'
+import { Route as LibraryDevicesRouteImport } from './routes/_library/devices'
 import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
+import { Route as LibraryAddSongsRouteImport } from './routes/_library/add-songs'
 import { Route as LibraryPlaylistsIndexRouteImport } from './routes/_library/playlists.index'
 import { Route as LibraryPlaylistsPlaylistIdRouteImport } from './routes/_library/playlists.$playlistId'
 
@@ -25,14 +28,29 @@ const LibraryIndexRoute = LibraryIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LibraryRoute,
 } as any)
+const LibraryPodcastsRoute = LibraryPodcastsRouteImport.update({
+  id: '/podcasts',
+  path: '/podcasts',
+  getParentRoute: () => LibraryRoute,
+} as any)
 const LibraryPlaylistsRoute = LibraryPlaylistsRouteImport.update({
   id: '/playlists',
   path: '/playlists',
   getParentRoute: () => LibraryRoute,
 } as any)
+const LibraryDevicesRoute = LibraryDevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => LibraryRoute,
+} as any)
 const LibraryCardsRoute = LibraryCardsRouteImport.update({
   id: '/cards',
   path: '/cards',
+  getParentRoute: () => LibraryRoute,
+} as any)
+const LibraryAddSongsRoute = LibraryAddSongsRouteImport.update({
+  id: '/add-songs',
+  path: '/add-songs',
   getParentRoute: () => LibraryRoute,
 } as any)
 const LibraryPlaylistsIndexRoute = LibraryPlaylistsIndexRouteImport.update({
@@ -49,13 +67,19 @@ const LibraryPlaylistsPlaylistIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof LibraryIndexRoute
+  '/add-songs': typeof LibraryAddSongsRoute
   '/cards': typeof LibraryCardsRoute
+  '/devices': typeof LibraryDevicesRoute
   '/playlists': typeof LibraryPlaylistsRouteWithChildren
+  '/podcasts': typeof LibraryPodcastsRoute
   '/playlists/$playlistId': typeof LibraryPlaylistsPlaylistIdRoute
   '/playlists/': typeof LibraryPlaylistsIndexRoute
 }
 export interface FileRoutesByTo {
+  '/add-songs': typeof LibraryAddSongsRoute
   '/cards': typeof LibraryCardsRoute
+  '/devices': typeof LibraryDevicesRoute
+  '/podcasts': typeof LibraryPodcastsRoute
   '/': typeof LibraryIndexRoute
   '/playlists/$playlistId': typeof LibraryPlaylistsPlaylistIdRoute
   '/playlists': typeof LibraryPlaylistsIndexRoute
@@ -63,8 +87,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_library': typeof LibraryRouteWithChildren
+  '/_library/add-songs': typeof LibraryAddSongsRoute
   '/_library/cards': typeof LibraryCardsRoute
+  '/_library/devices': typeof LibraryDevicesRoute
   '/_library/playlists': typeof LibraryPlaylistsRouteWithChildren
+  '/_library/podcasts': typeof LibraryPodcastsRoute
   '/_library/': typeof LibraryIndexRoute
   '/_library/playlists/$playlistId': typeof LibraryPlaylistsPlaylistIdRoute
   '/_library/playlists/': typeof LibraryPlaylistsIndexRoute
@@ -73,17 +100,30 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/add-songs'
     | '/cards'
+    | '/devices'
     | '/playlists'
+    | '/podcasts'
     | '/playlists/$playlistId'
     | '/playlists/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/cards' | '/' | '/playlists/$playlistId' | '/playlists'
+  to:
+    | '/add-songs'
+    | '/cards'
+    | '/devices'
+    | '/podcasts'
+    | '/'
+    | '/playlists/$playlistId'
+    | '/playlists'
   id:
     | '__root__'
     | '/_library'
+    | '/_library/add-songs'
     | '/_library/cards'
+    | '/_library/devices'
     | '/_library/playlists'
+    | '/_library/podcasts'
     | '/_library/'
     | '/_library/playlists/$playlistId'
     | '/_library/playlists/'
@@ -109,6 +149,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryIndexRouteImport
       parentRoute: typeof LibraryRoute
     }
+    '/_library/podcasts': {
+      id: '/_library/podcasts'
+      path: '/podcasts'
+      fullPath: '/podcasts'
+      preLoaderRoute: typeof LibraryPodcastsRouteImport
+      parentRoute: typeof LibraryRoute
+    }
     '/_library/playlists': {
       id: '/_library/playlists'
       path: '/playlists'
@@ -116,11 +163,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryPlaylistsRouteImport
       parentRoute: typeof LibraryRoute
     }
+    '/_library/devices': {
+      id: '/_library/devices'
+      path: '/devices'
+      fullPath: '/devices'
+      preLoaderRoute: typeof LibraryDevicesRouteImport
+      parentRoute: typeof LibraryRoute
+    }
     '/_library/cards': {
       id: '/_library/cards'
       path: '/cards'
       fullPath: '/cards'
       preLoaderRoute: typeof LibraryCardsRouteImport
+      parentRoute: typeof LibraryRoute
+    }
+    '/_library/add-songs': {
+      id: '/_library/add-songs'
+      path: '/add-songs'
+      fullPath: '/add-songs'
+      preLoaderRoute: typeof LibraryAddSongsRouteImport
       parentRoute: typeof LibraryRoute
     }
     '/_library/playlists/': {
@@ -154,14 +215,20 @@ const LibraryPlaylistsRouteWithChildren =
   LibraryPlaylistsRoute._addFileChildren(LibraryPlaylistsRouteChildren)
 
 interface LibraryRouteChildren {
+  LibraryAddSongsRoute: typeof LibraryAddSongsRoute
   LibraryCardsRoute: typeof LibraryCardsRoute
+  LibraryDevicesRoute: typeof LibraryDevicesRoute
   LibraryPlaylistsRoute: typeof LibraryPlaylistsRouteWithChildren
+  LibraryPodcastsRoute: typeof LibraryPodcastsRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
 }
 
 const LibraryRouteChildren: LibraryRouteChildren = {
+  LibraryAddSongsRoute: LibraryAddSongsRoute,
   LibraryCardsRoute: LibraryCardsRoute,
+  LibraryDevicesRoute: LibraryDevicesRoute,
   LibraryPlaylistsRoute: LibraryPlaylistsRouteWithChildren,
+  LibraryPodcastsRoute: LibraryPodcastsRoute,
   LibraryIndexRoute: LibraryIndexRoute,
 }
 

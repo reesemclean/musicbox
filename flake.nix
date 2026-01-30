@@ -15,6 +15,12 @@
           buildInputs = with pkgs; [
             # ESP32 Development
             platformio-core
+
+            # YouTube Music Downloads
+            yt-dlp
+            (python3.withPackages (ps: with ps; [
+              ytmusicapi
+            ]))
           ];
 
           shellHook = ''
