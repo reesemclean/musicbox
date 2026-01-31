@@ -30,7 +30,7 @@ export interface CardScannedEvent {
 
 export interface PlaybackStatusEvent {
   type: 'playback_status'
-  status: 'playing' | 'paused' | 'stopped'
+  status: 'playing' | 'paused' | 'stopped' | 'finished'
   mediaId?: number
   position?: number
 }
@@ -256,6 +256,8 @@ class MqttService extends EventEmitter {
     if (event.type === 'card_scanned') {
       this.emit('card:scanned', { mac, uid: event.uid, timestamp: event.timestamp })
       await this.handleCardScanned(macNoColons, event.uid)
+    } else if (event.type === 'playback_status') {
+      this.emit('playback:status', { mac, status: event.status, mediaId: event.mediaId })
     }
   }
 

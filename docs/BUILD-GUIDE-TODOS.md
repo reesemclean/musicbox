@@ -83,7 +83,7 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 ## Phase 11: Audio Streaming
 
 - [x] **Step 11.1**: ESP32 HTTP Streaming (with system sounds)
-- [ ] **Step 11.2**: Playback Events (status updates to API)
+- [x] **Step 11.2**: Playback Events (playing/paused/stopped/finished → API → WebSocket)
 
 ## Phase 12: Playback Controls
 

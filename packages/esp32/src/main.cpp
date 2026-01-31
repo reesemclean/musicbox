@@ -95,6 +95,13 @@ void onErrorSound() {
     audio_play_error_sound();
 }
 
+void onPlaybackStatus(const char* status, int mediaId) {
+    Serial.printf("[Playback] Status: %s, mediaId: %d\n", status, mediaId);
+    if (mqtt_is_connected()) {
+        mqtt_publish_playback_status(status, mediaId, 0);
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Button handlers (Button2 requires this exact signature)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -212,6 +219,9 @@ void setup() {
     // Initialize NFC reader
     nfc_init();
     nfc_on_card_scanned(onCardScanned);
+
+    // Register playback status callback
+    audio_on_playback_status(onPlaybackStatus);
 
     // Initialize MQTT (sets up callbacks and topics)
     mqtt_init();

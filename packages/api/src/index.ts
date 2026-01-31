@@ -108,6 +108,10 @@ mqttService.on('device:event', ({ mac, event }) => {
   broadcastToControlPlane({ type: 'device_event', mac, event })
 })
 
+mqttService.on('playback:status', ({ mac, status, mediaId }) => {
+  broadcastToControlPlane({ type: 'playback_status', mac, status, mediaId })
+})
+
 // Handle WebSocket upgrade requests
 server.on('upgrade', (req, socket, head) => {
   if (req.url === '/ws/control') {

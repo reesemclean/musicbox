@@ -46,6 +46,14 @@ static int pending_media_id = -1;
 // Callbacks
 static TrackEndedCallback on_track_ended = nullptr;
 static QueueEmptyCallback on_queue_empty = nullptr;
+static PlaybackStatusCallback on_playback_status = nullptr;
+
+// Helper to emit status
+static void emit_status(const char* status) {
+    if (on_playback_status) {
+        on_playback_status(status, current_media_id);
+    }
+}
 
 // Forward declarations
 static void play_next_in_queue();
@@ -157,6 +165,7 @@ void audio_play_url(const char* url, int mediaId) {
     current_media_id = mediaId;
     audio.connecttohost(url);
     state = AUDIO_PLAYING;
+    emit_status("playing");
 }
 
 void audio_queue_url(const char* url, int mediaId) {
@@ -190,6 +199,7 @@ void audio_clear_queue() {
 static void play_next_in_queue() {
     if (queue_count == 0) {
         Serial.println("[Audio] Queue empty");
+        emit_status("finished");
         state = AUDIO_IDLE;
         current_media_id = -1;
         if (on_queue_empty) {
@@ -206,6 +216,7 @@ static void play_next_in_queue() {
     current_media_id = item->mediaId;
     audio.connecttohost(item->url);
     state = AUDIO_PLAYING;
+    emit_status("playing");
 }
 
 void audio_pause() {
@@ -213,6 +224,7 @@ void audio_pause() {
         audio.pauseResume();
         state = AUDIO_PAUSED;
         Serial.println("[Audio] Paused");
+        emit_status("paused");
     }
 }
 
@@ -221,6 +233,7 @@ void audio_resume() {
         audio.pauseResume();
         state = AUDIO_PLAYING;
         Serial.println("[Audio] Resumed");
+        emit_status("playing");
     }
 }
 
@@ -228,9 +241,13 @@ void audio_stop() {
     audio.stopSong();
     audio_clear_queue();
     state = AUDIO_IDLE;
+    int stoppedMediaId = current_media_id;
     current_media_id = -1;
     playing_system_sound = false;
     Serial.println("[Audio] Stopped");
+    if (stoppedMediaId >= 0) {
+        emit_status("stopped");
+    }
 }
 
 void audio_set_volume(int level) {
@@ -259,6 +276,10 @@ void audio_on_track_ended(TrackEndedCallback callback) {
 
 void audio_on_queue_empty(QueueEmptyCallback callback) {
     on_queue_empty = callback;
+}
+
+void audio_on_playback_status(PlaybackStatusCallback callback) {
+    on_playback_status = callback;
 }
 
 

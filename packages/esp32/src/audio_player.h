@@ -13,6 +13,7 @@ enum AudioState {
 // Callbacks
 typedef std::function<void()> TrackEndedCallback;
 typedef std::function<void()> QueueEmptyCallback;
+typedef std::function<void(const char* status, int mediaId)> PlaybackStatusCallback;
 
 // Initialize audio player (I2S output)
 bool audio_init();
@@ -43,5 +44,6 @@ int audio_get_current_media_id();
 // Callbacks
 void audio_on_track_ended(TrackEndedCallback callback);
 void audio_on_queue_empty(QueueEmptyCallback callback);
+void audio_on_playback_status(PlaybackStatusCallback callback);
 
 #endif
