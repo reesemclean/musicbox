@@ -278,6 +278,8 @@ class MqttService extends EventEmitter {
       console.log(`[MQTT] Unknown card: ${uid}`)
       // Emit event so Control Plane can prompt for card registration
       this.emit('card:unknown', { mac: this.macWithColons(macNoColons), uid })
+      // Tell device to play error sound
+      this.sendCommand(macNoColons, { command: 'error_sound' } as any)
       return
     }
 

@@ -78,7 +78,7 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 - [x] **Step 10.1**: Card Scan Event
 - [x] **Step 10.2**: Play Command
-- [ ] **Step 10.3**: Unknown Card Handling (emits event, UI not wired)
+- [x] **Step 10.3**: Unknown Card Handling (toast notification, auto-register flow, error sound)
 
 ## Phase 11: Audio Streaming
 

@@ -92,6 +92,10 @@ mqttService.on('card:scanned', ({ mac, uid, timestamp }) => {
   broadcastToControlPlane({ type: 'card_scanned', mac, uid, timestamp })
 })
 
+mqttService.on('card:unknown', ({ mac, uid }) => {
+  broadcastToControlPlane({ type: 'card_unknown', mac, uid })
+})
+
 mqttService.on('device:registered', (device) => {
   broadcastToControlPlane({ type: 'device_registered', device })
 })

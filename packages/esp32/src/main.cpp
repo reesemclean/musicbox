@@ -90,6 +90,11 @@ void onApproved() {
     }
 }
 
+void onErrorSound() {
+    Serial.println("[Error] Unknown card - playing error sound");
+    audio_play_error_sound();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Button handlers (Button2 requires this exact signature)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,6 +223,7 @@ void setup() {
     mqtt_on_volume(onVolume);
     mqtt_on_ota(onOta);
     mqtt_on_approved(onApproved);
+    mqtt_on_error_sound(onErrorSound);
 
     // Initialize WiFi (will trigger onWifiConnected when ready)
     wifi_init(onWifiConnected, onWifiDisconnected);

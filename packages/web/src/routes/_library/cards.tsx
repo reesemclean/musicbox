@@ -69,8 +69,68 @@ export const Route = createFileRoute('/_library/cards')({
 function CardsPage() {
   const [deletingCard, setDeletingCard] = useState<Card | null>(null)
   const [showRegister, setShowRegister] = useState(false)
+  const [unknownCardUid, setUnknownCardUid] = useState<string | null>(null)
 
   const { data: cards } = useSuspenseQuery(cardsQueryOptions)
+
+  // Listen for unknown card events globally
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws/control'
+    let reconnectTimeout: ReturnType<typeof setTimeout>
+    let mounted = true
+    let ws: WebSocket | null = null
+
+    const connect = () => {
+      if (!mounted) return
+
+      ws = new WebSocket(wsUrl)
+
+      ws.onmessage = (event) => {
+        if (!mounted) return
+        try {
+          const data = JSON.parse(event.data)
+          if (data.type === 'card_unknown' && data.uid) {
+            // Show toast with option to register
+            toast('Unknown card scanned', {
+              description: `Card ${data.uid} is not registered`,
+              action: {
+                label: 'Register',
+                onClick: () => {
+                  setUnknownCardUid(data.uid)
+                  setShowRegister(true)
+                },
+              },
+              duration: 10000,
+            })
+          }
+        } catch {
+          // Ignore non-JSON messages
+        }
+      }
+
+      ws.onclose = () => {
+        if (mounted) {
+          reconnectTimeout = setTimeout(connect, 3000)
+        }
+      }
+
+      ws.onerror = () => {
+        ws?.close()
+      }
+    }
+
+    connect()
+
+    return () => {
+      mounted = false
+      clearTimeout(reconnectTimeout)
+      if (ws) {
+        ws.onclose = null
+        ws.close()
+      }
+    }
+  }, [])
 
   return (
     <div>
@@ -96,7 +156,13 @@ function CardsPage() {
       )}
 
       {showRegister && (
-        <RegisterCardDialog onClose={() => setShowRegister(false)} />
+        <RegisterCardDialog
+          initialUid={unknownCardUid}
+          onClose={() => {
+            setShowRegister(false)
+            setUnknownCardUid(null)
+          }}
+        />
       )}
     </div>
   )
@@ -201,9 +267,9 @@ function CardRow({
 
 type RegistrationStep = 'waiting' | 'configure'
 
-function RegisterCardDialog({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState<RegistrationStep>('waiting')
-  const [scannedUid, setScannedUid] = useState<string | null>(null)
+function RegisterCardDialog({ onClose, initialUid }: { onClose: () => void; initialUid?: string | null }) {
+  const [step, setStep] = useState<RegistrationStep>(initialUid ? 'configure' : 'waiting')
+  const [scannedUid, setScannedUid] = useState<string | null>(initialUid || null)
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const wsRef = useRef<WebSocket | null>(null)
   const queryClient = useQueryClient()

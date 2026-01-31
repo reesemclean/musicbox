@@ -13,6 +13,7 @@ typedef std::function<void()> StopCallback;
 typedef std::function<void(int level)> VolumeCallback;
 typedef std::function<void(const char* url, const char* version)> OtaCallback;
 typedef std::function<void()> ApprovedCallback;
+typedef std::function<void()> ErrorSoundCallback;
 
 // Initialize MQTT client
 void mqtt_init();
@@ -42,5 +43,6 @@ void mqtt_on_stop(StopCallback callback);
 void mqtt_on_volume(VolumeCallback callback);
 void mqtt_on_ota(OtaCallback callback);
 void mqtt_on_approved(ApprovedCallback callback);
+void mqtt_on_error_sound(ErrorSoundCallback callback);
 
 #endif

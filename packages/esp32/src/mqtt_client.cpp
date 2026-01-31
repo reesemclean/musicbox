@@ -35,6 +35,7 @@ static StopCallback onStopCb = nullptr;
 static VolumeCallback onVolumeCb = nullptr;
 static OtaCallback onOtaCb = nullptr;
 static ApprovedCallback onApprovedCb = nullptr;
+static ErrorSoundCallback onErrorSoundCb = nullptr;
 
 // Forward declarations
 static void onMqttMessage(char* topic, byte* payload, unsigned int length);
@@ -257,6 +258,9 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         const char* uid = doc["uid"];
         card_cache_remove(uid);
     }
+    else if (strcmp(command, "error_sound") == 0 && onErrorSoundCb) {
+        onErrorSoundCb();
+    }
 }
 
 void mqtt_publish_card_scanned(const char* uid) {
@@ -298,3 +302,4 @@ void mqtt_on_stop(StopCallback callback) { onStopCb = callback; }
 void mqtt_on_volume(VolumeCallback callback) { onVolumeCb = callback; }
 void mqtt_on_ota(OtaCallback callback) { onOtaCb = callback; }
 void mqtt_on_approved(ApprovedCallback callback) { onApprovedCb = callback; }
+void mqtt_on_error_sound(ErrorSoundCallback callback) { onErrorSoundCb = callback; }

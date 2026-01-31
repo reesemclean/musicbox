@@ -14,6 +14,7 @@ static TaskHandle_t audioTaskHandle = NULL;
 // System sound files
 #define SOUND_STARTUP "/startup.mp3"
 #define SOUND_CARD_SCAN "/scan.mp3"
+#define SOUND_ERROR "/error.mp3"
 
 // Queue for gapless playback
 #define MAX_QUEUE_SIZE 50
@@ -118,6 +119,19 @@ void audio_play_card_scan_sound() {
         state = AUDIO_PLAYING;
     } else {
         Serial.println("[Audio] Card scan sound not found");
+    }
+}
+
+void audio_play_error_sound() {
+    if (SPIFFS.exists(SOUND_ERROR)) {
+        Serial.println("[Audio] Playing error sound");
+        audio.stopSong();
+        vTaskDelay(10);
+        playing_system_sound = true;
+        audio.connecttoFS(SPIFFS, SOUND_ERROR);
+        state = AUDIO_PLAYING;
+    } else {
+        Serial.println("[Audio] Error sound not found");
     }
 }
 

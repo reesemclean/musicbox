@@ -20,6 +20,7 @@ bool audio_init();
 // System sounds (from SPIFFS, plays immediately)
 void audio_play_startup_sound();
 void audio_play_card_scan_sound();
+void audio_play_error_sound();
 
 // URL playback
 void audio_play_url(const char* url, int mediaId);
