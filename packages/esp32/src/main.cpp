@@ -133,12 +133,12 @@ void onVolDnClick(Button2 &btn) {
 
 void onNextClick(Button2 &btn) {
     Serial.println("[Button] Next");
-    // TODO: Skip to next track in queue
+    audio_skip_next();
 }
 
 void onPrevClick(Button2 &btn) {
     Serial.println("[Button] Previous");
-    // TODO: Go to previous track or restart current
+    audio_skip_prev();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

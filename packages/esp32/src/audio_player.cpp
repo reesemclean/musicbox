@@ -43,6 +43,14 @@ static int queue_count = 0;
 static char pending_url[256] = {0};
 static int pending_media_id = -1;
 
+// Current track info for restart/previous
+static char current_url[256] = {0};
+static unsigned long track_start_time = 0;
+
+// History for previous track (simple single-track history)
+static char prev_url[256] = {0};
+static int prev_media_id = -1;
+
 // Callbacks
 static TrackEndedCallback on_track_ended = nullptr;
 static QueueEmptyCallback on_queue_empty = nullptr;
@@ -162,7 +170,18 @@ void audio_play_url(const char* url, int mediaId) {
     audio_clear_queue();
 
     Serial.printf("[Audio] Playing URL: %s (mediaId: %d)\n", url, mediaId);
+
+    // Save current as previous before replacing
+    if (current_url[0] != '\0' && current_media_id >= 0) {
+        strncpy(prev_url, current_url, sizeof(prev_url) - 1);
+        prev_media_id = current_media_id;
+    }
+
+    // Save new current track info
+    strncpy(current_url, url, sizeof(current_url) - 1);
     current_media_id = mediaId;
+    track_start_time = millis();
+
     audio.connecttohost(url);
     state = AUDIO_PLAYING;
     emit_status("playing");
@@ -213,7 +232,18 @@ static void play_next_in_queue() {
     queue_count--;
 
     Serial.printf("[Audio] Playing next in queue: %s (remaining: %d)\n", item->url, queue_count);
+
+    // Save current as previous before replacing
+    if (current_url[0] != '\0' && current_media_id >= 0) {
+        strncpy(prev_url, current_url, sizeof(prev_url) - 1);
+        prev_media_id = current_media_id;
+    }
+
+    // Save new current track info
+    strncpy(current_url, item->url, sizeof(current_url) - 1);
     current_media_id = item->mediaId;
+    track_start_time = millis();
+
     audio.connecttohost(item->url);
     state = AUDIO_PLAYING;
     emit_status("playing");
@@ -247,6 +277,61 @@ void audio_stop() {
     Serial.println("[Audio] Stopped");
     if (stoppedMediaId >= 0) {
         emit_status("stopped");
+    }
+}
+
+void audio_skip_next() {
+    if (queue_count > 0) {
+        Serial.println("[Audio] Skipping to next track");
+        audio.stopSong();
+        vTaskDelay(10);
+        play_next_in_queue();
+    } else {
+        Serial.println("[Audio] No next track in queue");
+    }
+}
+
+void audio_skip_prev() {
+    if (state != AUDIO_PLAYING && state != AUDIO_PAUSED) {
+        Serial.println("[Audio] Nothing playing");
+        return;
+    }
+
+    unsigned long elapsed = millis() - track_start_time;
+    const unsigned long RESTART_THRESHOLD = 3000;  // 3 seconds
+
+    if (elapsed > RESTART_THRESHOLD || prev_url[0] == '\0') {
+        // More than 3 seconds in, or no previous track - restart current
+        if (current_url[0] != '\0') {
+            Serial.println("[Audio] Restarting current track");
+            audio.stopSong();
+            vTaskDelay(10);
+            track_start_time = millis();
+            audio.connecttohost(current_url);
+            state = AUDIO_PLAYING;
+            emit_status("playing");
+        }
+    } else {
+        // Within first 3 seconds and have previous - go to previous
+        Serial.printf("[Audio] Going to previous track (mediaId: %d)\n", prev_media_id);
+        audio.stopSong();
+        vTaskDelay(10);
+
+        // Swap current and previous
+        char temp_url[256];
+        strncpy(temp_url, current_url, sizeof(temp_url) - 1);
+        int temp_id = current_media_id;
+
+        strncpy(current_url, prev_url, sizeof(current_url) - 1);
+        current_media_id = prev_media_id;
+        track_start_time = millis();
+
+        strncpy(prev_url, temp_url, sizeof(prev_url) - 1);
+        prev_media_id = temp_id;
+
+        audio.connecttohost(current_url);
+        state = AUDIO_PLAYING;
+        emit_status("playing");
     }
 }
 

@@ -89,12 +89,12 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 - [x] **Step 12.1**: Play/Pause (button + audio on Core 0)
 - [x] **Step 12.2**: Volume Control (buttons)
-- [ ] **Step 12.3**: Remote Commands (API → device control)
+- [x] **Step 12.3**: Remote Commands (API → device via MQTT, Control Plane UI)
 
 ## Phase 13: Playlist Support
 
 - [x] **Step 13.1**: Playlist Playback (gapless queue)
-- [ ] **Step 13.2**: Next/Previous (buttons wired, logic TODO)
+- [x] **Step 13.2**: Next/Previous (Next skips queue, Prev restarts or goes back within 3s)
 
 ## Phase 14: SD Card Caching
 

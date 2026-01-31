@@ -32,6 +32,8 @@ void audio_clear_queue();
 void audio_pause();
 void audio_resume();
 void audio_stop();
+void audio_skip_next();
+void audio_skip_prev();
 
 // Volume (0-21)
 void audio_set_volume(int level);
