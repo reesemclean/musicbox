@@ -3,6 +3,7 @@ import { openAPIRouteHandler } from 'hono-openapi'
 import { WebSocketServer } from 'ws'
 import { createApp } from './app.js'
 import { refreshAllFeeds } from './services/podcastService.js'
+import { mqttService } from './services/mqttService.js'
 
 const app = createApp()
 
@@ -63,43 +64,9 @@ const server = createServer(async (req, res) => {
   }
 })
 
-// WebSocket servers for devices and control plane
-const deviceWss = new WebSocketServer({ noServer: true })
+// WebSocket server for control plane (web UI)
+// Note: Devices now use MQTT instead of WebSocket
 const controlWss = new WebSocketServer({ noServer: true })
-
-// Device WebSocket - receives events from ESP32 devices
-deviceWss.on('connection', (ws) => {
-  console.log('[WS:Device] Client connected')
-
-  ws.on('message', (data) => {
-    const message = data.toString()
-    console.log('[WS:Device] Received:', message)
-
-    try {
-      const event = JSON.parse(message)
-
-      // Forward card_scanned events to all control plane clients
-      if (event.type === 'card_scanned') {
-        const payload = JSON.stringify({
-          type: 'card_scanned',
-          uid: event.uid,
-          timestamp: Date.now(),
-        })
-        controlWss.clients.forEach((client) => {
-          if (client.readyState === 1) { // WebSocket.OPEN
-            client.send(payload)
-          }
-        })
-      }
-    } catch {
-      console.log('[WS:Device] Non-JSON message:', message)
-    }
-  })
-
-  ws.on('close', () => {
-    console.log('[WS:Device] Client disconnected')
-  })
-})
 
 // Control plane WebSocket - sends events to web UI
 controlWss.on('connection', (ws) => {
@@ -110,13 +77,36 @@ controlWss.on('connection', (ws) => {
   })
 })
 
+// Bridge MQTT events to WebSocket for Control Plane
+function broadcastToControlPlane(event: object) {
+  const payload = JSON.stringify(event)
+  controlWss.clients.forEach((client) => {
+    if (client.readyState === 1) { // WebSocket.OPEN
+      client.send(payload)
+    }
+  })
+}
+
+// Forward MQTT events to WebSocket clients
+mqttService.on('card:scanned', ({ mac, uid, timestamp }) => {
+  broadcastToControlPlane({ type: 'card_scanned', mac, uid, timestamp })
+})
+
+mqttService.on('device:registered', (device) => {
+  broadcastToControlPlane({ type: 'device_registered', device })
+})
+
+mqttService.on('device:status', ({ mac, online }) => {
+  broadcastToControlPlane({ type: 'device_status', mac, online })
+})
+
+mqttService.on('device:event', ({ mac, event }) => {
+  broadcastToControlPlane({ type: 'device_event', mac, event })
+})
+
 // Handle WebSocket upgrade requests
 server.on('upgrade', (req, socket, head) => {
-  if (req.url === '/ws/device') {
-    deviceWss.handleUpgrade(req, socket, head, (ws) => {
-      deviceWss.emit('connection', ws, req)
-    })
-  } else if (req.url === '/ws/control') {
+  if (req.url === '/ws/control') {
     controlWss.handleUpgrade(req, socket, head, (ws) => {
       controlWss.emit('connection', ws, req)
     })
@@ -126,20 +116,33 @@ server.on('upgrade', (req, socket, head) => {
 })
 
 const PORT = 3001
-server.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`)
-  console.log(`Device WebSocket: ws://localhost:${PORT}/ws/device`)
-  console.log(`Control WebSocket: ws://localhost:${PORT}/ws/control`)
 
-  // Hourly podcast feed refresh
-  const HOUR_MS = 60 * 60 * 1000
-  setInterval(async () => {
-    console.log('[Podcasts] Running hourly feed refresh...')
-    try {
-      const result = await refreshAllFeeds()
-      console.log(`[Podcasts] Refreshed ${result.succeeded}/${result.total} feeds`)
-    } catch (error) {
-      console.error('[Podcasts] Hourly refresh failed:', error)
-    }
-  }, HOUR_MS)
-})
+async function startServer() {
+  // Connect to MQTT broker
+  try {
+    await mqttService.connect()
+  } catch (err) {
+    console.error('[MQTT] Failed to connect to broker:', err)
+    console.log('[MQTT] Server will continue without MQTT - devices will not be able to connect')
+  }
+
+  server.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`)
+    console.log(`Control WebSocket: ws://localhost:${PORT}/ws/control`)
+    console.log(`MQTT Broker: ${process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'}`)
+
+    // Hourly podcast feed refresh
+    const HOUR_MS = 60 * 60 * 1000
+    setInterval(async () => {
+      console.log('[Podcasts] Running hourly feed refresh...')
+      try {
+        const result = await refreshAllFeeds()
+        console.log(`[Podcasts] Refreshed ${result.succeeded}/${result.total} feeds`)
+      } catch (error) {
+        console.error('[Podcasts] Hourly refresh failed:', error)
+      }
+    }, HOUR_MS)
+  })
+}
+
+startServer()

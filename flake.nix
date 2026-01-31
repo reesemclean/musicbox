@@ -21,6 +21,9 @@
             (python3.withPackages (ps: with ps; [
               ytmusicapi
             ]))
+
+            # MQTT Broker (for local development)
+            mosquitto
           ];
 
           shellHook = ''

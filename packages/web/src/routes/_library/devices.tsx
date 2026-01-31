@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
-import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
+import { queryOptions, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, X } from 'lucide-react'
 import { api, type Device } from '@/lib/api-client'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 
 const devicesQueryOptions = queryOptions({
   queryKey: ['devices'],
@@ -10,6 +12,7 @@ const devicesQueryOptions = queryOptions({
     if (error) throw new Error('Failed to load devices')
     return data
   },
+  refetchInterval: 5000, // Poll for new devices
 })
 
 export const Route = createFileRoute('/_library/devices')({
@@ -22,17 +25,119 @@ export const Route = createFileRoute('/_library/devices')({
 function DevicesPage() {
   const { data: devices } = useSuspenseQuery(devicesQueryOptions)
 
+  // Separate pending devices to show prominently
+  const pendingDevices = devices.filter((d) => d.status === 'pending')
+  const otherDevices = devices.filter((d) => d.status !== 'pending')
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Devices</h1>
       </div>
 
-      {devices.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <DevicesTable devices={devices as Device[]} />
+      {pendingDevices.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-yellow-500" />
+            Pending Approval
+          </h2>
+          <div className="space-y-3">
+            {pendingDevices.map((device) => (
+              <PendingDeviceCard key={device.id} device={device as Device} />
+            ))}
+          </div>
+        </div>
       )}
+
+      {otherDevices.length === 0 && pendingDevices.length === 0 ? (
+        <EmptyState />
+      ) : otherDevices.length > 0 ? (
+        <DevicesTable devices={otherDevices as Device[]} />
+      ) : null}
+    </div>
+  )
+}
+
+function PendingDeviceCard({ device }: { device: Device }) {
+  const queryClient = useQueryClient()
+
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await api.PATCH('/api/devices/{id}', {
+        params: { path: { id: device.id.toString() } },
+        body: { status: 'approved' },
+      })
+      if (error) throw new Error('Failed to approve device')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      toast.success(`Device ${device.name || device.mac} approved`)
+    },
+    onError: () => {
+      toast.error('Failed to approve device')
+    },
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await api.PATCH('/api/devices/{id}', {
+        params: { path: { id: device.id.toString() } },
+        body: { status: 'rejected' },
+      })
+      if (error) throw new Error('Failed to reject device')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      toast.success(`Device ${device.name || device.mac} rejected`)
+    },
+    onError: () => {
+      toast.error('Failed to reject device')
+    },
+  })
+
+  return (
+    <div className="border border-yellow-200 dark:border-yellow-900 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 bg-yellow-100 dark:bg-yellow-900/50 rounded-lg flex items-center justify-center">
+            <Cpu className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
+          </div>
+          <div>
+            <div className="font-medium">{device.name || 'New Device'}</div>
+            <code className="text-sm text-muted-foreground">{device.mac}</code>
+            <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+              {device.firmwareVersion && (
+                <span>Firmware: {device.firmwareVersion}</span>
+              )}
+              {device.lastIp && (
+                <span className="flex items-center gap-1">
+                  <Globe className="h-3 w-3" />
+                  {device.lastIp}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => rejectMutation.mutate()}
+            disabled={rejectMutation.isPending || approveMutation.isPending}
+          >
+            <X className="h-4 w-4 mr-1" />
+            Reject
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => approveMutation.mutate()}
+            disabled={rejectMutation.isPending || approveMutation.isPending}
+          >
+            <Check className="h-4 w-4 mr-1" />
+            Approve
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

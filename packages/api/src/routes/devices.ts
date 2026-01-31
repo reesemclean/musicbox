@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { devices } from '../db/schema.js'
+import { mqttService, TOPICS } from '../services/mqttService.js'
 
 export const deviceRoutes = new Hono()
 
@@ -120,6 +121,12 @@ deviceRoutes.patch(
     const { id } = c.req.valid('param')
     const data = c.req.valid('json')
 
+    // Get current device state to check for status change
+    const [current] = await db.select().from(devices).where(eq(devices.id, id)).limit(1)
+    if (!current) {
+      return c.json({ error: 'Device not found' }, 404)
+    }
+
     const [updated] = await db
       .update(devices)
       .set(data)
@@ -128,6 +135,16 @@ deviceRoutes.patch(
 
     if (!updated) {
       return c.json({ error: 'Device not found' }, 404)
+    }
+
+    // If status changed to approved, notify the device via MQTT
+    if (data.status === 'approved' && current.status !== 'approved') {
+      const macForTopic = updated.mac.replace(/:/g, '')
+      mqttService.publish(TOPICS.deviceCommands(macForTopic), {
+        command: 'config',
+        status: 'approved',
+      })
+      console.log(`[Devices] Sent approval to device ${updated.mac}`)
     }
 
     return c.json(updated)
