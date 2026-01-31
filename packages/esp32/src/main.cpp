@@ -4,6 +4,8 @@
 #include "mqtt_client.h"
 #include "nfc_reader.h"
 #include "audio_player.h"
+#include "card_cache.h"
+#include "secrets.h"
 
 // Button pins
 #define BTN_PLAY   10
@@ -135,7 +137,38 @@ void onCardScanned(const char* uid) {
     // Play feedback sound immediately
     audio_play_card_scan_sound();
 
-    // Send to server for card lookup
+    // Check cache first for instant playback
+    CachedCard* cached = card_cache_lookup(uid);
+    if (cached && cached->trackCount > 0) {
+        Serial.printf("[Card] Cache hit: %s (%d tracks)\n", uid, cached->trackCount);
+
+        // Set volume if card has specific volume
+        if (cached->volume >= 0) {
+            audio_set_volume(cached->volume);
+        }
+
+        // Build URL and play first track immediately
+        char url[128];
+        snprintf(url, sizeof(url), "http://%s:%d/api/media/stream/%d",
+                 API_HOST, API_PORT, cached->mediaIds[0]);
+        audio_play_url(url, cached->mediaIds[0]);
+
+        // Queue remaining tracks
+        for (int i = 1; i < cached->trackCount; i++) {
+            snprintf(url, sizeof(url), "http://%s:%d/api/media/stream/%d",
+                     API_HOST, API_PORT, cached->mediaIds[i]);
+            audio_queue_url(url, cached->mediaIds[i]);
+        }
+
+        // Still notify server (for logging/UI updates)
+        if (mqtt_is_connected()) {
+            mqtt_publish_card_scanned(uid);
+        }
+        return;
+    }
+
+    // Cache miss - send to server for lookup
+    Serial.printf("[Card] Cache miss: %s\n", uid);
     if (mqtt_is_connected()) {
         mqtt_publish_card_scanned(uid);
     }
@@ -152,6 +185,9 @@ void setup() {
 
     // Initialize audio (SPIFFS + I2S)
     audio_init();
+
+    // Initialize card cache
+    card_cache_init();
 
     // Initialize buttons (active low with internal pull-up)
     Serial.println("[Buttons] Initializing...");

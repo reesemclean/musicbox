@@ -61,7 +61,7 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 - [x] **Step 8.9**: Card Registration Flow
 - [x] **Step 8.10**: Devices Page
 - [x] **Step 8.11**: Device Approval Flow
-- [ ] **Step 8.12**: Device Remote Control (deferred - needs device registration)
+- [x] **Step 8.12**: Device Remote Control
 - [x] **Step 8.13**: Downloads Page (YouTube Music)
 - [x] **Step 8.14**: Download Queue Management
 - [x] **Step 8.15**: Podcasts Page
@@ -72,35 +72,36 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 - [x] **Step 9.1**: MQTT Setup (replaced WebSocket with MQTT for stability)
 - [x] **Step 9.2**: Device Registration Flow
-- [ ] **Step 9.3**: Bidirectional Communication
+- [x] **Step 9.3**: Bidirectional Communication (NFC → API lookup → Play command)
 
 ## Phase 10: NFC → Playback Flow
 
-- [ ] **Step 10.1**: Card Scan Event
-- [ ] **Step 10.2**: Play Command
-- [ ] **Step 10.3**: Unknown Card Handling
+- [x] **Step 10.1**: Card Scan Event
+- [x] **Step 10.2**: Play Command
+- [ ] **Step 10.3**: Unknown Card Handling (emits event, UI not wired)
 
 ## Phase 11: Audio Streaming
 
-- [ ] **Step 11.1**: ESP32 HTTP Streaming
-- [ ] **Step 11.2**: Playback Events
+- [x] **Step 11.1**: ESP32 HTTP Streaming (with system sounds)
+- [ ] **Step 11.2**: Playback Events (status updates to API)
 
 ## Phase 12: Playback Controls
 
-- [ ] **Step 12.1**: Play/Pause
-- [ ] **Step 12.2**: Volume Control
-- [ ] **Step 12.3**: Remote Commands
+- [x] **Step 12.1**: Play/Pause (button + audio on Core 0)
+- [x] **Step 12.2**: Volume Control (buttons)
+- [ ] **Step 12.3**: Remote Commands (API → device control)
 
 ## Phase 13: Playlist Support
 
-- [ ] **Step 13.1**: Playlist Playback
-- [ ] **Step 13.2**: Next/Previous
+- [x] **Step 13.1**: Playlist Playback (gapless queue)
+- [ ] **Step 13.2**: Next/Previous (buttons wired, logic TODO)
 
 ## Phase 14: SD Card Caching
 
 - [ ] **Step 14.1**: Cache Directory Structure
 - [ ] **Step 14.2**: Cache Downloads
 - [ ] **Step 14.3**: Cache-First Playback
+- [ ] **Step 14.4**: Persist Card Cache to SD (move RAM cache from card_cache.cpp to SD card file)
 
 ## Phase 15: Sound Machine
 

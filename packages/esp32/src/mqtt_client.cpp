@@ -1,4 +1,5 @@
 #include "mqtt_client.h"
+#include "card_cache.h"
 #include "secrets.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -218,6 +219,43 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         if (status && strcmp(status, "approved") == 0 && onApprovedCb) {
             onApprovedCb();
         }
+    }
+    else if (strcmp(command, "sync_cards") == 0) {
+        // Full card cache sync
+        card_cache_clear();
+        JsonArray cards = doc["cards"];
+        for (JsonObject card : cards) {
+            const char* uid = card["uid"];
+            int volume = card["volume"] | -1;
+            JsonArray mediaIds = card["mediaIds"];
+            int ids[MAX_TRACKS_PER_CARD];
+            int count = 0;
+            for (int id : mediaIds) {
+                if (count < MAX_TRACKS_PER_CARD) {
+                    ids[count++] = id;
+                }
+            }
+            card_cache_set(uid, ids, count, volume);
+        }
+        Serial.printf("[MQTT] Synced %d cards\n", card_cache_count());
+    }
+    else if (strcmp(command, "card_update") == 0) {
+        // Single card update
+        const char* uid = doc["uid"];
+        int volume = doc["volume"] | -1;
+        JsonArray mediaIds = doc["mediaIds"];
+        int ids[MAX_TRACKS_PER_CARD];
+        int count = 0;
+        for (int id : mediaIds) {
+            if (count < MAX_TRACKS_PER_CARD) {
+                ids[count++] = id;
+            }
+        }
+        card_cache_set(uid, ids, count, volume);
+    }
+    else if (strcmp(command, "card_delete") == 0) {
+        const char* uid = doc["uid"];
+        card_cache_remove(uid);
     }
 }
 

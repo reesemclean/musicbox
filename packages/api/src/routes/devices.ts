@@ -180,3 +180,121 @@ deviceRoutes.delete(
     return c.json({ success: true })
   }
 )
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Remote Control Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+
+const volumeSchema = z.object({
+  level: z.number().min(0).max(21),
+})
+
+// Helper to get device and validate it's approved
+async function getApprovedDevice(id: number) {
+  const [device] = await db.select().from(devices).where(eq(devices.id, id)).limit(1)
+  if (!device) return { error: 'Device not found', status: 404 as const }
+  if (device.status !== 'approved') return { error: 'Device not approved', status: 400 as const }
+  return { device }
+}
+
+// Pause playback
+deviceRoutes.post(
+  '/:id/pause',
+  describeRoute({
+    tags: ['Devices'],
+    summary: 'Pause device playback',
+    responses: {
+      200: { description: 'Success', content: { 'application/json': { schema: resolver(successSchema) } } },
+      400: { description: 'Device not approved', content: { 'application/json': { schema: resolver(errorSchema) } } },
+      404: { description: 'Device not found', content: { 'application/json': { schema: resolver(errorSchema) } } },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const result = await getApprovedDevice(id)
+    if ('error' in result) return c.json({ error: result.error }, result.status)
+
+    const macForTopic = result.device.mac.replace(/:/g, '')
+    mqttService.pause(macForTopic)
+    return c.json({ success: true })
+  }
+)
+
+// Resume playback
+deviceRoutes.post(
+  '/:id/resume',
+  describeRoute({
+    tags: ['Devices'],
+    summary: 'Resume device playback',
+    responses: {
+      200: { description: 'Success', content: { 'application/json': { schema: resolver(successSchema) } } },
+      400: { description: 'Device not approved', content: { 'application/json': { schema: resolver(errorSchema) } } },
+      404: { description: 'Device not found', content: { 'application/json': { schema: resolver(errorSchema) } } },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const result = await getApprovedDevice(id)
+    if ('error' in result) return c.json({ error: result.error }, result.status)
+
+    const macForTopic = result.device.mac.replace(/:/g, '')
+    mqttService.resume(macForTopic)
+    return c.json({ success: true })
+  }
+)
+
+// Stop playback
+deviceRoutes.post(
+  '/:id/stop',
+  describeRoute({
+    tags: ['Devices'],
+    summary: 'Stop device playback',
+    responses: {
+      200: { description: 'Success', content: { 'application/json': { schema: resolver(successSchema) } } },
+      400: { description: 'Device not approved', content: { 'application/json': { schema: resolver(errorSchema) } } },
+      404: { description: 'Device not found', content: { 'application/json': { schema: resolver(errorSchema) } } },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const result = await getApprovedDevice(id)
+    if ('error' in result) return c.json({ error: result.error }, result.status)
+
+    const macForTopic = result.device.mac.replace(/:/g, '')
+    mqttService.stop(macForTopic)
+    return c.json({ success: true })
+  }
+)
+
+// Set volume
+deviceRoutes.post(
+  '/:id/volume',
+  describeRoute({
+    tags: ['Devices'],
+    summary: 'Set device volume',
+    requestBody: {
+      required: true,
+      content: { 'application/json': { schema: resolver(volumeSchema) } },
+    },
+    responses: {
+      200: { description: 'Success', content: { 'application/json': { schema: resolver(successSchema) } } },
+      400: { description: 'Device not approved', content: { 'application/json': { schema: resolver(errorSchema) } } },
+      404: { description: 'Device not found', content: { 'application/json': { schema: resolver(errorSchema) } } },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  sValidator('json', volumeSchema),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const { level } = c.req.valid('json')
+    const result = await getApprovedDevice(id)
+    if ('error' in result) return c.json({ error: result.error }, result.status)
+
+    const macForTopic = result.device.mac.replace(/:/g, '')
+    mqttService.setVolume(macForTopic, level)
+    return c.json({ success: true })
+  }
+)

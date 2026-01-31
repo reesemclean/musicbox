@@ -6,7 +6,7 @@
 #define PN532_SCL 9
 
 // Debounce settings
-#define DEBOUNCE_MS 2000
+#define DEBOUNCE_MS 1500
 
 // NFC reader instance
 static Adafruit_PN532 nfc(PN532_SDA, PN532_SCL);
@@ -52,7 +52,7 @@ void nfc_loop() {
     uint8_t uid[7];
     uint8_t uid_len;
 
-    // Non-blocking read attempt (50ms timeout - keep short for button responsiveness)
+    // Non-blocking read attempt (100ms timeout - balance between detection and responsiveness)
     if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uid_len, 50)) {
         unsigned long now = millis();
 

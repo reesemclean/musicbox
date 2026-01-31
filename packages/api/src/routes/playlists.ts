@@ -4,8 +4,21 @@ import { sValidator } from '@hono/standard-validator'
 import { z } from 'zod'
 import { eq, asc, and } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { playlists, playlistMedia, media } from '../db/schema.js'
+import { playlists, playlistMedia, media, cards } from '../db/schema.js'
 import { mediaTypeSchema } from '../types/media.js'
+import { mqttService } from '../services/mqttService.js'
+
+// Helper to push cache updates for all cards linked to a playlist
+async function pushCardsForPlaylist(playlistId: number): Promise<void> {
+  const linkedCards = await db
+    .select({ uid: cards.uid })
+    .from(cards)
+    .where(eq(cards.playlistId, playlistId))
+
+  for (const card of linkedCards) {
+    mqttService.pushCardUpdate(card.uid)
+  }
+}
 
 export const playlistRoutes = new Hono()
 
@@ -279,6 +292,9 @@ playlistRoutes.post(
       .values({ playlistId: id, mediaId, position: pos })
       .returning()
 
+    // Push cache updates to devices for cards linked to this playlist
+    pushCardsForPlaylist(id)
+
     return c.json(added, 201)
   }
 )
@@ -311,6 +327,9 @@ playlistRoutes.delete(
           eq(playlistMedia.mediaId, mediaId)
         )
       )
+
+    // Push cache updates to devices for cards linked to this playlist
+    pushCardsForPlaylist(id)
 
     return c.json({ success: true })
   }
@@ -353,6 +372,9 @@ playlistRoutes.put(
     if (newEntries.length > 0) {
       await db.insert(playlistMedia).values(newEntries)
     }
+
+    // Push cache updates to devices for cards linked to this playlist
+    pushCardsForPlaylist(id)
 
     return c.json({ success: true })
   }

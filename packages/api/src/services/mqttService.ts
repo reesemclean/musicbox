@@ -388,6 +388,145 @@ class MqttService extends EventEmitter {
       command: 'config',
       status: 'approved',
     })
+
+    // Sync all cards to the device
+    this.syncCardsToDevice(macForTopic)
+  }
+
+  // Sync all cards to a device (for caching)
+  async syncCardsToDevice(macNoColons: string): Promise<void> {
+    console.log(`[MQTT] Syncing cards to device ${macNoColons}`)
+
+    // Get all cards with their media mappings
+    const allCards = await db.select().from(cards)
+
+    const cardData: Array<{
+      uid: string
+      mediaIds: number[]
+      volume: number
+    }> = []
+
+    for (const card of allCards) {
+      let mediaIds: number[] = []
+
+      if (card.mediaId) {
+        // Single media item
+        mediaIds = [card.mediaId]
+      } else if (card.playlistId) {
+        // Get all tracks from playlist in order
+        const tracks = await db
+          .select({ mediaId: playlistMedia.mediaId })
+          .from(playlistMedia)
+          .where(eq(playlistMedia.playlistId, card.playlistId))
+          .orderBy(playlistMedia.position)
+
+        mediaIds = tracks.map(t => t.mediaId)
+      } else if (card.podcastFeedId) {
+        // Get most recent episode from this feed
+        // TODO: Proper podcast episode linking
+        const [latestEpisode] = await db
+          .select({ id: media.id })
+          .from(media)
+          .where(eq(media.type, 'podcast'))
+          .orderBy(desc(media.createdAt))
+          .limit(1)
+
+        if (latestEpisode) {
+          mediaIds = [latestEpisode.id]
+        }
+      }
+
+      if (mediaIds.length > 0) {
+        cardData.push({
+          uid: card.uid,
+          mediaIds,
+          volume: card.volume ?? -1,
+        })
+      }
+    }
+
+    this.publish(TOPICS.deviceCommands(macNoColons), {
+      command: 'sync_cards',
+      cards: cardData,
+    })
+
+    console.log(`[MQTT] Synced ${cardData.length} cards to device`)
+  }
+
+  // Push a single card update to all online devices
+  async pushCardUpdate(uid: string): Promise<void> {
+    const [card] = await db.select().from(cards).where(eq(cards.uid, uid)).limit(1)
+
+    if (!card) {
+      // Card was deleted, push delete to all devices
+      await this.pushCardDelete(uid)
+      return
+    }
+
+    let mediaIds: number[] = []
+
+    if (card.mediaId) {
+      mediaIds = [card.mediaId]
+    } else if (card.playlistId) {
+      const tracks = await db
+        .select({ mediaId: playlistMedia.mediaId })
+        .from(playlistMedia)
+        .where(eq(playlistMedia.playlistId, card.playlistId))
+        .orderBy(playlistMedia.position)
+
+      mediaIds = tracks.map(t => t.mediaId)
+    } else if (card.podcastFeedId) {
+      const [latestEpisode] = await db
+        .select({ id: media.id })
+        .from(media)
+        .where(eq(media.type, 'podcast'))
+        .orderBy(desc(media.createdAt))
+        .limit(1)
+
+      if (latestEpisode) {
+        mediaIds = [latestEpisode.id]
+      }
+    }
+
+    // Get all approved devices
+    const approvedDevices = await db
+      .select()
+      .from(devices)
+      .where(eq(devices.status, 'approved'))
+
+    const updatePayload = {
+      command: 'card_update',
+      uid: card.uid,
+      mediaIds,
+      volume: card.volume ?? -1,
+    }
+
+    for (const device of approvedDevices) {
+      const macForTopic = device.mac.replace(/:/g, '')
+      this.publish(TOPICS.deviceCommands(macForTopic), updatePayload)
+    }
+
+    console.log(`[MQTT] Pushed card update ${uid} to ${approvedDevices.length} devices`)
+  }
+
+  // Push a card deletion to all online devices
+  async pushCardDelete(uid: string): Promise<void> {
+    const approvedDevices = await db
+      .select()
+      .from(devices)
+      .where(eq(devices.status, 'approved'))
+
+    const deletePayload = {
+      command: 'card_delete',
+      uid,
+    }
+
+    for (const device of approvedDevices) {
+      const macForTopic = device.mac.replace(/:/g, '')
+      this.publish(TOPICS.deviceCommands(macForTopic), deletePayload)
+    }
+
+    console.log(`[MQTT] Pushed card delete ${uid} to ${approvedDevices.length} devices`)
   }
 
   // Public methods for sending commands

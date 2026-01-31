@@ -109,6 +109,10 @@ void audio_play_startup_sound() {
 void audio_play_card_scan_sound() {
     if (SPIFFS.exists(SOUND_CARD_SCAN)) {
         Serial.println("[Audio] Playing card scan sound");
+        // Stop current audio before switching source (prevents race condition with audio task)
+        audio.stopSong();
+        // Small delay to let audio task process the stop
+        vTaskDelay(10);
         playing_system_sound = true;
         audio.connecttoFS(SPIFFS, SOUND_CARD_SCAN);
         state = AUDIO_PLAYING;
@@ -124,6 +128,12 @@ void audio_play_url(const char* url, int mediaId) {
         pending_media_id = mediaId;
         Serial.printf("[Audio] Queued pending URL: %s\n", url);
         return;
+    }
+
+    // Stop current audio before switching source (prevents race condition with audio task)
+    if (state != AUDIO_IDLE) {
+        audio.stopSong();
+        vTaskDelay(10);
     }
 
     // Clear any existing queue

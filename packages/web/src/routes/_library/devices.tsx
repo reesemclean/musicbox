@@ -1,8 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, X } from 'lucide-react'
+import { useState } from 'react'
+import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, X, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp } from 'lucide-react'
 import { api, type Device } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
+import { Slider } from '@/components/ui/slider'
 import { toast } from 'sonner'
 
 const devicesQueryOptions = queryOptions({
@@ -166,6 +168,7 @@ function DevicesTable({ devices }: { devices: Device[] }) {
             <th className="px-4 py-3 font-medium">Firmware</th>
             <th className="px-4 py-3 font-medium">Last Seen</th>
             <th className="px-4 py-3 font-medium">IP Address</th>
+            <th className="px-4 py-3 font-medium w-10"></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -179,46 +182,190 @@ function DevicesTable({ devices }: { devices: Device[] }) {
 }
 
 function DeviceRow({ device }: { device: Device }) {
+  const [expanded, setExpanded] = useState(false)
   const isOnline = getIsOnline(device.lastSeen)
+  const canControl = device.status === 'approved' && isOnline
 
   return (
-    <tr className="hover:bg-muted/30 transition-colors">
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 bg-muted rounded flex items-center justify-center">
-            <Cpu className="h-5 w-5 text-muted-foreground" />
+    <>
+      <tr
+        className={`hover:bg-muted/30 transition-colors ${canControl ? 'cursor-pointer' : ''}`}
+        onClick={() => canControl && setExpanded(!expanded)}
+      >
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 bg-muted rounded flex items-center justify-center">
+              <Cpu className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <span className="font-medium block">{device.name || 'Unnamed Device'}</span>
+              <code className="text-xs text-muted-foreground">{device.mac}</code>
+            </div>
           </div>
-          <div>
-            <span className="font-medium block">{device.name || 'Unnamed Device'}</span>
-            <code className="text-xs text-muted-foreground">{device.mac}</code>
-          </div>
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        <StatusBadge status={device.status} />
-      </td>
-      <td className="px-4 py-3">
-        <ConnectionStatus isOnline={isOnline} />
-      </td>
-      <td className="px-4 py-3">
-        <span className="text-sm text-muted-foreground">
-          {device.firmwareVersion || '—'}
-        </span>
-      </td>
-      <td className="px-4 py-3">
-        <LastSeen lastSeen={device.lastSeen} />
-      </td>
-      <td className="px-4 py-3">
-        {device.lastIp ? (
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-            <Globe className="h-3 w-3" />
-            <span>{device.lastIp}</span>
-          </div>
+        </td>
+        <td className="px-4 py-3">
+          <StatusBadge status={device.status} />
+        </td>
+        <td className="px-4 py-3">
+          <ConnectionStatus isOnline={isOnline} />
+        </td>
+        <td className="px-4 py-3">
+          <span className="text-sm text-muted-foreground">
+            {device.firmwareVersion || '—'}
+          </span>
+        </td>
+        <td className="px-4 py-3">
+          <LastSeen lastSeen={device.lastSeen} />
+        </td>
+        <td className="px-4 py-3">
+          {device.lastIp ? (
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Globe className="h-3 w-3" />
+              <span>{device.lastIp}</span>
+            </div>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </td>
+        <td className="px-4 py-3">
+          {canControl && (
+            expanded ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )
+          )}
+        </td>
+      </tr>
+      {expanded && canControl && (
+        <tr>
+          <td colSpan={7} className="px-4 py-4 bg-muted/20">
+            <DeviceRemoteControl device={device} />
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+function DeviceRemoteControl({ device }: { device: Device }) {
+  const [volume, setVolume] = useState(10)
+  const [isPaused, setIsPaused] = useState(false)
+
+  const pauseMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await api.POST('/api/devices/{id}/pause', {
+        params: { path: { id: device.id.toString() } },
+      })
+      if (error) throw new Error('Failed to pause')
+    },
+    onSuccess: () => {
+      setIsPaused(true)
+      toast.success('Playback paused')
+    },
+    onError: () => toast.error('Failed to pause'),
+  })
+
+  const resumeMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await api.POST('/api/devices/{id}/resume', {
+        params: { path: { id: device.id.toString() } },
+      })
+      if (error) throw new Error('Failed to resume')
+    },
+    onSuccess: () => {
+      setIsPaused(false)
+      toast.success('Playback resumed')
+    },
+    onError: () => toast.error('Failed to resume'),
+  })
+
+  const stopMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await api.POST('/api/devices/{id}/stop', {
+        params: { path: { id: device.id.toString() } },
+      })
+      if (error) throw new Error('Failed to stop')
+    },
+    onSuccess: () => {
+      setIsPaused(false)
+      toast.success('Playback stopped')
+    },
+    onError: () => toast.error('Failed to stop'),
+  })
+
+  const volumeMutation = useMutation({
+    mutationFn: async (level: number) => {
+      const { error } = await api.POST('/api/devices/{id}/volume', {
+        params: { path: { id: device.id.toString() } },
+        body: { level },
+      })
+      if (error) throw new Error('Failed to set volume')
+    },
+    onError: () => toast.error('Failed to set volume'),
+  })
+
+  const handleVolumeChange = (values: number[]) => {
+    const newVolume = values[0]
+    setVolume(newVolume)
+    volumeMutation.mutate(newVolume)
+  }
+
+  const isLoading = pauseMutation.isPending || resumeMutation.isPending || stopMutation.isPending
+
+  return (
+    <div className="flex items-center gap-6" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground mr-2">Playback</span>
+        {isPaused ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => resumeMutation.mutate()}
+            disabled={isLoading}
+          >
+            <Play className="h-4 w-4 mr-1" />
+            Resume
+          </Button>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => pauseMutation.mutate()}
+            disabled={isLoading}
+          >
+            <Pause className="h-4 w-4 mr-1" />
+            Pause
+          </Button>
         )}
-      </td>
-    </tr>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => stopMutation.mutate()}
+          disabled={isLoading}
+        >
+          <Square className="h-4 w-4 mr-1" />
+          Stop
+        </Button>
+      </div>
+
+      <div className="flex items-center gap-3 flex-1 max-w-xs">
+        <span className="text-sm font-medium text-muted-foreground">Volume</span>
+        {volume === 0 ? (
+          <VolumeX className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <Volume2 className="h-4 w-4 text-muted-foreground" />
+        )}
+        <Slider
+          value={[volume]}
+          onValueChange={handleVolumeChange}
+          max={21}
+          step={1}
+          className="flex-1"
+        />
+        <span className="text-sm text-muted-foreground w-6 text-right">{volume}</span>
+      </div>
+    </div>
   )
 }
 

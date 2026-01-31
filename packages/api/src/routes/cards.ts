@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { cards, media, playlists, podcastFeeds } from '../db/schema.js'
 import { mediaTypeSchema } from '../types/media.js'
+import { mqttService } from '../services/mqttService.js'
 
 export const cardRoutes = new Hono()
 
@@ -260,6 +261,10 @@ cardRoutes.post(
     }
 
     const [created] = await db.insert(cards).values(values).returning()
+
+    // Push card to all devices
+    mqttService.pushCardUpdate(created.uid)
+
     return c.json(created, 201)
   }
 )
@@ -317,6 +322,9 @@ cardRoutes.patch(
       return c.json({ error: 'Card not found' }, 404)
     }
 
+    // Push update to all devices
+    mqttService.pushCardUpdate(updated.uid)
+
     return c.json(updated)
   }
 )
@@ -346,6 +354,9 @@ cardRoutes.delete(
     if (!deleted) {
       return c.json({ error: 'Card not found' }, 404)
     }
+
+    // Push delete to all devices
+    mqttService.pushCardDelete(deleted.uid)
 
     return c.json({ success: true })
   }
