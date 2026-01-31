@@ -136,11 +136,11 @@ async function processDownload(queueId: number) {
             mimeType: 'audio/mpeg',
             fileSize: fileStats.size,
             filePath: `songs/${uuid}.mp3`,
-            metadata: JSON.stringify({
-              artist: artist || undefined,
-              album: album || undefined,
+            metadata: {
+              artist: artist || null,
+              album: album || null,
               youtubeVideoId: videoId,
-            }),
+            },
           }).returning()
 
           // Add to playlist if specified

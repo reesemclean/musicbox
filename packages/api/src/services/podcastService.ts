@@ -317,14 +317,14 @@ export async function refreshFeed(feedId: number) {
       mimeType: 'audio/mpeg',
       fileSize: null,
       filePath: '', // Empty until downloaded
-      metadata: JSON.stringify({
+      metadata: {
         feedId,
         guid,
         pubDate: episode.pubDate ? new Date(episode.pubDate).toISOString() : null,
         description: episode.contentSnippet || episode.content || null,
         audioUrl,
         downloadStatus: 'pending',
-      }),
+      },
     }).returning()
 
     pendingEpisodes.push({
@@ -394,10 +394,10 @@ async function downloadEpisodeById(mediaId: number, episode: PodcastEpisode) {
 
   // Update status to downloading
   await db.update(media).set({
-    metadata: JSON.stringify({
+    metadata: {
       ...existingMeta,
       downloadStatus: 'downloading',
-    }),
+    },
   }).where(eq(media.id, mediaId))
 
   try {
@@ -432,10 +432,10 @@ async function downloadEpisodeById(mediaId: number, episode: PodcastEpisode) {
       mimeType,
       fileSize: stats.size,
       filePath: `podcasts/${uuid}.mp3`,
-      metadata: JSON.stringify({
+      metadata: {
         ...existingMeta,
         downloadStatus: 'complete',
-      }),
+      },
     }).where(eq(media.id, mediaId))
   } catch (error) {
     // Cleanup partial file on error
@@ -447,10 +447,10 @@ async function downloadEpisodeById(mediaId: number, episode: PodcastEpisode) {
 
     // Update status to failed
     await db.update(media).set({
-      metadata: JSON.stringify({
+      metadata: {
         ...existingMeta,
         downloadStatus: 'failed',
-      }),
+      },
     }).where(eq(media.id, mediaId))
 
     console.error(`Failed to download episode "${episode.title}":`, error)

@@ -24,10 +24,11 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { DragEndEvent } from '@dnd-kit/core'
-import { GripVertical, ListMusic, Music, Plus, Trash2, X, Loader2 } from 'lucide-react'
+import { GripVertical, ListMusic, Music, Plus, Trash2, X, Loader2, Play, Pause } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type Media } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
+import { usePlayer } from '@/hooks/usePlayerState'
 
 type PlaylistMedia = Media & { position: number }
 
@@ -70,6 +71,7 @@ function PlaylistDetailPage() {
   const id = parseInt(playlistId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const player = usePlayer()
   const [showAddSongs, setShowAddSongs] = useState(false)
 
   const { data: playlist } = useSuspenseQuery(playlistQueryOptions(id))
@@ -77,6 +79,15 @@ function PlaylistDetailPage() {
 
   const playlistItems = playlist.items as PlaylistMedia[]
   const itemIds = playlistItems.map((item) => item.id)
+
+  const handlePlayAll = () => {
+    if (!itemIds.length) return
+    player.playPlaylist(id, itemIds)
+  }
+
+  const handlePlaySong = (index: number) => {
+    player.playPlaylist(id, itemIds, index)
+  }
 
   // Songs not in the playlist
   const availableSongs = allSongs.filter(
@@ -246,6 +257,12 @@ function PlaylistDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {playlistItems.length > 0 && (
+            <Button variant="outline" onClick={handlePlayAll}>
+              <Play className="h-4 w-4 mr-2" />
+              Play
+            </Button>
+          )}
           <Button onClick={() => setShowAddSongs(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add Songs
@@ -290,6 +307,7 @@ function PlaylistDetailPage() {
                 <thead className="bg-muted/50">
                   <tr className="text-left text-sm text-muted-foreground">
                     <th className="px-4 py-3 font-medium w-12"></th>
+                    <th className="px-4 py-3 font-medium w-12"></th>
                     <th className="px-4 py-3 font-medium">Title</th>
                     <th className="px-4 py-3 font-medium">Artist</th>
                     <th className="px-4 py-3 font-medium text-right">Duration</th>
@@ -297,10 +315,14 @@ function PlaylistDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {playlistItems.map((item) => (
+                  {playlistItems.map((item, index) => (
                     <SortableRow
                       key={item.id}
                       item={item}
+                      isPlaying={player.state.currentMediaId === item.id && player.state.isPlaying}
+                      isCurrent={player.state.currentMediaId === item.id}
+                      onPlay={() => handlePlaySong(index)}
+                      onToggle={player.togglePlayPause}
                       onRemove={() => removeMutation.mutate(item.id)}
                       isRemoving={removeMutation.isPending}
                     />
@@ -326,10 +348,18 @@ function PlaylistDetailPage() {
 
 function SortableRow({
   item,
+  isPlaying,
+  isCurrent,
+  onPlay,
+  onToggle,
   onRemove,
   isRemoving,
 }: {
   item: PlaylistMedia
+  isPlaying: boolean
+  isCurrent: boolean
+  onPlay: () => void
+  onToggle: () => void
   onRemove: () => void
   isRemoving: boolean
 }) {
@@ -356,7 +386,7 @@ function SortableRow({
   const metadata = item.metadata as { artist?: string } | null
 
   return (
-    <tr ref={setNodeRef} style={style} className="hover:bg-muted/30 transition-colors group">
+    <tr ref={setNodeRef} style={style} className={`hover:bg-muted/30 transition-colors group ${isCurrent ? 'bg-muted/20' : ''}`}>
       <td className="px-4 py-3">
         <button
           {...attributes}
@@ -367,11 +397,25 @@ function SortableRow({
         </button>
       </td>
       <td className="px-4 py-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={isCurrent ? onToggle : onPlay}
+        >
+          {isPlaying ? (
+            <Pause className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+        </Button>
+      </td>
+      <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 bg-muted rounded flex items-center justify-center">
-            <Music className="h-5 w-5 text-muted-foreground" />
+          <div className={`h-10 w-10 rounded flex items-center justify-center ${isCurrent ? 'bg-primary/20' : 'bg-muted'}`}>
+            <Music className={`h-5 w-5 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
           </div>
-          <span className="font-medium">{item.title}</span>
+          <span className={`font-medium ${isCurrent ? 'text-primary' : ''}`}>{item.title}</span>
         </div>
       </td>
       <td className="px-4 py-3 text-muted-foreground">

@@ -2,6 +2,7 @@ import { Link, Outlet, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { CreditCard, ListMusic, Mic, Music, Plus, Smartphone } from 'lucide-react'
 import { api } from '@/lib/api-client'
+import { MiniPlayer } from '@/components/MiniPlayer'
 
 export const Route = createFileRoute('/_library')({
   component: LibraryLayout,
@@ -27,10 +28,8 @@ function LibraryLayout() {
     <div className="flex h-screen">
       {/* Sidebar */}
       <div className="w-64 border-r border-border bg-background/50 flex flex-col">
-        {/* Mini Player placeholder */}
-        <div className="h-20 border-b border-border flex items-center justify-center text-muted-foreground text-sm">
-          Mini Player
-        </div>
+        {/* Mini Player */}
+        <MiniPlayer />
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Songs Section */}

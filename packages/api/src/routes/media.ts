@@ -272,7 +272,7 @@ mediaRoutes.post(
         duration: metadata.format.duration ? Math.round(metadata.format.duration) : null,
         mimeType: file.type,
         fileSize: buffer.length,
-        filePath,
+        filePath: `songs/${filename}`,
         metadata: {
           artist: common.artist || null,
           album: common.album || null,
@@ -392,8 +392,9 @@ mediaRoutes.delete(
     }
 
     // Delete file first, then DB entry
-    if (existsSync(item.filePath)) {
-      unlinkSync(item.filePath)
+    const fullPath = join(DATA_DIR, item.filePath)
+    if (existsSync(fullPath)) {
+      unlinkSync(fullPath)
     }
 
     await db.delete(media).where(eq(media.id, id))

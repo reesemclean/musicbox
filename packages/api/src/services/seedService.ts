@@ -71,7 +71,7 @@ export async function seedSoundMachineSounds(): Promise<void> {
         type: 'soundmachine',
         filePath: relativePath,
         fileSize: stats.size,
-        metadata: JSON.stringify({ system: true }),
+        metadata: { system: true },
       })
       console.log(`[Seed] Created DB entry for "${name}"`)
     }

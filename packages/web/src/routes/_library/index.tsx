@@ -1,11 +1,13 @@
-import { useRef, useState } from 'react'
+import { useState, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Music, Search, Upload, Loader2, Pencil, Trash2, X } from 'lucide-react'
+import { Music, Search, Loader2, Pencil, Trash2, X, Play, Pause, Plus, MoreHorizontal, Check } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, type Media } from '@/lib/api-client'
+import { api, type Media, type Playlist } from '@/lib/api-client'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { usePlayer } from '@/hooks/usePlayerState'
 
 const songsQueryOptions = queryOptions({
   queryKey: ['media', 'songs'],
@@ -18,75 +20,204 @@ const songsQueryOptions = queryOptions({
   },
 })
 
+const playlistsQueryOptions = queryOptions({
+  queryKey: ['playlists'],
+  queryFn: async () => {
+    const { data, error } = await api.GET('/api/playlists')
+    if (error) throw new Error('Failed to load playlists')
+    return data
+  },
+})
+
 export const Route = createFileRoute('/_library/')({
   loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(songsQueryOptions)
+    await Promise.all([
+      context.queryClient.ensureQueryData(songsQueryOptions),
+      context.queryClient.ensureQueryData(playlistsQueryOptions),
+    ])
   },
   component: SongsLibraryPage,
 })
 
 function SongsLibraryPage() {
   const [search, setSearch] = useState('')
+  const [groupBy, setGroupBy] = useState<'none' | 'artist' | 'album'>('none')
+  const [selectedSongs, setSelectedSongs] = useState<Set<number>>(new Set())
   const [editingSong, setEditingSong] = useState<Media | null>(null)
   const [deletingSong, setDeletingSong] = useState<Media | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const player = usePlayer()
   const queryClient = useQueryClient()
 
   const { data: songs } = useSuspenseQuery(songsQueryOptions)
+  const { data: playlists } = useSuspenseQuery(playlistsQueryOptions)
 
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData()
-      formData.append('file', file)
+  const handlePlayAll = () => {
+    if (!songs.length) return
+    player.playPlaylist(0, songs.map((s) => s.id))
+  }
 
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/media`,
-        {
-          method: 'POST',
-          body: formData,
-        }
-      )
+  const filteredSongs = useMemo(() => {
+    const query = search.toLowerCase()
+    return songs.filter((song) =>
+      song.title.toLowerCase().includes(query) ||
+      (song.metadata as any)?.artist?.toLowerCase().includes(query) ||
+      (song.metadata as any)?.album?.toLowerCase().includes(query)
+    )
+  }, [songs, search])
 
-      if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.error || 'Upload failed')
+  // Group songs by artist or album
+  const groupedSongs = useMemo(() => {
+    if (groupBy === 'none') return null
+
+    const groups = new Map<string, Media[]>()
+
+    filteredSongs.forEach((song) => {
+      const metadata = song.metadata as { artist?: string; album?: string } | null
+      const key =
+        groupBy === 'artist'
+          ? metadata?.artist || 'Unknown Artist'
+          : metadata?.album || 'Unknown Album'
+
+      if (!groups.has(key)) {
+        groups.set(key, [])
       }
+      groups.get(key)!.push(song)
+    })
 
-      return response.json()
+    // Sort groups alphabetically
+    const sortedGroups = Array.from(groups.entries()).sort((a, b) => {
+      if (a[0].startsWith('Unknown')) return 1
+      if (b[0].startsWith('Unknown')) return -1
+      return a[0].localeCompare(b[0])
+    })
+
+    return sortedGroups
+  }, [filteredSongs, groupBy])
+
+  const toggleSongSelection = (songId: number) => {
+    const newSelection = new Set(selectedSongs)
+    if (newSelection.has(songId)) {
+      newSelection.delete(songId)
+    } else {
+      newSelection.add(songId)
+    }
+    setSelectedSongs(newSelection)
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedSongs.size === filteredSongs.length) {
+      setSelectedSongs(new Set())
+    } else {
+      setSelectedSongs(new Set(filteredSongs.map((s) => s.id)))
+    }
+  }
+
+  const toggleGroupSelection = (groupSongs: Media[]) => {
+    const groupIds = new Set(groupSongs.map((s) => s.id))
+    const allSelected = groupSongs.every((s) => selectedSongs.has(s.id))
+
+    const newSelection = new Set(selectedSongs)
+    if (allSelected) {
+      groupIds.forEach((id) => newSelection.delete(id))
+    } else {
+      groupIds.forEach((id) => newSelection.add(id))
+    }
+    setSelectedSongs(newSelection)
+  }
+
+  // Add to playlist mutation
+  const addToPlaylistMutation = useMutation({
+    mutationFn: async ({ playlistId, mediaIds }: { playlistId: number; mediaIds: number[] }) => {
+      for (const mediaId of mediaIds) {
+        const { error } = await api.POST('/api/playlists/{id}/media', {
+          params: { path: { id: playlistId.toString() } },
+          body: { mediaId },
+        })
+        if (error) throw new Error('Failed to add song to playlist')
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['media', 'songs'] })
-      toast.success('Song uploaded successfully')
+      queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      setSelectedSongs(new Set())
+      toast.success('Added to playlist')
     },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Upload failed')
+    onError: () => {
+      toast.error('Failed to add to playlist')
     },
   })
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files?.length) return
+  // Create playlist and add songs mutation
+  const createPlaylistMutation = useMutation({
+    mutationFn: async ({ name, mediaIds }: { name: string; mediaIds: number[] }) => {
+      const { data, error } = await api.POST('/api/playlists', {
+        body: { name },
+      })
+      if (error) throw new Error('Failed to create playlist')
 
-    for (const file of files) {
-      if (!file.type.startsWith('audio/')) {
-        toast.error(`Not an audio file: ${file.name}`)
-        continue
+      // Add songs to the new playlist
+      for (const mediaId of mediaIds) {
+        await api.POST('/api/playlists/{id}/media', {
+          params: { path: { id: data.id.toString() } },
+          body: { mediaId },
+        })
       }
-      uploadMutation.mutate(file)
-    }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      setSelectedSongs(new Set())
+      toast.success('Playlist created')
+    },
+    onError: () => {
+      toast.error('Failed to create playlist')
+    },
+  })
 
-    // Reset input
-    e.target.value = ''
+  // Bulk delete mutation
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (mediaIds: number[]) => {
+      for (const id of mediaIds) {
+        const { error } = await api.DELETE('/api/media/{id}', {
+          params: { path: { id: id.toString() } },
+        })
+        if (error) throw new Error('Failed to delete')
+      }
+    },
+    onMutate: (mediaIds) => {
+      // Clear player if current song is being deleted
+      if (player.state.currentMediaId && mediaIds.includes(player.state.currentMediaId)) {
+        player.clearPlayer()
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['media', 'songs'] })
+      setSelectedSongs(new Set())
+      setBulkDeleteOpen(false)
+      toast.success('Songs deleted')
+    },
+    onError: () => {
+      toast.error('Failed to delete songs')
+      setBulkDeleteOpen(false)
+    },
+  })
+
+  const handleAddToPlaylist = (playlistId: number) => {
+    addToPlaylistMutation.mutate({
+      playlistId,
+      mediaIds: Array.from(selectedSongs),
+    })
   }
 
-  const filteredSongs = songs?.filter((song) =>
-    song.title.toLowerCase().includes(search.toLowerCase()) ||
-    (song.metadata as any)?.artist?.toLowerCase().includes(search.toLowerCase()) ||
-    (song.metadata as any)?.album?.toLowerCase().includes(search.toLowerCase())
-  )
+  const handleCreatePlaylist = (name: string) => {
+    createPlaylistMutation.mutate({
+      name,
+      mediaIds: Array.from(selectedSongs),
+    })
+  }
 
   return (
-    <div>
+    <div className="pb-24">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">All Songs</h1>
         <div className="flex items-center gap-3">
@@ -99,43 +230,132 @@ function SongsLibraryPage() {
               className="pl-9"
             />
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="audio/*"
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
+          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as typeof groupBy)}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Group by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No grouping</SelectItem>
+              <SelectItem value="artist">Group by Artist</SelectItem>
+              <SelectItem value="album">Group by Album</SelectItem>
+            </SelectContent>
+          </Select>
+          {songs.length > 0 && (
+            <Button variant="outline" onClick={handlePlayAll}>
+              <Play className="h-4 w-4 mr-2" />
+              Play All
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {songs.length === 0 && <EmptyState />}
+
+      {groupedSongs ? (
+        <div className="space-y-6">
+          {groupedSongs.map(([groupName, groupSongs]) => (
+            <div key={groupName}>
+              <div className="flex items-center gap-3 mb-3 pb-2 border-b border-border">
+                <h2 className="text-xl font-semibold">{groupName}</h2>
+                <span className="text-sm text-muted-foreground">
+                  ({groupSongs.length} song{groupSongs.length !== 1 ? 's' : ''})
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => player.playPlaylist(0, groupSongs.map((s) => s.id))}
+                >
+                  <Play className="h-3 w-3 mr-1" />
+                  Play
+                </Button>
+              </div>
+              <SongsTable
+                songs={groupSongs}
+                allSongIds={groupSongs.map((s) => s.id)}
+                selectedSongs={selectedSongs}
+                onToggleSelection={toggleSongSelection}
+                onToggleSelectAll={() => toggleGroupSelection(groupSongs)}
+                onEdit={setEditingSong}
+                onDelete={setDeletingSong}
+              />
+            </div>
+          ))}
+        </div>
+      ) : filteredSongs.length > 0 ? (
+        <SongsTable
+          songs={filteredSongs}
+          allSongIds={songs.map((s) => s.id)}
+          selectedSongs={selectedSongs}
+          onToggleSelection={toggleSongSelection}
+          onToggleSelectAll={toggleSelectAll}
+          onEdit={setEditingSong}
+          onDelete={setDeletingSong}
+        />
+      ) : songs.length > 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          No songs match your search.
+        </div>
+      ) : null}
+
+      {/* Floating Action Panel */}
+      <div
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-accent border border-border rounded-xl shadow-lg transition-all duration-300 z-50 ${
+          selectedSongs.size > 0 ? 'translate-y-0 opacity-100' : 'translate-y-16 opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="px-4 py-3 flex items-center gap-4">
+          <span className="text-sm font-medium">
+            {selectedSongs.size} song{selectedSongs.size !== 1 ? 's' : ''} selected
+          </span>
+          <button
+            onClick={() => setSelectedSongs(new Set())}
+            className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4"
+          >
+            Clear
+          </button>
+          <div className="h-4 w-px bg-border" />
+          <PlaylistSelector
+            playlists={playlists}
+            onSelect={handleAddToPlaylist}
+            onCreatePlaylist={handleCreatePlaylist}
+            disabled={addToPlaylistMutation.isPending || createPlaylistMutation.isPending}
           />
           <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
+            variant="destructive"
+            size="sm"
+            onClick={() => setBulkDeleteOpen(true)}
           >
-            {uploadMutation.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Upload className="h-4 w-4 mr-2" />
-            )}
-            Upload
+            <Trash2 className="h-4 w-4 mr-1" />
+            Delete
           </Button>
         </div>
       </div>
 
-      {songs.length === 0 && (
-        <EmptyState onUpload={() => fileInputRef.current?.click()} />
-      )}
-
-      {filteredSongs.length > 0 && (
-        <SongsTable
-          songs={filteredSongs}
-          onEdit={setEditingSong}
-          onDelete={setDeletingSong}
-        />
-      )}
-
-      {songs.length > 0 && filteredSongs.length === 0 && (
-        <div className="text-center py-12 text-muted-foreground">
-          No songs match your search.
+      {/* Bulk Delete Confirmation */}
+      {bulkDeleteOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background border border-border rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold mb-2">Delete {selectedSongs.size} Songs</h2>
+            <p className="text-muted-foreground mb-6">
+              Are you sure you want to delete {selectedSongs.size} song{selectedSongs.size !== 1 ? 's' : ''}?
+              This will permanently remove them from your library and all playlists.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => bulkDeleteMutation.mutate(Array.from(selectedSongs))}
+                disabled={bulkDeleteMutation.isPending}
+              >
+                {bulkDeleteMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : null}
+                Delete
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -156,36 +376,169 @@ function SongsLibraryPage() {
   )
 }
 
-function EmptyState({ onUpload }: { onUpload: () => void }) {
+function EmptyState() {
   return (
     <div className="text-center py-12">
       <Music className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
       <h2 className="text-lg font-semibold mb-2">No songs yet</h2>
-      <p className="text-muted-foreground mb-4">
-        Upload some music to get started.
+      <p className="text-muted-foreground">
+        Add songs from the Add Songs page.
       </p>
-      <Button onClick={onUpload}>
-        <Upload className="h-4 w-4 mr-2" />
-        Upload Songs
+    </div>
+  )
+}
+
+function PlaylistSelector({
+  playlists,
+  onSelect,
+  onCreatePlaylist,
+  disabled,
+}: {
+  playlists: Playlist[]
+  onSelect: (playlistId: number) => void
+  onCreatePlaylist: (name: string) => void
+  disabled: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  const handleSelect = (id: number) => {
+    onSelect(id)
+    setOpen(false)
+  }
+
+  const handleCreate = () => {
+    if (newName.trim()) {
+      onCreatePlaylist(newName.trim())
+      setNewName('')
+      setShowCreate(false)
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <Button
+        variant="default"
+        size="sm"
+        onClick={() => setOpen(!open)}
+        disabled={disabled}
+      >
+        <Plus className="h-4 w-4 mr-1" />
+        Add to Playlist
       </Button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full mb-2 right-0 w-64 bg-popover border border-border rounded-lg shadow-lg z-50">
+            {showCreate ? (
+              <div className="p-3">
+                <Input
+                  placeholder="Playlist name..."
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreate()
+                    if (e.key === 'Escape') setShowCreate(false)
+                  }}
+                  autoFocus
+                />
+                <div className="flex gap-2 mt-2">
+                  <Button size="sm" variant="outline" onClick={() => setShowCreate(false)} className="flex-1">
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={handleCreate} disabled={!newName.trim()} className="flex-1">
+                    Create
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="max-h-48 overflow-y-auto p-1">
+                  {playlists.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground text-center">
+                      No playlists yet
+                    </div>
+                  ) : (
+                    playlists.map((playlist) => (
+                      <button
+                        key={playlist.id}
+                        onClick={() => handleSelect(playlist.id)}
+                        className="w-full text-left px-3 py-2 text-sm rounded hover:bg-accent transition-colors"
+                      >
+                        {playlist.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="border-t border-border p-1">
+                  <button
+                    onClick={() => setShowCreate(true)}
+                    className="w-full text-left px-3 py-2 text-sm rounded hover:bg-accent transition-colors flex items-center gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create new playlist
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
 
 function SongsTable({
   songs,
+  allSongIds,
+  selectedSongs,
+  onToggleSelection,
+  onToggleSelectAll,
   onEdit,
   onDelete,
 }: {
   songs: Media[]
+  allSongIds: number[]
+  selectedSongs: Set<number>
+  onToggleSelection: (id: number) => void
+  onToggleSelectAll: () => void
   onEdit: (song: Media) => void
   onDelete: (song: Media) => void
 }) {
+  const player = usePlayer()
+
+  const handlePlay = (song: Media) => {
+    const index = allSongIds.indexOf(song.id)
+    player.playPlaylist(0, allSongIds, index >= 0 ? index : 0)
+  }
+
+  const allSelected = songs.length > 0 && songs.every((s) => selectedSongs.has(s.id))
+  const someSelected = songs.some((s) => selectedSongs.has(s.id))
+
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <table className="w-full">
         <thead className="bg-muted/50">
           <tr className="text-left text-sm text-muted-foreground">
+            <th className="px-4 py-3 font-medium w-10">
+              <button
+                onClick={onToggleSelectAll}
+                className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+                  allSelected
+                    ? 'bg-primary border-primary text-primary-foreground'
+                    : someSelected
+                    ? 'bg-primary/50 border-primary'
+                    : 'border-muted-foreground/30 hover:border-muted-foreground'
+                }`}
+              >
+                {allSelected && <Check className="h-3 w-3" />}
+                {someSelected && !allSelected && <div className="h-2 w-2 bg-primary-foreground rounded-sm" />}
+              </button>
+            </th>
+            <th className="px-4 py-3 font-medium w-12"></th>
             <th className="px-4 py-3 font-medium">Title</th>
             <th className="px-4 py-3 font-medium">Artist</th>
             <th className="px-4 py-3 font-medium">Album</th>
@@ -198,6 +551,12 @@ function SongsTable({
             <SongRow
               key={song.id}
               song={song}
+              isSelected={selectedSongs.has(song.id)}
+              isPlaying={player.state.currentMediaId === song.id && player.state.isPlaying}
+              isCurrent={player.state.currentMediaId === song.id}
+              onToggleSelection={() => onToggleSelection(song.id)}
+              onPlay={() => handlePlay(song)}
+              onToggle={player.togglePlayPause}
               onEdit={() => onEdit(song)}
               onDelete={() => onDelete(song)}
             />
@@ -210,23 +569,61 @@ function SongsTable({
 
 function SongRow({
   song,
+  isSelected,
+  isPlaying,
+  isCurrent,
+  onToggleSelection,
+  onPlay,
+  onToggle,
   onEdit,
   onDelete,
 }: {
   song: Media
+  isSelected: boolean
+  isPlaying: boolean
+  isCurrent: boolean
+  onToggleSelection: () => void
+  onPlay: () => void
+  onToggle: () => void
   onEdit: () => void
   onDelete: () => void
 }) {
   const metadata = song.metadata as { artist?: string; album?: string } | null
 
   return (
-    <tr className="hover:bg-muted/30 transition-colors group">
+    <tr className={`hover:bg-muted/30 transition-colors group ${isCurrent ? 'bg-muted/20' : ''} ${isSelected ? 'bg-primary/5' : ''}`}>
+      <td className="px-4 py-3">
+        <button
+          onClick={onToggleSelection}
+          className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+            isSelected
+              ? 'bg-primary border-primary text-primary-foreground'
+              : 'border-muted-foreground/30 hover:border-muted-foreground'
+          }`}
+        >
+          {isSelected && <Check className="h-3 w-3" />}
+        </button>
+      </td>
+      <td className="px-4 py-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={isCurrent ? onToggle : onPlay}
+        >
+          {isPlaying ? (
+            <Pause className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+        </Button>
+      </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 bg-muted rounded flex items-center justify-center">
-            <Music className="h-5 w-5 text-muted-foreground" />
+          <div className={`h-10 w-10 rounded flex items-center justify-center ${isCurrent ? 'bg-primary/20' : 'bg-muted'}`}>
+            <Music className={`h-5 w-5 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
           </div>
-          <span className="font-medium">{song.title}</span>
+          <span className={`font-medium ${isCurrent ? 'text-primary' : ''}`}>{song.title}</span>
         </div>
       </td>
       <td className="px-4 py-3 text-muted-foreground">
@@ -280,13 +677,9 @@ function EditSongDialog({
       if (error) throw new Error('Failed to update')
     },
     onMutate: async () => {
-      // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['media', 'songs'] })
-
-      // Snapshot previous value
       const previous = queryClient.getQueryData<Media[]>(['media', 'songs'])
 
-      // Optimistically update
       queryClient.setQueryData<Media[]>(['media', 'songs'], (old) =>
         old?.map((s) =>
           s.id === song.id
@@ -299,7 +692,6 @@ function EditSongDialog({
       return { previous }
     },
     onError: (_err, _vars, context) => {
-      // Roll back on error
       if (context?.previous) {
         queryClient.setQueryData(['media', 'songs'], context.previous)
       }
@@ -377,6 +769,7 @@ function DeleteSongDialog({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
+  const player = usePlayer()
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -387,13 +780,16 @@ function DeleteSongDialog({
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['media', 'songs'] })
-
       const previous = queryClient.getQueryData<Media[]>(['media', 'songs'])
 
-      // Optimistically remove
       queryClient.setQueryData<Media[]>(['media', 'songs'], (old) =>
         old?.filter((s) => s.id !== song.id)
       )
+
+      // Clear player if deleting current song
+      if (player.state.currentMediaId === song.id) {
+        player.clearPlayer()
+      }
 
       onClose()
       return { previous }

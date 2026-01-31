@@ -41,9 +41,9 @@ export const cards = sqliteTable('cards', {
   name: text('name'), // friendly name
 
   // Content - only one should be set
-  mediaId: integer('media_id').references(() => media.id, { onDelete: 'set null' }),
-  playlistId: integer('playlist_id').references(() => playlists.id, { onDelete: 'set null' }),
-  podcastFeedId: integer('podcast_feed_id').references(() => podcastFeeds.id, { onDelete: 'set null' }),
+  mediaId: integer('media_id').references(() => media.id, { onDelete: 'cascade' }),
+  playlistId: integer('playlist_id').references(() => playlists.id, { onDelete: 'cascade' }),
+  podcastFeedId: integer('podcast_feed_id').references(() => podcastFeeds.id, { onDelete: 'cascade' }),
 
   // Playback settings
   volume: integer('volume'), // 0-21, null = use current volume
