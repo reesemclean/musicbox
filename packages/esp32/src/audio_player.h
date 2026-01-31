@@ -43,7 +43,4 @@ int audio_get_current_media_id();
 void audio_on_track_ended(TrackEndedCallback callback);
 void audio_on_queue_empty(QueueEmptyCallback callback);
 
-// Call in loop
-void audio_loop();
-
 #endif

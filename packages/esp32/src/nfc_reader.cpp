@@ -52,8 +52,8 @@ void nfc_loop() {
     uint8_t uid[7];
     uint8_t uid_len;
 
-    // Non-blocking read attempt (100ms timeout)
-    if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uid_len, 100)) {
+    // Non-blocking read attempt (50ms timeout - keep short for button responsiveness)
+    if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uid_len, 50)) {
         unsigned long now = millis();
 
         // Check if this is the same card we just scanned (debounce)

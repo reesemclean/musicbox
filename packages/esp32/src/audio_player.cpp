@@ -8,6 +8,9 @@
 #define I2S_LRC  5
 #define I2S_DOUT 6
 
+// FreeRTOS task for audio processing on Core 0
+static TaskHandle_t audioTaskHandle = NULL;
+
 // System sound files
 #define SOUND_STARTUP "/startup.mp3"
 #define SOUND_CARD_SCAN "/scan.mp3"
@@ -46,6 +49,15 @@ static QueueEmptyCallback on_queue_empty = nullptr;
 // Forward declarations
 static void play_next_in_queue();
 
+// Audio task runs on Core 0, leaving Core 1 free for buttons/NFC/etc
+static void audioTask(void* parameter) {
+    Serial.println("[Audio] Task started on Core 0");
+    for (;;) {
+        audio.loop();
+        vTaskDelay(1);  // Small yield to prevent watchdog
+    }
+}
+
 bool audio_init() {
     Serial.println("[Audio] Initializing...");
 
@@ -68,7 +80,18 @@ bool audio_init() {
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     audio.setVolume(current_volume);
 
-    Serial.println("[Audio] Ready");
+    // Start audio task on Core 0 (main loop runs on Core 1)
+    xTaskCreatePinnedToCore(
+        audioTask,          // Task function
+        "AudioTask",        // Name
+        8192,               // Stack size
+        NULL,               // Parameters
+        1,                  // Priority
+        &audioTaskHandle,   // Task handle
+        0                   // Core 0
+    );
+
+    Serial.println("[Audio] Ready (task on Core 0)");
     return true;
 }
 
@@ -214,9 +237,6 @@ void audio_on_queue_empty(QueueEmptyCallback callback) {
     on_queue_empty = callback;
 }
 
-void audio_loop() {
-    audio.loop();
-}
 
 // ESP32-audioI2S callback - called when track ends
 void audio_eof_mp3(const char* info) {
