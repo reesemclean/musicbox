@@ -126,8 +126,8 @@ async function startServer() {
     console.log('[MQTT] Server will continue without MQTT - devices will not be able to connect')
   }
 
-  server.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`)
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on http://0.0.0.0:${PORT}`)
     console.log(`Control WebSocket: ws://localhost:${PORT}/ws/control`)
     console.log(`MQTT Broker: ${process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'}`)
 

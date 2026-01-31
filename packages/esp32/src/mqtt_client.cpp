@@ -27,6 +27,7 @@ static const unsigned long reconnectInterval = 5000;
 
 // Callbacks
 static PlayCallback onPlayCb = nullptr;
+static QueueCallback onQueueCb = nullptr;
 static PauseCallback onPauseCb = nullptr;
 static ResumeCallback onResumeCb = nullptr;
 static StopCallback onStopCb = nullptr;
@@ -189,6 +190,11 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         int mediaId = doc["mediaId"] | 0;
         onPlayCb(url, mediaId);
     }
+    else if (strcmp(command, "queue") == 0 && onQueueCb) {
+        const char* url = doc["url"];
+        int mediaId = doc["mediaId"] | 0;
+        onQueueCb(url, mediaId);
+    }
     else if (strcmp(command, "pause") == 0 && onPauseCb) {
         onPauseCb();
     }
@@ -247,6 +253,7 @@ void mqtt_publish_playback_status(const char* status, int mediaId, int position)
 
 // Callback registration
 void mqtt_on_play(PlayCallback callback) { onPlayCb = callback; }
+void mqtt_on_queue(QueueCallback callback) { onQueueCb = callback; }
 void mqtt_on_pause(PauseCallback callback) { onPauseCb = callback; }
 void mqtt_on_resume(ResumeCallback callback) { onResumeCb = callback; }
 void mqtt_on_stop(StopCallback callback) { onStopCb = callback; }

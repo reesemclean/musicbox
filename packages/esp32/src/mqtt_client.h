@@ -6,6 +6,7 @@
 
 // Callback types
 typedef std::function<void(const char* url, int mediaId)> PlayCallback;
+typedef std::function<void(const char* url, int mediaId)> QueueCallback;
 typedef std::function<void()> PauseCallback;
 typedef std::function<void()> ResumeCallback;
 typedef std::function<void()> StopCallback;
@@ -34,6 +35,7 @@ void mqtt_publish_playback_status(const char* status, int mediaId, int position)
 
 // Register command callbacks
 void mqtt_on_play(PlayCallback callback);
+void mqtt_on_queue(QueueCallback callback);
 void mqtt_on_pause(PauseCallback callback);
 void mqtt_on_resume(ResumeCallback callback);
 void mqtt_on_stop(StopCallback callback);

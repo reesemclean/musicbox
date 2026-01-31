@@ -30,6 +30,9 @@ pio run -t upload && pio device monitor
 pio run              # Build only
 pio run -t upload    # Upload only
 pio device monitor   # Monitor only
+
+# Upload system sounds to SPIFFS (first time only)
+pio run -t uploadfs
 ```
 
 ## Testing the Full Flow

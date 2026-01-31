@@ -50,6 +50,12 @@ export interface PlayCommand {
   mediaId: number
 }
 
+export interface QueueCommand {
+  command: 'queue'
+  url: string
+  mediaId: number
+}
+
 export interface PauseCommand {
   command: 'pause'
 }
@@ -73,7 +79,7 @@ export interface OtaCommand {
   version: string
 }
 
-export type DeviceCommand = PlayCommand | PauseCommand | ResumeCommand | StopCommand | VolumeCommand | OtaCommand
+export type DeviceCommand = PlayCommand | QueueCommand | PauseCommand | ResumeCommand | StopCommand | VolumeCommand | OtaCommand
 
 class MqttService extends EventEmitter {
   private client: MqttClient | null = null
@@ -299,8 +305,8 @@ class MqttService extends EventEmitter {
         }
       }
     } else if (card.playlistId) {
-      // Playlist mapping - play first track
-      const [firstTrack] = await db
+      // Playlist mapping - get all tracks for gapless playback
+      const tracks = await db
         .select({
           mediaId: playlistMedia.mediaId,
           position: playlistMedia.position,
@@ -310,15 +316,24 @@ class MqttService extends EventEmitter {
         .innerJoin(media, eq(playlistMedia.mediaId, media.id))
         .where(eq(playlistMedia.playlistId, card.playlistId))
         .orderBy(playlistMedia.position)
-        .limit(1)
 
-      if (firstTrack) {
-        const url = `${this.getBaseUrl()}/api/media/stream/${firstTrack.mediaId}`
-        console.log(`[MQTT] Playing playlist, first track: ${firstTrack.title}`)
-        this.play(macForTopic, url, firstTrack.mediaId)
-
+      if (tracks.length > 0) {
+        // Apply volume first if set
         if (card.volume !== null) {
           this.setVolume(macForTopic, card.volume)
+        }
+
+        // Play first track immediately
+        const firstTrack = tracks[0]
+        const firstUrl = `${this.getBaseUrl()}/api/media/stream/${firstTrack.mediaId}`
+        console.log(`[MQTT] Playing playlist (${tracks.length} tracks), starting: ${firstTrack.title}`)
+        this.play(macForTopic, firstUrl, firstTrack.mediaId)
+
+        // Queue remaining tracks for gapless playback
+        for (let i = 1; i < tracks.length; i++) {
+          const track = tracks[i]
+          const url = `${this.getBaseUrl()}/api/media/stream/${track.mediaId}`
+          this.queue(macForTopic, url, track.mediaId)
         }
       }
     } else if (card.podcastFeedId) {
@@ -393,6 +408,10 @@ class MqttService extends EventEmitter {
 
   play(mac: string, url: string, mediaId: number): void {
     this.sendCommand(mac, { command: 'play', url, mediaId })
+  }
+
+  queue(mac: string, url: string, mediaId: number): void {
+    this.sendCommand(mac, { command: 'queue', url, mediaId })
   }
 
   pause(mac: string): void {

@@ -73,11 +73,13 @@ mediaRoutes.get(
       return c.json({ error: 'Media not found' }, 404)
     }
 
-    if (!existsSync(item.filePath)) {
+    const fullPath = join(DATA_DIR, item.filePath)
+
+    if (!existsSync(fullPath)) {
       return c.json({ error: 'File not found on disk' }, 404)
     }
 
-    const stat = statSync(item.filePath)
+    const stat = statSync(fullPath)
     const range = c.req.header('range')
 
     // Support range requests for seeking
@@ -87,7 +89,7 @@ mediaRoutes.get(
       const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1
       const chunkSize = end - start + 1
 
-      const stream = createReadStream(item.filePath, { start, end })
+      const stream = createReadStream(fullPath, { start, end })
 
       return new Response(Readable.toWeb(stream) as ReadableStream, {
         status: 206,
@@ -101,7 +103,7 @@ mediaRoutes.get(
     }
 
     // Full file response
-    const stream = createReadStream(item.filePath)
+    const stream = createReadStream(fullPath)
 
     return new Response(Readable.toWeb(stream) as ReadableStream, {
       status: 200,
