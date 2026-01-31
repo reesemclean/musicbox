@@ -4,6 +4,7 @@ import { WebSocketServer } from 'ws'
 import { createApp } from './app.js'
 import { refreshAllFeeds } from './services/podcastService.js'
 import { mqttService } from './services/mqttService.js'
+import { seedSoundMachineSounds } from './services/seedService.js'
 
 const app = createApp()
 
@@ -108,8 +109,8 @@ mqttService.on('device:event', ({ mac, event }) => {
   broadcastToControlPlane({ type: 'device_event', mac, event })
 })
 
-mqttService.on('playback:status', ({ mac, status, mediaId }) => {
-  broadcastToControlPlane({ type: 'playback_status', mac, status, mediaId })
+mqttService.on('playback:status', ({ mac, status, mediaId, mediaTitle }) => {
+  broadcastToControlPlane({ type: 'playback_status', mac, status, mediaId, mediaTitle })
 })
 
 // Handle WebSocket upgrade requests
@@ -126,6 +127,13 @@ server.on('upgrade', (req, socket, head) => {
 const PORT = 3001
 
 async function startServer() {
+  // Seed sound machine sounds from seed-data directory
+  try {
+    await seedSoundMachineSounds()
+  } catch (err) {
+    console.error('[Seed] Failed to seed sound machine sounds:', err)
+  }
+
   // Connect to MQTT broker
   try {
     await mqttService.connect()

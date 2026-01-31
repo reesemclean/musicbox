@@ -41,7 +41,11 @@ export interface DeviceStatusEvent {
   mac: string
 }
 
-export type DeviceEvent = CardScannedEvent | PlaybackStatusEvent | DeviceStatusEvent
+export interface SoundMachineRequestEvent {
+  type: 'soundmachine_request'
+}
+
+export type DeviceEvent = CardScannedEvent | PlaybackStatusEvent | DeviceStatusEvent | SoundMachineRequestEvent
 
 // Commands to devices
 export interface PlayCommand {
@@ -77,18 +81,45 @@ export interface OtaCommand {
   command: 'ota'
   url: string
   version: string
+  sha256: string
 }
 
-export type DeviceCommand = PlayCommand | QueueCommand | PauseCommand | ResumeCommand | StopCommand | VolumeCommand | OtaCommand
+export interface SoundMachineCommand {
+  command: 'soundmachine'
+  url: string | null
+  name: string | null
+  volume: number | null
+}
+
+export type DeviceCommand = PlayCommand | QueueCommand | PauseCommand | ResumeCommand | StopCommand | VolumeCommand | OtaCommand | SoundMachineCommand
+
+// Playback status store (in-memory, keyed by MAC with colons)
+export interface PlaybackStatus {
+  status: 'playing' | 'paused' | 'stopped' | 'finished'
+  mediaId?: number
+  mediaTitle?: string
+  updatedAt: Date
+}
 
 class MqttService extends EventEmitter {
   private client: MqttClient | null = null
   private connected = false
   private brokerUrl: string
+  private playbackStatusStore: Map<string, PlaybackStatus> = new Map()
 
   constructor() {
     super()
     this.brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'
+  }
+
+  // Get playback status for a device (MAC with colons)
+  getPlaybackStatus(mac: string): PlaybackStatus | undefined {
+    return this.playbackStatusStore.get(mac)
+  }
+
+  // Get all playback statuses
+  getAllPlaybackStatuses(): Map<string, PlaybackStatus> {
+    return this.playbackStatusStore
   }
 
   async connect(): Promise<void> {
@@ -257,7 +288,28 @@ class MqttService extends EventEmitter {
       this.emit('card:scanned', { mac, uid: event.uid, timestamp: event.timestamp })
       await this.handleCardScanned(macNoColons, event.uid)
     } else if (event.type === 'playback_status') {
-      this.emit('playback:status', { mac, status: event.status, mediaId: event.mediaId })
+      // Look up media title if we have a mediaId
+      let mediaTitle: string | undefined
+      if (event.mediaId) {
+        const [mediaItem] = await db
+          .select({ title: media.title })
+          .from(media)
+          .where(eq(media.id, event.mediaId))
+          .limit(1)
+        mediaTitle = mediaItem?.title
+      }
+
+      // Store playback status
+      this.playbackStatusStore.set(mac, {
+        status: event.status,
+        mediaId: event.mediaId,
+        mediaTitle,
+        updatedAt: new Date(),
+      })
+
+      this.emit('playback:status', { mac, status: event.status, mediaId: event.mediaId, mediaTitle })
+    } else if (event.type === 'soundmachine_request') {
+      await this.handleSoundMachineRequest(macNoColons, mac)
     }
   }
 
@@ -367,6 +419,49 @@ class MqttService extends EventEmitter {
   private getBaseUrl(): string {
     // Get the API base URL for streaming
     return process.env.API_BASE_URL || 'http://localhost:3001'
+  }
+
+  private async handleSoundMachineRequest(macNoColons: string, macWithColons: string): Promise<void> {
+    console.log(`[MQTT] Sound machine request from ${macWithColons}`)
+
+    // Get device's configured sound
+    const [device] = await db
+      .select()
+      .from(devices)
+      .where(eq(devices.mac, macWithColons))
+      .limit(1)
+
+    if (!device || !device.soundMachineSound) {
+      console.log(`[MQTT] No sound machine configured for device ${macWithColons}`)
+      this.sendCommand(macNoColons, { command: 'soundmachine', url: null, name: null, volume: null })
+      return
+    }
+
+    // soundMachineSound stores the media ID as string
+    const soundId = parseInt(device.soundMachineSound, 10)
+    if (isNaN(soundId)) {
+      console.log(`[MQTT] Invalid sound machine config for device ${macWithColons}`)
+      this.sendCommand(macNoColons, { command: 'soundmachine', url: null, name: null, volume: null })
+      return
+    }
+
+    // Look up the sound
+    const [sound] = await db
+      .select()
+      .from(media)
+      .where(eq(media.id, soundId))
+      .limit(1)
+
+    if (!sound) {
+      console.log(`[MQTT] Sound machine sound not found: ${soundId}`)
+      this.sendCommand(macNoColons, { command: 'soundmachine', url: null, name: null, volume: null })
+      return
+    }
+
+    const url = `${this.getBaseUrl()}/api/media/stream/${sound.id}`
+    const volume = device.soundMachineVolume ?? null
+    console.log(`[MQTT] Sending sound machine config: ${sound.title} (volume: ${volume ?? 'default'})`)
+    this.sendCommand(macNoColons, { command: 'soundmachine', url, name: sound.title, volume })
   }
 
   private async handleDeviceStatus(macNoColons: string, status: { online: boolean }): Promise<void> {
@@ -573,8 +668,8 @@ class MqttService extends EventEmitter {
     this.sendCommand(mac, { command: 'volume', level })
   }
 
-  triggerOta(mac: string, url: string, version: string): void {
-    this.sendCommand(mac, { command: 'ota', url, version })
+  triggerOta(mac: string, url: string, version: string, sha256: string): void {
+    this.sendCommand(mac, { command: 'ota', url, version, sha256 })
   }
 
   isConnected(): boolean {

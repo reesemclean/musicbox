@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { devices } from '../db/schema.js'
-import { mqttService, TOPICS } from '../services/mqttService.js'
+import { mqttService, TOPICS, type PlaybackStatus } from '../services/mqttService.js'
 
 export const deviceRoutes = new Hono()
 
@@ -15,6 +15,12 @@ const idParamSchema = z.object({
 })
 
 const deviceStatusSchema = z.enum(['pending', 'approved', 'rejected'])
+
+const playbackStatusSchema = z.object({
+  status: z.enum(['playing', 'paused', 'stopped', 'finished']),
+  mediaId: z.number().optional(),
+  mediaTitle: z.string().optional(),
+}).nullable()
 
 const deviceSchema = z.object({
   id: z.number(),
@@ -26,13 +32,16 @@ const deviceSchema = z.object({
   lastSeen: z.string().datetime().nullable(),
   lastIp: z.string().nullable(),
   soundMachineSound: z.string().nullable(),
+  soundMachineVolume: z.number().nullable(),
   createdAt: z.string().datetime(),
+  playback: playbackStatusSchema.optional(),
 })
 
 const updateDeviceSchema = z.object({
   name: z.string().optional(),
   status: deviceStatusSchema.optional(),
   soundMachineSound: z.string().nullable().optional(),
+  soundMachineVolume: z.number().min(0).max(21).nullable().optional(),
 })
 
 const errorSchema = z.object({
@@ -58,7 +67,21 @@ deviceRoutes.get(
   }),
   async (c) => {
     const items = await db.select().from(devices)
-    return c.json(items)
+
+    // Add playback status to each device
+    const devicesWithPlayback = items.map((device) => {
+      const playbackStatus = mqttService.getPlaybackStatus(device.mac)
+      return {
+        ...device,
+        playback: playbackStatus ? {
+          status: playbackStatus.status,
+          mediaId: playbackStatus.mediaId,
+          mediaTitle: playbackStatus.mediaTitle,
+        } : null,
+      }
+    })
+
+    return c.json(devicesWithPlayback)
   }
 )
 
@@ -295,6 +318,44 @@ deviceRoutes.post(
 
     const macForTopic = result.device.mac.replace(/:/g, '')
     mqttService.setVolume(macForTopic, level)
+    return c.json({ success: true })
+  }
+)
+
+// Trigger OTA update
+deviceRoutes.post(
+  '/:id/update',
+  describeRoute({
+    tags: ['Devices'],
+    summary: 'Trigger OTA update on device',
+    description: 'Sends OTA update command to the device with the latest firmware',
+    responses: {
+      200: { description: 'Update command sent', content: { 'application/json': { schema: resolver(successSchema) } } },
+      400: { description: 'Device not approved or no firmware available', content: { 'application/json': { schema: resolver(errorSchema) } } },
+      404: { description: 'Device not found', content: { 'application/json': { schema: resolver(errorSchema) } } },
+    },
+  }),
+  sValidator('param', idParamSchema),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const result = await getApprovedDevice(id)
+    if ('error' in result) return c.json({ error: result.error }, result.status)
+
+    // Get firmware info
+    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3001'
+
+    // Fetch firmware info from our own API
+    const firmwareResponse = await fetch(`${baseUrl}/api/firmware/latest`)
+    if (!firmwareResponse.ok) {
+      return c.json({ error: 'No firmware available' }, 400)
+    }
+
+    const firmware = await firmwareResponse.json() as { version: string; sha256: string; fileSize: number }
+
+    const macForTopic = result.device.mac.replace(/:/g, '')
+    mqttService.triggerOta(macForTopic, `${baseUrl}/api/firmware/download`, firmware.version, firmware.sha256)
+
+    console.log(`[Devices] Triggered OTA update for ${result.device.mac} to version ${firmware.version}`)
     return c.json({ success: true })
   }
 )

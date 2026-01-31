@@ -43,6 +43,11 @@ int audio_get_volume();
 AudioState audio_get_state();
 int audio_get_current_media_id();
 
+// Sound machine mode (looping playback)
+void audio_play_soundmachine(const char* url, const char* name);
+void audio_stop_soundmachine();
+bool audio_is_soundmachine_mode();
+
 // Callbacks
 void audio_on_track_ended(TrackEndedCallback callback);
 void audio_on_queue_empty(QueueEmptyCallback callback);

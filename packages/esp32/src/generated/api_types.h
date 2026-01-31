@@ -33,6 +33,7 @@
 #define API_PATH_API_DEVICES_BY_PARAM_RESUME "/api/devices/{id}/resume"
 #define API_PATH_API_DEVICES_BY_PARAM_STOP "/api/devices/{id}/stop"
 #define API_PATH_API_DEVICES_BY_PARAM_VOLUME "/api/devices/{id}/volume"
+#define API_PATH_API_DEVICES_BY_PARAM_UPDATE "/api/devices/{id}/update"
 #define API_PATH_API_DOWNLOADS_SEARCH "/api/downloads/search"
 #define API_PATH_API_DOWNLOADS "/api/downloads"
 #define API_PATH_API_DOWNLOADS_QUEUE "/api/downloads/queue"
@@ -43,6 +44,8 @@
 #define API_PATH_API_PODCASTS_BY_PARAM "/api/podcasts/{id}"
 #define API_PATH_API_PODCASTS_BY_PARAM_REFRESH "/api/podcasts/{id}/refresh"
 #define API_PATH_API_PODCASTS_REFRESH "/api/podcasts/refresh"
+#define API_PATH_API_SOUNDMACHINE_CONFIG_BY_PARAM "/api/soundmachine/config/{mac}"
+#define API_PATH_API_SOUNDMACHINE_SOUNDS "/api/soundmachine/sounds"
 
 // Card lookup response types
 typedef enum {

@@ -105,18 +105,21 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 ## Phase 15: Sound Machine
 
-- [ ] **Step 15.1**: Sound Machine Config Endpoint
-- [ ] **Step 15.2**: Long Press Activation
-- [ ] **Step 15.3**: Sound Machine Deactivation
+- [x] **Step 15.1**: Sound Machine Config Endpoint
+- [x] **Step 15.2**: Long Press Activation
+- [x] **Step 15.3**: Sound Machine Deactivation
 
 ## Phase 16: OTA Updates
 
-- [ ] **Step 16.1**: Version Check on Boot
-- [ ] **Step 16.2**: Server-Triggered Update
-- [ ] **Step 16.3**: OTA Download and Flash
+- [x] **Step 16.1**: Version Check on Boot
+- [x] **Step 16.2**: Server-Triggered Update
+- [x] **Step 16.3**: OTA Download and Flash
 
 ## Phase 17: Error Handling & Resilience
 
 - [ ] **Step 17.1**: Graceful Degradation
 - [ ] **Step 17.2**: Error Recovery
 - [ ] **Step 17.3**: Watchdog & Restart
+
+Other stuff
+Report logs from device to server for diagnostics

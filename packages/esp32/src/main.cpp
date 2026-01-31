@@ -5,6 +5,7 @@
 #include "nfc_reader.h"
 #include "audio_player.h"
 #include "card_cache.h"
+#include "ota_updater.h"
 #include "secrets.h"
 
 // Button pins
@@ -21,11 +22,21 @@ static bool mqtt_broker_found = false;
 static bool device_approved = false;
 static bool device_ready = false;  // WiFi + MQTT + approved
 
+// Sound machine state
+static bool sound_machine_active = false;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // WiFi callbacks
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onWifiConnected() {
+    // Check for firmware updates on WiFi connect (non-blocking)
+    static bool update_checked = false;
+    if (!update_checked) {
+        update_checked = true;
+        ota_check_for_update();
+    }
+
     // Try to discover and connect to MQTT broker
     if (!mqtt_broker_found) {
         mqtt_broker_found = mqtt_discover_broker();
@@ -73,9 +84,24 @@ void onVolume(int level) {
     audio_set_volume(level);
 }
 
-void onOta(const char* url, const char* version) {
-    Serial.printf("[OTA] URL: %s, Version: %s\n", url, version);
-    // TODO: Start OTA update (Phase 16)
+void onOta(const char* url, const char* version, const char* sha256) {
+    Serial.printf("[OTA] Received update command: %s (version %s)\n", url, version);
+    if (sha256) {
+        Serial.printf("[OTA] SHA256: %.16s...\n", sha256);
+    }
+
+    // Stop any audio playback before updating
+    if (audio_get_state() != AUDIO_IDLE) {
+        Serial.println("[OTA] Stopping audio for update...");
+        audio_stop();
+        delay(500);
+    }
+
+    // Disable NFC during update
+    nfc_set_enabled(false);
+
+    // Start the OTA update with SHA256 verification
+    ota_start_update(url, version, sha256);
 }
 
 void onApproved() {
@@ -95,6 +121,20 @@ void onErrorSound() {
     audio_play_error_sound();
 }
 
+void onSoundMachine(const char* url, const char* name, int volume) {
+    if (url && name) {
+        Serial.printf("[Sound Machine] Starting: %s (volume: %d)\n", name, volume);
+        sound_machine_active = true;
+        // Set volume if specified (>= 0)
+        if (volume >= 0) {
+            audio_set_volume(volume);
+        }
+        audio_play_soundmachine(url, name);
+    } else {
+        Serial.println("[Sound Machine] No sound configured for this device");
+    }
+}
+
 void onPlaybackStatus(const char* status, int mediaId) {
     Serial.printf("[Playback] Status: %s, mediaId: %d\n", status, mediaId);
     if (mqtt_is_connected()) {
@@ -108,10 +148,35 @@ void onPlaybackStatus(const char* status, int mediaId) {
 
 void onPlayClick(Button2 &btn) {
     Serial.println("[Button] Play/Pause");
+
+    // If sound machine is active, short press stops it
+    if (sound_machine_active) {
+        Serial.println("[Button] Stopping sound machine");
+        sound_machine_active = false;
+        audio_stop_soundmachine();
+        return;
+    }
+
     if (audio_get_state() == AUDIO_PLAYING) {
         audio_pause();
     } else if (audio_get_state() == AUDIO_PAUSED) {
         audio_resume();
+    }
+}
+
+void onPlayLongPress(Button2 &btn) {
+    Serial.println("[Button] Play long press - requesting sound machine");
+
+    // Don't start sound machine if already active
+    if (sound_machine_active) {
+        return;
+    }
+
+    // Request sound machine config from server via MQTT
+    if (mqtt_is_connected()) {
+        mqtt_publish_soundmachine_request();
+    } else {
+        Serial.println("[Button] Cannot start sound machine - MQTT not connected");
     }
 }
 
@@ -210,6 +275,8 @@ void setup() {
     btnPrev.begin(BTN_PREV, INPUT_PULLUP, true);
 
     btnPlay.setClickHandler(onPlayClick);
+    btnPlay.setLongClickHandler(onPlayLongPress);
+    btnPlay.setLongClickTime(1000);  // 1 second for long press
     btnVolUp.setClickHandler(onVolUpClick);
     btnVolDn.setClickHandler(onVolDnClick);
     btnNext.setClickHandler(onNextClick);
@@ -223,6 +290,9 @@ void setup() {
     // Register playback status callback
     audio_on_playback_status(onPlaybackStatus);
 
+    // Initialize OTA updater
+    ota_init();
+
     // Initialize MQTT (sets up callbacks and topics)
     mqtt_init();
     mqtt_on_play(onPlay);
@@ -234,6 +304,7 @@ void setup() {
     mqtt_on_ota(onOta);
     mqtt_on_approved(onApproved);
     mqtt_on_error_sound(onErrorSound);
+    mqtt_on_soundmachine(onSoundMachine);
 
     // Initialize WiFi (will trigger onWifiConnected when ready)
     wifi_init(onWifiConnected, onWifiDisconnected);

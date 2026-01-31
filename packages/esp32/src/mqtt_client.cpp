@@ -36,6 +36,7 @@ static VolumeCallback onVolumeCb = nullptr;
 static OtaCallback onOtaCb = nullptr;
 static ApprovedCallback onApprovedCb = nullptr;
 static ErrorSoundCallback onErrorSoundCb = nullptr;
+static SoundMachineCallback onSoundMachineCb = nullptr;
 
 // Forward declarations
 static void onMqttMessage(char* topic, byte* payload, unsigned int length);
@@ -213,7 +214,8 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     else if (strcmp(command, "ota") == 0 && onOtaCb) {
         const char* url = doc["url"];
         const char* version = doc["version"];
-        onOtaCb(url, version);
+        const char* sha256 = doc["sha256"];
+        onOtaCb(url, version, sha256);
     }
     else if (strcmp(command, "config") == 0) {
         const char* status = doc["status"];
@@ -261,6 +263,12 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     else if (strcmp(command, "error_sound") == 0 && onErrorSoundCb) {
         onErrorSoundCb();
     }
+    else if (strcmp(command, "soundmachine") == 0 && onSoundMachineCb) {
+        const char* url = doc["url"];
+        const char* name = doc["name"];
+        int volume = doc["volume"] | -1;  // -1 means use current volume
+        onSoundMachineCb(url, name, volume);
+    }
 }
 
 void mqtt_publish_card_scanned(const char* uid) {
@@ -293,6 +301,20 @@ void mqtt_publish_playback_status(const char* status, int mediaId, int position)
     mqttClient.publish(topicEvents.c_str(), payload.c_str());
 }
 
+void mqtt_publish_soundmachine_request() {
+    if (!mqttClient.connected()) return;
+
+    JsonDocument doc;
+    doc["type"] = "soundmachine_request";
+    doc["timestamp"] = millis();
+
+    String payload;
+    serializeJson(doc, payload);
+
+    mqttClient.publish(topicEvents.c_str(), payload.c_str());
+    Serial.println("[MQTT] Published sound machine request");
+}
+
 // Callback registration
 void mqtt_on_play(PlayCallback callback) { onPlayCb = callback; }
 void mqtt_on_queue(QueueCallback callback) { onQueueCb = callback; }
@@ -303,3 +325,4 @@ void mqtt_on_volume(VolumeCallback callback) { onVolumeCb = callback; }
 void mqtt_on_ota(OtaCallback callback) { onOtaCb = callback; }
 void mqtt_on_approved(ApprovedCallback callback) { onApprovedCb = callback; }
 void mqtt_on_error_sound(ErrorSoundCallback callback) { onErrorSoundCb = callback; }
+void mqtt_on_soundmachine(SoundMachineCallback callback) { onSoundMachineCb = callback; }

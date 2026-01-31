@@ -30,6 +30,12 @@ type Playlist = {
   name: string
 }
 
+type PodcastFeed = {
+  id: number
+  name: string
+  feedUrl: string
+}
+
 const cardsQueryOptions = queryOptions({
   queryKey: ['cards'],
   queryFn: async () => {
@@ -55,6 +61,15 @@ const playlistsQueryOptions = queryOptions({
   queryFn: async () => {
     const { data, error } = await api.GET('/api/playlists')
     if (error) throw new Error('Failed to load playlists')
+    return data
+  },
+})
+
+const podcastFeedsQueryOptions = queryOptions({
+  queryKey: ['podcast-feeds'],
+  queryFn: async () => {
+    const { data, error } = await api.GET('/api/podcasts')
+    if (error) throw new Error('Failed to load podcast feeds')
     return data
   },
 })
@@ -274,10 +289,11 @@ function RegisterCardDialog({ onClose, initialUid }: { onClose: () => void; init
   const wsRef = useRef<WebSocket | null>(null)
   const queryClient = useQueryClient()
 
-  // Fetch songs and playlists for the configure step (non-suspense to avoid flash)
+  // Fetch songs, playlists, and podcasts for the configure step (non-suspense to avoid flash)
   const { data: songs = [], isLoading: songsLoading } = useQuery(songsQueryOptions)
   const { data: playlists = [], isLoading: playlistsLoading } = useQuery(playlistsQueryOptions)
-  const isLoading = songsLoading || playlistsLoading
+  const { data: podcastFeeds = [], isLoading: podcastsLoading } = useQuery(podcastFeedsQueryOptions)
+  const isLoading = songsLoading || playlistsLoading || podcastsLoading
 
   // Connect to WebSocket for card scan events with auto-reconnect
   useEffect(() => {
@@ -364,6 +380,7 @@ function RegisterCardDialog({ onClose, initialUid }: { onClose: () => void; init
             uid={scannedUid}
             songs={songs as Media[]}
             playlists={playlists as Playlist[]}
+            podcastFeeds={podcastFeeds as PodcastFeed[]}
             isLoading={isLoading}
             onSuccess={() => {
               queryClient.invalidateQueries({ queryKey: ['cards'] })
@@ -424,6 +441,7 @@ function ConfigureCard({
   uid,
   songs,
   playlists,
+  podcastFeeds,
   isLoading,
   onSuccess,
   onBack,
@@ -431,12 +449,13 @@ function ConfigureCard({
   uid: string
   songs: Media[]
   playlists: Playlist[]
+  podcastFeeds: PodcastFeed[]
   isLoading: boolean
   onSuccess: () => void
   onBack: () => void
 }) {
   const [name, setName] = useState('')
-  const [contentType, setContentType] = useState<'song' | 'playlist'>('song')
+  const [contentType, setContentType] = useState<'song' | 'playlist' | 'podcast'>('song')
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
   const createMutation = useMutation({
@@ -445,9 +464,14 @@ function ConfigureCard({
       const selectedItem = items.find((item) => item.id === selectedId)
       const cardName = name || ('title' in selectedItem! ? selectedItem.title : selectedItem!.name)
 
-      const body = contentType === 'song'
-        ? { uid, name: cardName, type: 'media' as const, mediaId: selectedId! }
-        : { uid, name: cardName, type: 'playlist' as const, playlistId: selectedId! }
+      let body
+      if (contentType === 'song') {
+        body = { uid, name: cardName, type: 'media' as const, mediaId: selectedId! }
+      } else if (contentType === 'playlist') {
+        body = { uid, name: cardName, type: 'playlist' as const, playlistId: selectedId! }
+      } else {
+        body = { uid, name: cardName, type: 'podcast' as const, podcastFeedId: selectedId! }
+      }
 
       const { error } = await api.POST('/api/cards', { body })
       if (error) throw new Error('Failed to create card')
@@ -461,7 +485,7 @@ function ConfigureCard({
     },
   })
 
-  const items = contentType === 'song' ? songs : playlists
+  const items = contentType === 'song' ? songs : contentType === 'playlist' ? playlists : podcastFeeds
 
   return (
     <div>
@@ -504,6 +528,14 @@ function ConfigureCard({
               <ListMusic className="h-4 w-4 mr-1" />
               Playlist
             </Button>
+            <Button
+              variant={contentType === 'podcast' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => { setContentType('podcast'); setSelectedId(null) }}
+            >
+              <Mic className="h-4 w-4 mr-1" />
+              Podcast
+            </Button>
           </div>
 
           <div className="border border-border rounded-lg max-h-48 overflow-y-auto">
@@ -514,7 +546,7 @@ function ConfigureCard({
               </div>
             ) : items.length === 0 ? (
               <div className="p-4 text-center text-muted-foreground text-sm">
-                No {contentType === 'song' ? 'songs' : 'playlists'} available
+                No {contentType === 'song' ? 'songs' : contentType === 'playlist' ? 'playlists' : 'podcast feeds'} available
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -522,6 +554,7 @@ function ConfigureCard({
                   const itemId = item.id
                   const itemName = 'title' in item ? item.title : item.name
                   const isSelected = selectedId === itemId
+                  const Icon = contentType === 'song' ? Music : contentType === 'playlist' ? ListMusic : Mic
 
                   return (
                     <button
@@ -529,11 +562,7 @@ function ConfigureCard({
                       onClick={() => setSelectedId(itemId)}
                       className={`w-full px-4 py-2 text-left text-sm hover:bg-muted/50 flex items-center gap-2 ${isSelected ? 'bg-accent' : ''}`}
                     >
-                      {contentType === 'song' ? (
-                        <Music className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ListMusic className="h-4 w-4 text-muted-foreground" />
-                      )}
+                      <Icon className="h-4 w-4 text-muted-foreground" />
                       <span className={isSelected ? 'font-medium' : ''}>{itemName}</span>
                     </button>
                   )

@@ -61,6 +61,7 @@ export const devices = sqliteTable('devices', {
   lastSeen: integer('last_seen', { mode: 'timestamp' }),
   lastIp: text('last_ip'),
   soundMachineSound: text('sound_machine_sound'),
+  soundMachineVolume: integer('sound_machine_volume'), // 0-21, null = use current volume
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 

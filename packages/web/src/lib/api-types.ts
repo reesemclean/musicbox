@@ -391,6 +391,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/devices/{id}/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger OTA update on device
+         * @description Sends OTA update command to the device with the latest firmware
+         */
+        post: operations["postApiDevicesByIdUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/downloads/search": {
         parameters: {
             query?: never;
@@ -591,6 +611,46 @@ export interface paths {
          * @description Fetch new episodes for all podcast feeds
          */
         post: operations["postApiPodcastsRefresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soundmachine/config/{mac}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get sound machine config for device
+         * @description Returns the configured sound machine sound for a device
+         */
+        get: operations["getApiSoundmachineConfigByMac"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soundmachine/sounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List sound machine sounds
+         * @description Returns all available sound machine sounds
+         */
+        get: operations["getApiSoundmachineSounds"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1515,8 +1575,15 @@ export interface operations {
                         lastSeen: string | null;
                         lastIp: string | null;
                         soundMachineSound: string | null;
+                        soundMachineVolume: number | null;
                         /** Format: date-time */
                         createdAt: string;
+                        playback?: {
+                            /** @enum {string} */
+                            status: "playing" | "paused" | "stopped" | "finished";
+                            mediaId?: number;
+                            mediaTitle?: string;
+                        } | null;
                     }[];
                 };
             };
@@ -1550,8 +1617,15 @@ export interface operations {
                         lastSeen: string | null;
                         lastIp: string | null;
                         soundMachineSound: string | null;
+                        soundMachineVolume: number | null;
                         /** Format: date-time */
                         createdAt: string;
+                        playback?: {
+                            /** @enum {string} */
+                            status: "playing" | "paused" | "stopped" | "finished";
+                            mediaId?: number;
+                            mediaTitle?: string;
+                        } | null;
                     };
                 };
             };
@@ -1635,8 +1709,15 @@ export interface operations {
                         lastSeen: string | null;
                         lastIp: string | null;
                         soundMachineSound: string | null;
+                        soundMachineVolume: number | null;
                         /** Format: date-time */
                         createdAt: string;
+                        playback?: {
+                            /** @enum {string} */
+                            status: "playing" | "paused" | "stopped" | "finished";
+                            mediaId?: number;
+                            mediaTitle?: string;
+                        } | null;
                     };
                 };
             };
@@ -1818,6 +1899,52 @@ export interface operations {
                 };
             };
             /** @description Device not approved */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+            /** @description Device not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
+    postApiDevicesByIdUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Update command sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: boolean;
+                    };
+                };
+            };
+            /** @description Device not approved or no firmware available */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2315,6 +2442,67 @@ export interface operations {
                         failed: number;
                         total: number;
                     };
+                };
+            };
+        };
+    };
+    getApiSoundmachineConfigByMac: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mac: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sound machine configuration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        soundId: number | null;
+                        soundName: string | null;
+                        streamUrl: string | null;
+                    };
+                };
+            };
+            /** @description Device not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
+    getApiSoundmachineSounds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of sounds */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: number;
+                        title: string;
+                        duration: number | null;
+                    }[];
                 };
             };
         };
