@@ -1,8 +1,8 @@
 import mqtt, { MqttClient } from 'mqtt'
 import { EventEmitter } from 'node:events'
-import { eq } from 'drizzle-orm'
+import { eq, desc } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { devices } from '../db/schema.js'
+import { devices, cards, media, playlists, playlistMedia, podcastFeeds } from '../db/schema.js'
 
 // MQTT Topics
 export const TOPICS = {
@@ -231,8 +231,11 @@ class MqttService extends EventEmitter {
     this.emit('device:registered', reg)
   }
 
-  private async handleDeviceEvent(mac: string, event: DeviceEvent): Promise<void> {
-    console.log(`[MQTT] Device event from ${mac}:`, event)
+  private async handleDeviceEvent(macNoColons: string, event: DeviceEvent): Promise<void> {
+    console.log(`[MQTT] Device event from ${macNoColons}:`, event)
+
+    // Convert MAC from topic format (no colons) to DB format (with colons)
+    const mac = this.macWithColons(macNoColons)
 
     // Update last seen
     await db
@@ -246,10 +249,109 @@ class MqttService extends EventEmitter {
     // Handle specific events
     if (event.type === 'card_scanned') {
       this.emit('card:scanned', { mac, uid: event.uid, timestamp: event.timestamp })
+      await this.handleCardScanned(macNoColons, event.uid)
     }
   }
 
-  private async handleDeviceStatus(mac: string, status: { online: boolean }): Promise<void> {
+  // Convert MAC from topic format (AABBCCDDEEFF) to DB format (AA:BB:CC:DD:EE:FF)
+  private macWithColons(mac: string): string {
+    return mac.match(/.{2}/g)?.join(':') || mac
+  }
+
+  private async handleCardScanned(macNoColons: string, uid: string): Promise<void> {
+    console.log(`[MQTT] Looking up card: ${uid}`)
+
+    // Find the card by UID
+    const [card] = await db
+      .select()
+      .from(cards)
+      .where(eq(cards.uid, uid))
+      .limit(1)
+
+    if (!card) {
+      console.log(`[MQTT] Unknown card: ${uid}`)
+      // Emit event so Control Plane can prompt for card registration
+      this.emit('card:unknown', { mac: this.macWithColons(macNoColons), uid })
+      return
+    }
+
+    console.log(`[MQTT] Found card: ${card.name || uid}`)
+
+    // Determine what to play based on card mapping (use MAC without colons for topics)
+    const macForTopic = macNoColons
+
+    if (card.mediaId) {
+      // Direct media mapping
+      const [mediaItem] = await db
+        .select()
+        .from(media)
+        .where(eq(media.id, card.mediaId))
+        .limit(1)
+
+      if (mediaItem) {
+        const url = `${this.getBaseUrl()}/api/media/stream/${mediaItem.id}`
+        console.log(`[MQTT] Playing media: ${mediaItem.title}`)
+        this.play(macForTopic, url, mediaItem.id)
+
+        // Apply volume if set on card
+        if (card.volume !== null) {
+          this.setVolume(macForTopic, card.volume)
+        }
+      }
+    } else if (card.playlistId) {
+      // Playlist mapping - play first track
+      const [firstTrack] = await db
+        .select({
+          mediaId: playlistMedia.mediaId,
+          position: playlistMedia.position,
+          title: media.title,
+        })
+        .from(playlistMedia)
+        .innerJoin(media, eq(playlistMedia.mediaId, media.id))
+        .where(eq(playlistMedia.playlistId, card.playlistId))
+        .orderBy(playlistMedia.position)
+        .limit(1)
+
+      if (firstTrack) {
+        const url = `${this.getBaseUrl()}/api/media/stream/${firstTrack.mediaId}`
+        console.log(`[MQTT] Playing playlist, first track: ${firstTrack.title}`)
+        this.play(macForTopic, url, firstTrack.mediaId)
+
+        if (card.volume !== null) {
+          this.setVolume(macForTopic, card.volume)
+        }
+      }
+    } else if (card.podcastFeedId) {
+      // Podcast feed - play most recent episode
+      const [latestEpisode] = await db
+        .select()
+        .from(media)
+        .where(eq(media.type, 'podcast'))
+        .orderBy(desc(media.createdAt))
+        .limit(1)
+
+      // TODO: Filter by feedId when we have proper podcast episode → feed linking
+      if (latestEpisode) {
+        const url = `${this.getBaseUrl()}/api/media/stream/${latestEpisode.id}`
+        console.log(`[MQTT] Playing podcast episode: ${latestEpisode.title}`)
+        this.play(macForTopic, url, latestEpisode.id)
+
+        if (card.volume !== null) {
+          this.setVolume(macForTopic, card.volume)
+        }
+      }
+    } else {
+      console.log(`[MQTT] Card ${uid} has no content mapped`)
+    }
+  }
+
+  private getBaseUrl(): string {
+    // Get the API base URL for streaming
+    return process.env.API_BASE_URL || 'http://localhost:3001'
+  }
+
+  private async handleDeviceStatus(macNoColons: string, status: { online: boolean }): Promise<void> {
+    const mac = this.macWithColons(macNoColons)
     console.log(`[MQTT] Device ${mac} is ${status.online ? 'online' : 'offline'}`)
 
     if (!status.online) {
@@ -263,9 +365,11 @@ class MqttService extends EventEmitter {
     this.emit('device:status', { mac, online: status.online })
   }
 
-  private sendDeviceConfig(mac: string): void {
+  private sendDeviceConfig(macWithColons: string): void {
     // Send initial config to approved device
-    this.publish(TOPICS.deviceCommands(mac), {
+    // Topics use MAC without colons
+    const macForTopic = macWithColons.replace(/:/g, '')
+    this.publish(TOPICS.deviceCommands(macForTopic), {
       command: 'config',
       status: 'approved',
     })

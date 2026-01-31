@@ -39,3 +39,6 @@ firmware/*.json
 
 # generated intermediate files
 openapi.json
+
+# build output
+dist/

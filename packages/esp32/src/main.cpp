@@ -1,65 +1,37 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include "secrets.h"
+#include "wifi_manager.h"
 #include "mqtt_client.h"
+#include "nfc_reader.h"
 
-// WiFi state
-bool wifi_connected = false;
-unsigned long last_reconnect_attempt = 0;
-int reconnect_delay = 1000;
-const int max_reconnect_delay = 30000;
+// Device state
+static bool mqtt_broker_found = false;
+static bool device_approved = false;
 
-// MQTT state
-bool mqtt_broker_found = false;
-bool device_approved = false;
+// ─────────────────────────────────────────────────────────────────────────────
+// WiFi callbacks
+// ─────────────────────────────────────────────────────────────────────────────
 
-void onWiFiEvent(WiFiEvent_t event) {
-    switch (event) {
-        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            wifi_connected = true;
-            reconnect_delay = 1000;
-            Serial.printf("[WiFi] Connected (IP: %s)\n", WiFi.localIP().toString().c_str());
-
-            // Try to discover MQTT broker
-            if (!mqtt_broker_found) {
-                mqtt_broker_found = mqtt_discover_broker();
-                if (mqtt_broker_found) {
-                    mqtt_connect();
-                }
-            } else if (!mqtt_is_connected()) {
-                mqtt_connect();
-            }
-            break;
-
-        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-            wifi_connected = false;
-            Serial.println("[WiFi] Disconnected");
-            break;
-
-        default:
-            break;
+void onWifiConnected() {
+    // Try to discover and connect to MQTT broker
+    if (!mqtt_broker_found) {
+        mqtt_broker_found = mqtt_discover_broker();
+    }
+    if (mqtt_broker_found && !mqtt_is_connected()) {
+        mqtt_connect();
     }
 }
 
-void tryReconnect() {
-    if (wifi_connected) return;
-
-    unsigned long now = millis();
-    if (now - last_reconnect_attempt < (unsigned long)reconnect_delay) return;
-
-    last_reconnect_attempt = now;
-    Serial.printf("[WiFi] Reconnecting (backoff: %ds)...\n", reconnect_delay / 1000);
-
-    WiFi.disconnect();
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-    reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay);
+void onWifiDisconnected() {
+    // Nothing special needed - wifi_manager handles reconnection
 }
 
-// Command callbacks
+// ─────────────────────────────────────────────────────────────────────────────
+// MQTT command callbacks
+// ─────────────────────────────────────────────────────────────────────────────
+
 void onPlay(const char* url, int mediaId) {
     Serial.printf("[Play] URL: %s, mediaId: %d\n", url, mediaId);
-    // TODO: Start audio playback
+    // TODO: Start audio playback (Phase 11)
 }
 
 void onPause() {
@@ -84,23 +56,40 @@ void onVolume(int level) {
 
 void onOta(const char* url, const char* version) {
     Serial.printf("[OTA] URL: %s, Version: %s\n", url, version);
-    // TODO: Start OTA update
+    // TODO: Start OTA update (Phase 16)
 }
 
 void onApproved() {
     Serial.println("[Approved] Device approved by server");
     device_approved = true;
+    nfc_set_enabled(true);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NFC callback
+// ─────────────────────────────────────────────────────────────────────────────
+
+void onCardScanned(const char* uid) {
+    if (mqtt_is_connected()) {
+        mqtt_publish_card_scanned(uid);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Setup & Loop
+// ─────────────────────────────────────────────────────────────────────────────
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
     Serial.println("\n========== MUSICBOX DEVICE ==========\n");
 
-    // Initialize MQTT
-    mqtt_init();
+    // Initialize NFC reader
+    nfc_init();
+    nfc_on_card_scanned(onCardScanned);
 
-    // Register command callbacks
+    // Initialize MQTT (sets up callbacks and topics)
+    mqtt_init();
     mqtt_on_play(onPlay);
     mqtt_on_pause(onPause);
     mqtt_on_resume(onResume);
@@ -109,39 +98,29 @@ void setup() {
     mqtt_on_ota(onOta);
     mqtt_on_approved(onApproved);
 
-    // Register WiFi event handler
-    WiFi.onEvent(onWiFiEvent);
-
-    // Initial WiFi connection
-    Serial.println("[WiFi] Connecting...");
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-    // Wait for initial connection
-    for (int i = 0; i < 20 && !wifi_connected; i++) {
-        delay(500);
-    }
-
-    if (!wifi_connected) {
-        Serial.println("[WiFi] Initial connection failed, will retry in loop");
-    }
+    // Initialize WiFi (will trigger onWifiConnected when ready)
+    wifi_init(onWifiConnected, onWifiDisconnected);
 }
 
 void loop() {
     // Handle WiFi reconnection
-    tryReconnect();
+    wifi_loop();
 
     // Handle MQTT
     mqtt_loop();
 
-    // Status update
+    // Poll NFC reader
+    nfc_loop();
+
+    // Periodic status update
     static unsigned long last_status = 0;
-    if (millis() - last_status > 5000) {
+    if (millis() - last_status > 10000) {
         last_status = millis();
-        Serial.printf("[Status] WiFi: %s | MQTT: %s | Approved: %s | Uptime: %lus\n",
-            wifi_connected ? "connected" : "disconnected",
+        Serial.printf("[Status] WiFi: %s | MQTT: %s | Approved: %s | NFC: %s | Uptime: %lus\n",
+            wifi_is_connected() ? "connected" : "disconnected",
             mqtt_is_connected() ? "connected" : "disconnected",
             device_approved ? "yes" : "no",
+            nfc_is_ready() ? "ready" : "error",
             millis() / 1000);
     }
 
