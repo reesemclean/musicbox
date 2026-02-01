@@ -33,6 +33,7 @@ void mqtt_connect();
 
 // Publish events
 void mqtt_publish_card_scanned(const char* uid);
+void mqtt_publish_card_played_locally(const char* uid);  // Card handled from cache, no commands needed
 void mqtt_publish_playback_status(const char* status, int mediaId, int position);
 void mqtt_publish_soundmachine_request();
 

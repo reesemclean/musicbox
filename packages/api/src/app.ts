@@ -11,6 +11,7 @@ import { deviceRoutes } from './routes/devices.js'
 import { downloadRoutes } from './routes/downloads.js'
 import { podcastRoutes } from './routes/podcasts.js'
 import { soundmachineRoutes } from './routes/soundmachine.js'
+import { soundsRoutes } from './routes/sounds.js'
 
 const healthSchema = z.object({
   status: z.string(),
@@ -48,6 +49,7 @@ export function createApp() {
   app.route('/api/downloads', downloadRoutes)
   app.route('/api/podcasts', podcastRoutes)
   app.route('/api/soundmachine', soundmachineRoutes)
+  app.route('/api/sounds', soundsRoutes)
 
   return app
 }

@@ -1,6 +1,9 @@
 #include "audio_player.h"
+#include "sd_cache.h"
+#include "secrets.h"
 #include <Arduino.h>
-#include <SPIFFS.h>
+#include <SD.h>
+#include <HTTPClient.h>
 #include "Audio.h"
 
 // I2S pins for MAX98357A
@@ -11,10 +14,16 @@
 // FreeRTOS task for audio processing on Core 0
 static TaskHandle_t audioTaskHandle = NULL;
 
-// System sound files
-#define SOUND_STARTUP "/startup.mp3"
-#define SOUND_CARD_SCAN "/scan.mp3"
-#define SOUND_ERROR "/error.mp3"
+// System sound files (on SD card)
+#define SOUNDS_DIR "/sounds"
+#define SOUND_STARTUP "/sounds/startup.mp3"
+#define SOUND_CARD_SCAN "/sounds/scan.mp3"
+#define SOUND_ERROR "/sounds/error.mp3"
+
+// Server paths for downloading sounds
+#define SOUND_URL_STARTUP "/api/sounds/startup.mp3"
+#define SOUND_URL_SCAN "/api/sounds/scan.mp3"
+#define SOUND_URL_ERROR "/api/sounds/error.mp3"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Command queue for thread-safe audio control
@@ -24,6 +33,8 @@ static TaskHandle_t audioTaskHandle = NULL;
 enum CommandType {
     CMD_PLAY_URL,
     CMD_QUEUE_URL,
+    CMD_PLAY_SD_FILE,
+    CMD_QUEUE_SD_FILE,
     CMD_PLAY_SYSTEM_SOUND,
     CMD_PAUSE,
     CMD_RESUME,
@@ -51,9 +62,9 @@ struct AudioCommand {
     SystemSoundType soundType;
 };
 
-// Command queue - holds up to 10 pending commands
+// Command queue - holds up to 60 pending commands (enough for 50-track playlist + extras)
 static QueueHandle_t commandQueue = NULL;
-#define COMMAND_QUEUE_SIZE 10
+#define COMMAND_QUEUE_SIZE 60
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Playback queue for gapless playback
@@ -64,6 +75,7 @@ static QueueHandle_t commandQueue = NULL;
 struct QueueItem {
     char url[256];
     int mediaId;
+    bool isFile;  // true = SD file path, false = URL
 };
 
 // Audio instance
@@ -72,6 +84,7 @@ static Audio audio;
 // State (only modified on Core 0)
 static volatile AudioState state = AUDIO_IDLE;
 static volatile int current_media_id = -1;
+static bool current_is_sd_file = false;
 static int current_volume = 10;
 static bool playing_system_sound = false;
 
@@ -86,9 +99,18 @@ static int queue_head = 0;
 static int queue_tail = 0;
 static int queue_count = 0;
 
-// Pending URL to play after system sound
+// Pending item to play after system sound
 static char pending_url[256] = {0};
 static int pending_media_id = -1;
+static bool pending_is_sd_file = false;
+
+// Deferred playback - set in callback, handled in loop
+static volatile bool deferred_play_pending = false;
+static volatile bool deferred_play_next_queue = false;
+
+// Delay after starting system sound to let audio library initialize
+static unsigned long system_sound_start_time = 0;
+#define SYSTEM_SOUND_INIT_DELAY_MS 50
 
 // Current track info for restart/previous
 static char current_url[256] = {0};
@@ -97,6 +119,7 @@ static unsigned long track_start_time = 0;
 // History for previous track (simple single-track history)
 static char prev_url[256] = {0};
 static int prev_media_id = -1;
+static bool prev_is_sd_file = false;
 
 // Callbacks
 static TrackEndedCallback on_track_ended = nullptr;
@@ -106,6 +129,73 @@ static PlaybackStatusCallback on_playback_status = nullptr;
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal functions (run on Core 0)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Download a file from server to SD card
+static bool downloadSoundToSD(const char* urlPath, const char* sdPath) {
+    // Always re-download to ensure files are valid
+    if (SD.exists(sdPath)) {
+        SD.remove(sdPath);
+    }
+
+    char fullUrl[256];
+    snprintf(fullUrl, sizeof(fullUrl), "http://%s:%d%s", API_HOST, API_PORT, urlPath);
+
+    Serial.printf("[Audio] Downloading %s...\n", fullUrl);
+
+    HTTPClient http;
+    http.begin(fullUrl);
+    http.setTimeout(30000);
+
+    int httpCode = http.GET();
+    if (httpCode != HTTP_CODE_OK) {
+        Serial.printf("[Audio] Download failed: HTTP %d\n", httpCode);
+        http.end();
+        return false;
+    }
+
+    File dstFile = SD.open(sdPath, FILE_WRITE);
+    if (!dstFile) {
+        Serial.printf("[Audio] Failed to create SD file: %s\n", sdPath);
+        http.end();
+        return false;
+    }
+
+    WiFiClient* stream = http.getStreamPtr();
+    uint8_t buf[512];
+    size_t totalBytes = 0;
+    int contentLength = http.getSize();
+
+    while (http.connected() && (contentLength > 0 || contentLength == -1)) {
+        size_t available = stream->available();
+        if (available) {
+            size_t bytesRead = stream->readBytes(buf, min(available, sizeof(buf)));
+            dstFile.write(buf, bytesRead);
+            totalBytes += bytesRead;
+            if (contentLength > 0) contentLength -= bytesRead;
+        }
+        vTaskDelay(1);  // Yield to prevent watchdog timeout
+    }
+
+    dstFile.close();
+    http.end();
+
+    Serial.printf("[Audio] Downloaded %s (%lu bytes)\n", sdPath, (unsigned long)totalBytes);
+    return true;
+}
+
+// Download system sounds from server to SD card
+static void downloadSoundsToSD() {
+    // Create sounds directory if it doesn't exist
+    if (!SD.exists(SOUNDS_DIR)) {
+        SD.mkdir(SOUNDS_DIR);
+        Serial.println("[Audio] Created /sounds directory on SD");
+    }
+
+    // Download each sound file
+    downloadSoundToSD(SOUND_URL_STARTUP, SOUND_STARTUP);
+    downloadSoundToSD(SOUND_URL_SCAN, SOUND_CARD_SCAN);
+    downloadSoundToSD(SOUND_URL_ERROR, SOUND_ERROR);
+}
 
 static void emit_status(const char* status) {
     if (on_playback_status) {
@@ -119,79 +209,104 @@ static void clear_queue_internal() {
     queue_count = 0;
     pending_url[0] = '\0';
     pending_media_id = -1;
+    pending_is_sd_file = false;
     Serial.println("[Audio] Queue cleared");
 }
 
 static void play_next_in_queue() {
-    if (queue_count == 0) {
-        Serial.println("[Audio] Queue empty");
-        emit_status("finished");
-        state = AUDIO_IDLE;
-        current_media_id = -1;
-        if (on_queue_empty) {
-            on_queue_empty();
+    // Use loop instead of recursion to avoid stack overflow with many corrupt files
+    while (queue_count > 0) {
+        QueueItem* item = &playQueue[queue_head];
+        queue_head = (queue_head + 1) % MAX_QUEUE_SIZE;
+        queue_count--;
+
+        Serial.printf("[Audio] Playing next: %s (%s, remaining: %d)\n",
+            item->url, item->isFile ? "SD" : "URL", queue_count);
+
+        // Save current as previous before replacing
+        if (current_url[0] != '\0' && current_media_id >= 0) {
+            strncpy(prev_url, current_url, sizeof(prev_url) - 1);
+            prev_media_id = current_media_id;
+            prev_is_sd_file = current_is_sd_file;
         }
-        return;
+
+        // Save new current track info
+        strncpy(current_url, item->url, sizeof(current_url) - 1);
+        current_media_id = item->mediaId;
+        current_is_sd_file = item->isFile;
+        track_start_time = millis();
+
+        if (item->isFile) {
+            Serial.printf("[Audio] Playing from SD: %s\n", item->url);
+            // Don't call stopSong() - connecttoFS calls setDefaults() which calls it
+
+            if (!audio.connecttoFS(SD, item->url)) {
+                Serial.printf("[Audio] connecttoFS failed: %s - skipping\n", item->url);
+                sd_cache_remove(item->mediaId);
+                continue;  // Try next item in queue
+            }
+        } else {
+            audio.connecttohost(item->url);
+        }
+        state = AUDIO_PLAYING;
+        emit_status("playing");
+        return;  // Successfully started playback
     }
 
-    QueueItem* item = &playQueue[queue_head];
-    queue_head = (queue_head + 1) % MAX_QUEUE_SIZE;
-    queue_count--;
-
-    Serial.printf("[Audio] Playing next in queue: %s (remaining: %d)\n", item->url, queue_count);
-
-    // Save current as previous before replacing
-    if (current_url[0] != '\0' && current_media_id >= 0) {
-        strncpy(prev_url, current_url, sizeof(prev_url) - 1);
-        prev_media_id = current_media_id;
+    // Queue exhausted
+    Serial.println("[Audio] Queue empty");
+    emit_status("finished");
+    state = AUDIO_IDLE;
+    current_media_id = -1;
+    current_is_sd_file = false;
+    if (on_queue_empty) {
+        on_queue_empty();
     }
-
-    // Save new current track info
-    strncpy(current_url, item->url, sizeof(current_url) - 1);
-    current_media_id = item->mediaId;
-    track_start_time = millis();
-
-    audio.connecttohost(item->url);
-    state = AUDIO_PLAYING;
-    emit_status("playing");
 }
 
 static void handle_play_system_sound(SystemSoundType soundType) {
     const char* soundFile = nullptr;
-    const char* soundName = nullptr;
 
     switch (soundType) {
-        case SOUND_TYPE_STARTUP:
-            soundFile = SOUND_STARTUP;
-            soundName = "startup";
-            break;
-        case SOUND_TYPE_CARD_SCAN:
-            soundFile = SOUND_CARD_SCAN;
-            soundName = "card scan";
-            break;
-        case SOUND_TYPE_ERROR:
-            soundFile = SOUND_ERROR;
-            soundName = "error";
-            break;
+        case SOUND_TYPE_STARTUP: soundFile = SOUND_STARTUP; break;
+        case SOUND_TYPE_CARD_SCAN: soundFile = SOUND_CARD_SCAN; break;
+        case SOUND_TYPE_ERROR: soundFile = SOUND_ERROR; break;
     }
 
-    if (soundFile && SPIFFS.exists(soundFile)) {
-        Serial.printf("[Audio] Playing %s sound\n", soundName);
+    if (!soundFile) return;
+
+    // Error sound should stop current playback and clear the queue
+    // (error means something went wrong, don't continue with queued items)
+    if (soundType == SOUND_TYPE_ERROR) {
         audio.stopSong();
-        playing_system_sound = true;
-        audio.connecttoFS(SPIFFS, soundFile);
-        state = AUDIO_PLAYING;
-    } else {
-        Serial.printf("[Audio] %s sound not found\n", soundName);
+        clear_queue_internal();
+        pending_url[0] = '\0';
+        pending_media_id = -1;
     }
+
+    // Play from SD only - no HTTP fallback
+    // System sounds are downloaded to SD on first boot
+    if (!SD.exists(soundFile)) {
+        Serial.printf("[Audio] System sound not on SD: %s (skipping)\n", soundFile);
+        return;
+    }
+
+    Serial.printf("[Audio] Playing system sound from SD: %s\n", soundFile);
+    audio.connecttoFS(SD, soundFile);
+    playing_system_sound = true;
+    system_sound_start_time = millis();
+    state = AUDIO_PLAYING;
 }
 
 static void handle_play_url(const char* url, int mediaId) {
     // If playing system sound, queue this as pending
+    // Still clear the queue - play command means "start fresh"
     if (playing_system_sound) {
+        clear_queue_internal();
         strncpy(pending_url, url, sizeof(pending_url) - 1);
         pending_media_id = mediaId;
-        Serial.printf("[Audio] Queued pending URL: %s\n", url);
+        pending_is_sd_file = false;
+        Serial.printf("[Audio] Queued pending URL: %s (queue cleared)\n", url);
         return;
     }
 
@@ -209,11 +324,13 @@ static void handle_play_url(const char* url, int mediaId) {
     if (current_url[0] != '\0' && current_media_id >= 0) {
         strncpy(prev_url, current_url, sizeof(prev_url) - 1);
         prev_media_id = current_media_id;
+        prev_is_sd_file = current_is_sd_file;
     }
 
     // Save new current track info
     strncpy(current_url, url, sizeof(current_url) - 1);
     current_media_id = mediaId;
+    current_is_sd_file = false;
     track_start_time = millis();
 
     audio.connecttohost(url);
@@ -229,10 +346,72 @@ static void handle_queue_url(const char* url, int mediaId) {
 
     strncpy(playQueue[queue_tail].url, url, sizeof(playQueue[queue_tail].url) - 1);
     playQueue[queue_tail].mediaId = mediaId;
+    playQueue[queue_tail].isFile = false;
     queue_tail = (queue_tail + 1) % MAX_QUEUE_SIZE;
     queue_count++;
 
-    Serial.printf("[Audio] Queued: %s (queue size: %d)\n", url, queue_count);
+    Serial.printf("[Audio] Queued URL: %s (queue size: %d)\n", url, queue_count);
+
+    // If not playing, start the queue
+    if (state == AUDIO_IDLE && !playing_system_sound) {
+        play_next_in_queue();
+    }
+}
+
+static void handle_play_sd_file(const char* path, int mediaId) {
+    // If playing system sound, queue this as pending
+    // Still clear the queue - play command means "start fresh"
+    if (playing_system_sound) {
+        clear_queue_internal();
+        strncpy(pending_url, path, sizeof(pending_url) - 1);
+        pending_media_id = mediaId;
+        pending_is_sd_file = true;
+        Serial.printf("[Audio] Queued pending SD file: %s (queue cleared)\n", path);
+        return;
+    }
+
+    // Clear any existing queue
+    clear_queue_internal();
+
+    Serial.printf("[Audio] Playing SD file: %s (mediaId: %d)\n", path, mediaId);
+    // Don't call stopSong() - connecttoFS calls setDefaults() which calls it
+
+    // Save current as previous before replacing
+    if (current_url[0] != '\0' && current_media_id >= 0) {
+        strncpy(prev_url, current_url, sizeof(prev_url) - 1);
+        prev_media_id = current_media_id;
+        prev_is_sd_file = current_is_sd_file;
+    }
+
+    // Save new current track info
+    strncpy(current_url, path, sizeof(current_url) - 1);
+    current_media_id = mediaId;
+    current_is_sd_file = true;
+    track_start_time = millis();
+
+    if (!audio.connecttoFS(SD, path)) {
+        Serial.printf("[Audio] connecttoFS failed for: %s\n", path);
+        sd_cache_remove(mediaId);
+        state = AUDIO_IDLE;
+        return;
+    }
+    state = AUDIO_PLAYING;
+    emit_status("playing");
+}
+
+static void handle_queue_sd_file(const char* path, int mediaId) {
+    if (queue_count >= MAX_QUEUE_SIZE) {
+        Serial.println("[Audio] Queue full, dropping track");
+        return;
+    }
+
+    strncpy(playQueue[queue_tail].url, path, sizeof(playQueue[queue_tail].url) - 1);
+    playQueue[queue_tail].mediaId = mediaId;
+    playQueue[queue_tail].isFile = true;
+    queue_tail = (queue_tail + 1) % MAX_QUEUE_SIZE;
+    queue_count++;
+
+    Serial.printf("[Audio] Queued SD file: %s (queue size: %d)\n", path, queue_count);
 
     // If not playing, start the queue
     if (state == AUDIO_IDLE && !playing_system_sound) {
@@ -265,6 +444,7 @@ static void handle_stop() {
     int stoppedMediaId = current_media_id;
     current_media_id = -1;
     playing_system_sound = false;
+    system_sound_start_time = 0;
     Serial.println("[Audio] Stopped");
     if (stoppedMediaId >= 0) {
         emit_status("stopped");
@@ -304,7 +484,11 @@ static void handle_skip_prev() {
             Serial.println("[Audio] Restarting current track");
             audio.stopSong();
             track_start_time = millis();
-            audio.connecttohost(current_url);
+            if (current_is_sd_file) {
+                audio.connecttoFS(SD, current_url);
+            } else {
+                audio.connecttohost(current_url);
+            }
             state = AUDIO_PLAYING;
             emit_status("playing");
         }
@@ -317,15 +501,22 @@ static void handle_skip_prev() {
         char temp_url[256];
         strncpy(temp_url, current_url, sizeof(temp_url) - 1);
         int temp_id = current_media_id;
+        bool temp_is_sd = current_is_sd_file;
 
         strncpy(current_url, prev_url, sizeof(current_url) - 1);
         current_media_id = prev_media_id;
+        current_is_sd_file = prev_is_sd_file;
         track_start_time = millis();
 
         strncpy(prev_url, temp_url, sizeof(prev_url) - 1);
         prev_media_id = temp_id;
+        prev_is_sd_file = temp_is_sd;
 
-        audio.connecttohost(current_url);
+        if (current_is_sd_file) {
+            audio.connecttoFS(SD, current_url);
+        } else {
+            audio.connecttohost(current_url);
+        }
         state = AUDIO_PLAYING;
         emit_status("playing");
     }
@@ -371,6 +562,12 @@ static void process_command(const AudioCommand& cmd) {
         case CMD_QUEUE_URL:
             handle_queue_url(cmd.url, cmd.mediaId);
             break;
+        case CMD_PLAY_SD_FILE:
+            handle_play_sd_file(cmd.url, cmd.mediaId);
+            break;
+        case CMD_QUEUE_SD_FILE:
+            handle_queue_sd_file(cmd.url, cmd.mediaId);
+            break;
         case CMD_PLAY_SYSTEM_SOUND:
             handle_play_system_sound(cmd.soundType);
             break;
@@ -404,20 +601,128 @@ static void process_command(const AudioCommand& cmd) {
     }
 }
 
+// Flag to trigger sound download (set from main after WiFi connects)
+static volatile bool download_sounds_requested = false;
+
 // Audio task runs on Core 0, processes commands and runs audio loop
 static void audioTask(void* parameter) {
     Serial.println("[Audio] Task started on Core 0");
+
+    // Initialize SD card on Core 0 - MUST be same core that accesses it
+    Serial.println("[Audio] Initializing SD card on Core 0...");
+    sd_cache_init();
+
+    // Sounds will be downloaded after WiFi connects (via audio_download_sounds())
+
     AudioCommand cmd;
 
     for (;;) {
-        // Process any pending commands (non-blocking)
-        while (xQueueReceive(commandQueue, &cmd, 0) == pdTRUE) {
+        // Process ONE command per loop iteration (non-blocking)
+        // This prevents overwhelming the audio library when rapid commands arrive
+        // Skip command processing briefly after system sound starts to let audio initialize
+        bool can_process_commands = true;
+        if (playing_system_sound && system_sound_start_time > 0) {
+            unsigned long elapsed = millis() - system_sound_start_time;
+            if (elapsed < SYSTEM_SOUND_INIT_DELAY_MS) {
+                can_process_commands = false;
+            }
+        }
+
+        if (can_process_commands && xQueueReceive(commandQueue, &cmd, 0) == pdTRUE) {
             process_command(cmd);
         }
 
         // Run audio loop
         audio.loop();
-        vTaskDelay(1);  // Small yield to prevent watchdog
+
+        // Fix: detect when audio finished but callback wasn't triggered
+        // Don't check immediately after starting - audio needs time to buffer
+        bool can_check_running = true;
+        if (system_sound_start_time > 0) {
+            unsigned long elapsed = millis() - system_sound_start_time;
+            if (elapsed < SYSTEM_SOUND_INIT_DELAY_MS) {
+                can_check_running = false;
+            }
+        }
+
+        if (playing_system_sound && can_check_running && !audio.isRunning()) {
+            Serial.println("[Audio] System sound finished (detected via isRunning)");
+            playing_system_sound = false;
+            system_sound_start_time = 0;
+
+            if (pending_url[0] != '\0') {
+                deferred_play_pending = true;
+            } else if (queue_count > 0) {
+                deferred_play_next_queue = true;
+            }
+            state = AUDIO_IDLE;
+        }
+
+        // Handle deferred playback (connecttoFS doesn't work from eof callback)
+        if (deferred_play_pending) {
+            deferred_play_pending = false;
+            Serial.println("[Audio] Processing deferred pending playback");
+
+            // Save current as previous before replacing
+            if (current_url[0] != '\0' && current_media_id >= 0) {
+                strncpy(prev_url, current_url, sizeof(prev_url) - 1);
+                prev_media_id = current_media_id;
+            }
+
+            strncpy(current_url, pending_url, sizeof(current_url) - 1);
+            current_media_id = pending_media_id;
+            current_is_sd_file = pending_is_sd_file;
+            track_start_time = millis();
+
+            bool success = false;
+            if (pending_is_sd_file) {
+                Serial.printf("[Audio] Playing deferred SD file: %s\n", pending_url);
+                if (audio.connecttoFS(SD, pending_url)) {
+                    success = true;
+                } else {
+                    Serial.println("[Audio] connecttoFS failed");
+                    sd_cache_remove(pending_media_id);
+                }
+            } else {
+                Serial.printf("[Audio] Playing deferred URL: %s\n", pending_url);
+                audio.connecttohost(pending_url);
+                success = true;
+            }
+
+            pending_url[0] = '\0';
+            pending_media_id = -1;
+            pending_is_sd_file = false;
+
+            if (success) {
+                state = AUDIO_PLAYING;
+                emit_status("playing");
+            } else if (queue_count > 0) {
+                // SD file failed, try the queue
+                play_next_in_queue();
+            } else {
+                state = AUDIO_IDLE;
+            }
+        }
+
+        if (deferred_play_next_queue) {
+            deferred_play_next_queue = false;
+            Serial.println("[Audio] Processing deferred queue playback");
+            play_next_in_queue();
+        }
+
+        // When idle, process downloads (all SD access on Core 0)
+        if (state == AUDIO_IDLE && !playing_system_sound && !soundmachine_mode) {
+            // Download system sounds if requested (only when idle to avoid crackling)
+            if (download_sounds_requested) {
+                download_sounds_requested = false;
+                downloadSoundsToSD();
+            }
+
+            // Process SD cache downloads
+            sd_cache_process();
+        }
+
+        vTaskDelay(1);  // Feed watchdog
     }
 }
 
@@ -441,20 +746,7 @@ static void send_command(const AudioCommand& cmd) {
 bool audio_init() {
     Serial.println("[Audio] Initializing...");
 
-    // Initialize SPIFFS for system sounds
-    if (!SPIFFS.begin(true)) {
-        Serial.println("[Audio] SPIFFS mount failed");
-        return false;
-    }
-    Serial.println("[Audio] SPIFFS mounted");
-
-    // List available sound files
-    File root = SPIFFS.open("/");
-    File file = root.openNextFile();
-    while (file) {
-        Serial.printf("[Audio] Found: %s (%d bytes)\n", file.name(), file.size());
-        file = root.openNextFile();
-    }
+    // SPIFFS will be initialized on Core 0 (same as SD) to avoid cross-core issues
 
     // Create command queue
     commandQueue = xQueueCreate(COMMAND_QUEUE_SIZE, sizeof(AudioCommand));
@@ -466,20 +758,26 @@ bool audio_init() {
     // Initialize I2S audio
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     audio.setVolume(current_volume);
+    audio.setConnectionTimeout(2000, 2700);
 
     // Start audio task on Core 0 (main loop runs on Core 1)
     xTaskCreatePinnedToCore(
         audioTask,          // Task function
         "AudioTask",        // Name
-        8192,               // Stack size
+        16384,              // Stack size
         NULL,               // Parameters
-        1,                  // Priority
+        configMAX_PRIORITIES - 1,  // High priority
         &audioTaskHandle,   // Task handle
         0                   // Core 0
     );
 
     Serial.println("[Audio] Ready (task on Core 0, command queue enabled)");
     return true;
+}
+
+void audio_download_sounds() {
+    // Trigger sound download on audio task (must run on Core 0)
+    download_sounds_requested = true;
 }
 
 void audio_play_startup_sound() {
@@ -515,6 +813,22 @@ void audio_queue_url(const char* url, int mediaId) {
     AudioCommand cmd = {};
     cmd.type = CMD_QUEUE_URL;
     strncpy(cmd.url, url, sizeof(cmd.url) - 1);
+    cmd.mediaId = mediaId;
+    send_command(cmd);
+}
+
+void audio_play_sd_file(const char* path, int mediaId) {
+    AudioCommand cmd = {};
+    cmd.type = CMD_PLAY_SD_FILE;
+    strncpy(cmd.url, path, sizeof(cmd.url) - 1);
+    cmd.mediaId = mediaId;
+    send_command(cmd);
+}
+
+void audio_queue_sd_file(const char* path, int mediaId) {
+    AudioCommand cmd = {};
+    cmd.type = CMD_QUEUE_SD_FILE;
+    strncpy(cmd.url, path, sizeof(cmd.url) - 1);
     cmd.mediaId = mediaId;
     send_command(cmd);
 }
@@ -606,10 +920,12 @@ void audio_on_playback_status(PlaybackStatusCallback callback) {
 
 
 // ESP32-audioI2S callback - called when track ends (runs on Core 0)
+// IMPORTANT: Don't call connecttoFS from here - it causes timeout issues
+// Instead, set flags and let the audio loop handle playback
 void audio_eof_mp3(const char* info) {
     Serial.printf("[Audio] Track ended: %s\n", info);
 
-    // Sound machine mode - loop the sound
+    // Sound machine mode - loop the sound (URL playback works from callback)
     if (soundmachine_mode) {
         Serial.printf("[Audio] Sound machine looping: %s\n", soundmachine_name);
         audio.connecttohost(soundmachine_url);
@@ -618,32 +934,21 @@ void audio_eof_mp3(const char* info) {
 
     if (playing_system_sound) {
         playing_system_sound = false;
+        system_sound_start_time = 0;
 
-        // Check if there's a pending URL to play
+        // Check if there's a pending item to play
         if (pending_url[0] != '\0') {
-            Serial.printf("[Audio] Playing pending URL: %s\n", pending_url);
-
-            // Save current as previous before replacing
-            if (current_url[0] != '\0' && current_media_id >= 0) {
-                strncpy(prev_url, current_url, sizeof(prev_url) - 1);
-                prev_media_id = current_media_id;
-            }
-
-            strncpy(current_url, pending_url, sizeof(current_url) - 1);
-            current_media_id = pending_media_id;
-            track_start_time = millis();
-
-            audio.connecttohost(pending_url);
-            pending_url[0] = '\0';
-            pending_media_id = -1;
-            state = AUDIO_PLAYING;
-            emit_status("playing");
+            // Defer the actual playback to the audio loop
+            Serial.println("[Audio] Deferring pending item playback to loop");
+            deferred_play_pending = true;
+            state = AUDIO_IDLE;  // Temporarily idle so loop processes it
             return;
         }
 
         // Check if there's a queue
         if (queue_count > 0) {
-            play_next_in_queue();
+            deferred_play_next_queue = true;
+            state = AUDIO_IDLE;
             return;
         }
 
@@ -656,6 +961,17 @@ void audio_eof_mp3(const char* info) {
         on_track_ended();
     }
 
-    // Play next in queue (gapless)
-    play_next_in_queue();
+    // Defer queue playback to the audio loop
+    if (queue_count > 0) {
+        deferred_play_next_queue = true;
+        state = AUDIO_IDLE;
+    } else {
+        emit_status("finished");
+        state = AUDIO_IDLE;
+        current_media_id = -1;
+        current_is_sd_file = false;
+        if (on_queue_empty) {
+            on_queue_empty();
+        }
+    }
 }

@@ -1,5 +1,6 @@
 #include "mqtt_client.h"
 #include "card_cache.h"
+#include "sd_cache.h"
 #include "secrets.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -230,6 +231,13 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         for (JsonObject card : cards) {
             const char* uid = card["uid"];
             int volume = card["volume"] | -1;
+            const char* typeStr = card["type"] | "song";
+            CardType type = CARD_TYPE_SONG;
+            if (strcmp(typeStr, "podcast") == 0) {
+                type = CARD_TYPE_PODCAST;
+            } else if (strcmp(typeStr, "playlist") == 0) {
+                type = CARD_TYPE_PLAYLIST;
+            }
             JsonArray mediaIds = card["mediaIds"];
             int ids[MAX_TRACKS_PER_CARD];
             int count = 0;
@@ -238,14 +246,22 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
                     ids[count++] = id;
                 }
             }
-            card_cache_set(uid, ids, count, volume);
+            card_cache_set(uid, ids, count, volume, type);
         }
         Serial.printf("[MQTT] Synced %d cards\n", card_cache_count());
+        sd_cache_sync_with_cards();  // Eager download & eviction
     }
     else if (strcmp(command, "card_update") == 0) {
         // Single card update
         const char* uid = doc["uid"];
         int volume = doc["volume"] | -1;
+        const char* typeStr = doc["type"] | "song";
+        CardType type = CARD_TYPE_SONG;
+        if (strcmp(typeStr, "podcast") == 0) {
+            type = CARD_TYPE_PODCAST;
+        } else if (strcmp(typeStr, "playlist") == 0) {
+            type = CARD_TYPE_PLAYLIST;
+        }
         JsonArray mediaIds = doc["mediaIds"];
         int ids[MAX_TRACKS_PER_CARD];
         int count = 0;
@@ -254,11 +270,13 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
                 ids[count++] = id;
             }
         }
-        card_cache_set(uid, ids, count, volume);
+        card_cache_set(uid, ids, count, volume, type);
+        sd_cache_sync_with_cards();  // Eager download & eviction
     }
     else if (strcmp(command, "card_delete") == 0) {
         const char* uid = doc["uid"];
         card_cache_remove(uid);
+        sd_cache_sync_with_cards();  // Evict orphaned files
     }
     else if (strcmp(command, "error_sound") == 0 && onErrorSoundCb) {
         onErrorSoundCb();
@@ -284,6 +302,21 @@ void mqtt_publish_card_scanned(const char* uid) {
 
     mqttClient.publish(topicEvents.c_str(), payload.c_str());
     Serial.printf("[MQTT] Published card scan: %s\n", uid);
+}
+
+void mqtt_publish_card_played_locally(const char* uid) {
+    if (!mqttClient.connected()) return;
+
+    JsonDocument doc;
+    doc["type"] = "card_played_locally";
+    doc["uid"] = uid;
+    doc["timestamp"] = millis();
+
+    String payload;
+    serializeJson(doc, payload);
+
+    mqttClient.publish(topicEvents.c_str(), payload.c_str());
+    Serial.printf("[MQTT] Published card played locally: %s\n", uid);
 }
 
 void mqtt_publish_playback_status(const char* status, int mediaId, int position) {

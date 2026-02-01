@@ -18,15 +18,22 @@ typedef std::function<void(const char* status, int mediaId)> PlaybackStatusCallb
 // Initialize audio player (I2S output)
 bool audio_init();
 
-// System sounds (from SPIFFS, plays immediately)
+// Download system sounds from server to SD card (call after WiFi connects)
+void audio_download_sounds();
+
+// System sounds (from SD card)
 void audio_play_startup_sound();
 void audio_play_card_scan_sound();
 void audio_play_error_sound();
 
-// URL playback
+// URL playback (streaming from network)
 void audio_play_url(const char* url, int mediaId);
 void audio_queue_url(const char* url, int mediaId);  // Add to queue for gapless
 void audio_clear_queue();
+
+// SD card playback (from cached files)
+void audio_play_sd_file(const char* path, int mediaId);
+void audio_queue_sd_file(const char* path, int mediaId);
 
 // Playback control
 void audio_pause();

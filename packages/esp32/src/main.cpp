@@ -5,6 +5,7 @@
 #include "nfc_reader.h"
 #include "audio_player.h"
 #include "card_cache.h"
+#include "sd_cache.h"
 #include "ota_updater.h"
 #include "secrets.h"
 
@@ -30,6 +31,13 @@ static bool sound_machine_active = false;
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onWifiConnected() {
+    // Download system sounds if not already on SD
+    static bool sounds_downloaded = false;
+    if (!sounds_downloaded) {
+        sounds_downloaded = true;
+        audio_download_sounds();
+    }
+
     // Check for firmware updates on WiFi connect (non-blocking)
     static bool update_checked = false;
     if (!update_checked) {
@@ -56,12 +64,30 @@ void onWifiDisconnected() {
 
 void onPlay(const char* url, int mediaId) {
     Serial.printf("[Play] URL: %s, mediaId: %d\n", url, mediaId);
-    audio_play_url(url, mediaId);
+    // Prefer SD cache if available
+    if (sd_cache_has(mediaId)) {
+        String path = sd_cache_path(mediaId);
+        Serial.printf("[Play] Using SD cache: %s\n", path.c_str());
+        audio_play_sd_file(path.c_str(), mediaId);
+    } else {
+        audio_play_url(url, mediaId);
+        // Queue for background download
+        sd_cache_queue_download(mediaId, url);
+    }
 }
 
 void onQueueTrack(const char* url, int mediaId) {
     Serial.printf("[Queue] URL: %s, mediaId: %d\n", url, mediaId);
-    audio_queue_url(url, mediaId);
+    // Prefer SD cache if available
+    if (sd_cache_has(mediaId)) {
+        String path = sd_cache_path(mediaId);
+        Serial.printf("[Queue] Using SD cache: %s\n", path.c_str());
+        audio_queue_sd_file(path.c_str(), mediaId);
+    } else {
+        audio_queue_url(url, mediaId);
+        // Queue for background download
+        sd_cache_queue_download(mediaId, url);
+    }
 }
 
 void onPause() {
@@ -211,9 +237,7 @@ void onPrevClick(Button2 &btn) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onCardScanned(const char* uid) {
-    // Play feedback sound immediately
-    audio_play_card_scan_sound();
-
+    // Music starting is the feedback - no scan sound needed
     // Check cache first for instant playback
     CachedCard* cached = card_cache_lookup(uid);
     if (cached && cached->trackCount > 0) {
@@ -224,22 +248,44 @@ void onCardScanned(const char* uid) {
             audio_set_volume(cached->volume);
         }
 
-        // Build URL and play first track immediately
+        // Play first track - prefer SD cache, fallback to streaming
+        int firstMediaId = cached->mediaIds[0];
         char url[128];
         snprintf(url, sizeof(url), "http://%s:%d/api/media/stream/%d",
-                 API_HOST, API_PORT, cached->mediaIds[0]);
-        audio_play_url(url, cached->mediaIds[0]);
+                 API_HOST, API_PORT, firstMediaId);
+
+        if (sd_cache_has(firstMediaId)) {
+            String path = sd_cache_path(firstMediaId);
+            Serial.printf("[Card] Playing from SD: %d\n", firstMediaId);
+            audio_play_sd_file(path.c_str(), firstMediaId);
+        } else {
+            Serial.printf("[Card] Streaming: %d\n", firstMediaId);
+            audio_play_url(url, firstMediaId);
+            // Queue for background download
+            sd_cache_queue_download(firstMediaId, url);
+        }
 
         // Queue remaining tracks
         for (int i = 1; i < cached->trackCount; i++) {
+            int mediaId = cached->mediaIds[i];
             snprintf(url, sizeof(url), "http://%s:%d/api/media/stream/%d",
-                     API_HOST, API_PORT, cached->mediaIds[i]);
-            audio_queue_url(url, cached->mediaIds[i]);
+                     API_HOST, API_PORT, mediaId);
+
+            if (sd_cache_has(mediaId)) {
+                String path = sd_cache_path(mediaId);
+                Serial.printf("[Card] Queueing from SD: %d\n", mediaId);
+                audio_queue_sd_file(path.c_str(), mediaId);
+            } else {
+                Serial.printf("[Card] Queueing stream: %d\n", mediaId);
+                audio_queue_url(url, mediaId);
+                // Queue for background download
+                sd_cache_queue_download(mediaId, url);
+            }
         }
 
-        // Still notify server (for logging/UI updates)
+        // Notify server we handled it locally (for logging/UI) - server won't send play commands
         if (mqtt_is_connected()) {
-            mqtt_publish_card_scanned(uid);
+            mqtt_publish_card_played_locally(uid);
         }
         return;
     }
@@ -261,6 +307,7 @@ void setup() {
     Serial.println("\n========== MUSICBOX DEVICE ==========\n");
 
     // Initialize audio (SPIFFS + I2S)
+    // Note: SD card is initialized inside audio task on Core 0
     audio_init();
 
     // Initialize card cache
@@ -331,13 +378,15 @@ void loop() {
     static unsigned long last_status = 0;
     if (millis() - last_status > 10000) {
         last_status = millis();
-        Serial.printf("[Status] WiFi: %s | MQTT: %s | Approved: %s | NFC: %s | Audio: %s | Uptime: %lus\n",
+        Serial.printf("[Status] WiFi: %s | MQTT: %s | Approved: %s | NFC: %s | Audio: %s | SD: %s (%d files) | Uptime: %lus\n",
             wifi_is_connected() ? "connected" : "disconnected",
             mqtt_is_connected() ? "connected" : "disconnected",
             device_approved ? "yes" : "no",
             nfc_is_ready() ? "ready" : "error",
             audio_get_state() == AUDIO_PLAYING ? "playing" :
                 (audio_get_state() == AUDIO_PAUSED ? "paused" : "idle"),
+            sd_cache_available() ? "ready" : "unavailable",
+            sd_cache_file_count(),
             millis() / 1000);
     }
 

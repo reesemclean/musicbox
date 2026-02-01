@@ -4,7 +4,7 @@ import { WebSocketServer } from 'ws'
 import { createApp } from './app.js'
 import { refreshAllFeeds } from './services/podcastService.js'
 import { mqttService } from './services/mqttService.js'
-import { seedSoundMachineSounds } from './services/seedService.js'
+import { seedSoundMachineSounds, seedSystemSounds } from './services/seedService.js'
 
 const app = createApp()
 
@@ -127,11 +127,12 @@ server.on('upgrade', (req, socket, head) => {
 const PORT = 3001
 
 async function startServer() {
-  // Seed sound machine sounds from seed-data directory
+  // Seed sounds from seed-data directory
   try {
     await seedSoundMachineSounds()
+    await seedSystemSounds()
   } catch (err) {
-    console.error('[Seed] Failed to seed sound machine sounds:', err)
+    console.error('[Seed] Failed to seed sounds:', err)
   }
 
   // Connect to MQTT broker

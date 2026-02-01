@@ -19,7 +19,7 @@ CachedCard* card_cache_lookup(const char* uid) {
     return nullptr;
 }
 
-void card_cache_set(const char* uid, int* mediaIds, int trackCount, int volume) {
+void card_cache_set(const char* uid, int* mediaIds, int trackCount, int volume, CardType type) {
     // Find existing or empty slot
     int slot = -1;
     for (int i = 0; i < MAX_CACHED_CARDS; i++) {
@@ -44,13 +44,16 @@ void card_cache_set(const char* uid, int* mediaIds, int trackCount, int volume) 
         cache[slot].mediaIds[i] = mediaIds[i];
     }
     cache[slot].volume = volume;
+    cache[slot].type = type;
 
     if (!cache[slot].valid) {
         cache[slot].valid = true;
         cache_count++;
     }
 
-    Serial.printf("[CardCache] Cached card %s (%d tracks)\n", uid, trackCount);
+    const char* typeStr = (type == CARD_TYPE_PODCAST) ? "podcast" :
+                          (type == CARD_TYPE_PLAYLIST) ? "playlist" : "song";
+    Serial.printf("[CardCache] Cached card %s (%d tracks, %s)\n", uid, trackCount, typeStr);
 }
 
 void card_cache_remove(const char* uid) {
@@ -74,4 +77,35 @@ void card_cache_clear() {
 
 int card_cache_count() {
     return cache_count;
+}
+
+int card_cache_get_all_media_ids(int* outIds, int maxIds) {
+    // Collect all unique media IDs from cacheable cards (songs/playlists, not podcasts)
+    int count = 0;
+
+    for (int i = 0; i < MAX_CACHED_CARDS && count < maxIds; i++) {
+        if (!cache[i].valid) continue;
+
+        // Skip podcasts - they should be streamed, not cached
+        if (cache[i].type == CARD_TYPE_PODCAST) continue;
+
+        for (int j = 0; j < cache[i].trackCount && count < maxIds; j++) {
+            int mediaId = cache[i].mediaIds[j];
+
+            // Check if already in output (dedup)
+            bool found = false;
+            for (int k = 0; k < count; k++) {
+                if (outIds[k] == mediaId) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                outIds[count++] = mediaId;
+            }
+        }
+    }
+
+    return count;
 }

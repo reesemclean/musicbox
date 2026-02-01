@@ -28,6 +28,12 @@ export interface CardScannedEvent {
   timestamp: number
 }
 
+export interface CardPlayedLocallyEvent {
+  type: 'card_played_locally'
+  uid: string
+  timestamp: number
+}
+
 export interface PlaybackStatusEvent {
   type: 'playback_status'
   status: 'playing' | 'paused' | 'stopped' | 'finished'
@@ -45,7 +51,7 @@ export interface SoundMachineRequestEvent {
   type: 'soundmachine_request'
 }
 
-export type DeviceEvent = CardScannedEvent | PlaybackStatusEvent | DeviceStatusEvent | SoundMachineRequestEvent
+export type DeviceEvent = CardScannedEvent | CardPlayedLocallyEvent | PlaybackStatusEvent | DeviceStatusEvent | SoundMachineRequestEvent
 
 // Commands to devices
 export interface PlayCommand {
@@ -287,6 +293,10 @@ class MqttService extends EventEmitter {
     if (event.type === 'card_scanned') {
       this.emit('card:scanned', { mac, uid: event.uid, timestamp: event.timestamp })
       await this.handleCardScanned(macNoColons, event.uid)
+    } else if (event.type === 'card_played_locally') {
+      // Device handled playback from cache - just emit for UI, don't send commands
+      console.log(`[MQTT] Card played locally on device: ${event.uid}`)
+      this.emit('card:scanned', { mac, uid: event.uid, timestamp: event.timestamp, handledLocally: true })
     } else if (event.type === 'playback_status') {
       // Look up media title if we have a mediaId
       let mediaTitle: string | undefined
@@ -508,9 +518,12 @@ class MqttService extends EventEmitter {
     for (const card of allCards) {
       let mediaIds: number[] = []
 
+      let cardType: 'song' | 'playlist' | 'podcast' = 'song'
+
       if (card.mediaId) {
         // Single media item
         mediaIds = [card.mediaId]
+        cardType = 'song'
       } else if (card.playlistId) {
         // Get all tracks from playlist in order
         const tracks = await db
@@ -520,6 +533,7 @@ class MqttService extends EventEmitter {
           .orderBy(playlistMedia.position)
 
         mediaIds = tracks.map(t => t.mediaId)
+        cardType = 'playlist'
       } else if (card.podcastFeedId) {
         // Get most recent episode from this feed
         // TODO: Proper podcast episode linking
@@ -533,6 +547,7 @@ class MqttService extends EventEmitter {
         if (latestEpisode) {
           mediaIds = [latestEpisode.id]
         }
+        cardType = 'podcast'
       }
 
       if (mediaIds.length > 0) {
@@ -540,6 +555,7 @@ class MqttService extends EventEmitter {
           uid: card.uid,
           mediaIds,
           volume: card.volume ?? -1,
+          type: cardType,
         })
       }
     }
@@ -563,9 +579,11 @@ class MqttService extends EventEmitter {
     }
 
     let mediaIds: number[] = []
+    let cardType: 'song' | 'playlist' | 'podcast' = 'song'
 
     if (card.mediaId) {
       mediaIds = [card.mediaId]
+      cardType = 'song'
     } else if (card.playlistId) {
       const tracks = await db
         .select({ mediaId: playlistMedia.mediaId })
@@ -574,6 +592,7 @@ class MqttService extends EventEmitter {
         .orderBy(playlistMedia.position)
 
       mediaIds = tracks.map(t => t.mediaId)
+      cardType = 'playlist'
     } else if (card.podcastFeedId) {
       const [latestEpisode] = await db
         .select({ id: media.id })
@@ -585,6 +604,7 @@ class MqttService extends EventEmitter {
       if (latestEpisode) {
         mediaIds = [latestEpisode.id]
       }
+      cardType = 'podcast'
     }
 
     // Get all approved devices
@@ -598,6 +618,7 @@ class MqttService extends EventEmitter {
       uid: card.uid,
       mediaIds,
       volume: card.volume ?? -1,
+      type: cardType,
     }
 
     for (const device of approvedDevices) {
