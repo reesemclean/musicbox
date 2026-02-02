@@ -51,7 +51,13 @@ export interface SoundMachineRequestEvent {
   type: 'soundmachine_request'
 }
 
-export type DeviceEvent = CardScannedEvent | CardPlayedLocallyEvent | PlaybackStatusEvent | DeviceStatusEvent | SoundMachineRequestEvent
+export interface DeviceLogsEvent {
+  type: 'device_logs'
+  logs: string
+  timestamp: number
+}
+
+export type DeviceEvent = CardScannedEvent | CardPlayedLocallyEvent | PlaybackStatusEvent | DeviceStatusEvent | SoundMachineRequestEvent | DeviceLogsEvent
 
 // Commands to devices
 export interface PlayCommand {
@@ -320,6 +326,8 @@ class MqttService extends EventEmitter {
       this.emit('playback:status', { mac, status: event.status, mediaId: event.mediaId, mediaTitle })
     } else if (event.type === 'soundmachine_request') {
       await this.handleSoundMachineRequest(macNoColons, mac)
+    } else if (event.type === 'device_logs') {
+      this.handleDeviceLogs(mac, event.logs)
     }
   }
 
@@ -489,6 +497,21 @@ class MqttService extends EventEmitter {
     this.emit('device:status', { mac, online: status.online })
   }
 
+  private handleDeviceLogs(mac: string, logs: string): void {
+    // Parse and display logs from device
+    // Format: "uptime|level|module|message\nuptime|level|module|message\n..."
+    const lines = logs.split('\n').filter(line => line.trim())
+    for (const line of lines) {
+      const [uptime, level, module, ...msgParts] = line.split('|')
+      const msg = msgParts.join('|')
+      const levelIcon = level === 'E' ? '🔴' : level === 'W' ? '🟡' : ''
+      console.log(`[Device ${mac}] ${levelIcon}[${level}][${module}] ${msg} (uptime: ${uptime}s)`)
+    }
+
+    // Emit for WebSocket clients (could be used to display in Control Plane)
+    this.emit('device:logs', { mac, logs })
+  }
+
   private sendDeviceConfig(macWithColons: string): void {
     // Send initial config to approved device
     // Topics use MAC without colons
@@ -513,6 +536,7 @@ class MqttService extends EventEmitter {
       uid: string
       mediaIds: number[]
       volume: number
+      type: 'song' | 'playlist' | 'podcast'
     }> = []
 
     for (const card of allCards) {

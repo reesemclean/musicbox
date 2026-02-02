@@ -8,6 +8,10 @@
 // Debounce settings
 #define DEBOUNCE_MS 1500
 
+// Retry settings
+#define NFC_INIT_RETRY_INTERVAL_MS 5000
+#define NFC_READ_RETRY_MAX 3
+
 // NFC reader instance
 static Adafruit_PN532 nfc(PN532_SDA, PN532_SCL);
 
@@ -18,6 +22,10 @@ static uint8_t last_uid[7] = {0};
 static uint8_t last_uid_len = 0;
 static unsigned long last_scan_time = 0;
 
+// Retry state
+static unsigned long last_init_attempt = 0;
+static int consecutive_read_errors = 0;
+
 // Callback
 static CardScannedCallback on_card_scanned_cb = nullptr;
 
@@ -27,8 +35,9 @@ bool nfc_init() {
 
     uint32_t versiondata = nfc.getFirmwareVersion();
     if (!versiondata) {
-        Serial.println("[NFC] PN532 not found - check wiring");
+        Serial.println("[NFC] PN532 not found - will retry in loop");
         ready = false;
+        last_init_attempt = millis();
         return false;
     }
 
@@ -38,8 +47,32 @@ bool nfc_init() {
 
     nfc.SAMConfig();
     ready = true;
+    consecutive_read_errors = 0;
     Serial.println("[NFC] Ready to read cards");
     return true;
+}
+
+// Retry initialization if it failed
+static void nfc_retry_init() {
+    if (ready) return;
+
+    unsigned long now = millis();
+    if (now - last_init_attempt < NFC_INIT_RETRY_INTERVAL_MS) return;
+
+    last_init_attempt = now;
+    Serial.println("[NFC] Retrying initialization...");
+
+    nfc.begin();
+    uint32_t versiondata = nfc.getFirmwareVersion();
+    if (versiondata) {
+        Serial.printf("[NFC] Found PN532 firmware v%d.%d\n",
+            (versiondata >> 16) & 0xFF,
+            (versiondata >> 8) & 0xFF);
+        nfc.SAMConfig();
+        ready = true;
+        consecutive_read_errors = 0;
+        Serial.println("[NFC] Ready to read cards (after retry)");
+    }
 }
 
 void nfc_on_card_scanned(CardScannedCallback callback) {
@@ -47,13 +80,22 @@ void nfc_on_card_scanned(CardScannedCallback callback) {
 }
 
 void nfc_loop() {
-    if (!ready || !enabled) return;
+    // Retry initialization if not ready
+    if (!ready) {
+        nfc_retry_init();
+        return;
+    }
+
+    if (!enabled) return;
 
     uint8_t uid[7];
     uint8_t uid_len;
 
-    // Non-blocking read attempt (100ms timeout - balance between detection and responsiveness)
+    // Non-blocking read attempt (50ms timeout - balance between detection and responsiveness)
     if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uid_len, 50)) {
+        // Reset error counter on successful read
+        consecutive_read_errors = 0;
+
         unsigned long now = millis();
 
         // Check if this is the same card we just scanned (debounce)

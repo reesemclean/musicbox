@@ -348,6 +348,20 @@ void mqtt_publish_soundmachine_request() {
     Serial.println("[MQTT] Published sound machine request");
 }
 
+void mqtt_publish_logs(const char* logs) {
+    if (!mqttClient.connected() || !logs || logs[0] == '\0') return;
+
+    JsonDocument doc;
+    doc["type"] = "device_logs";
+    doc["logs"] = logs;
+    doc["timestamp"] = millis();
+
+    String payload;
+    serializeJson(doc, payload);
+
+    mqttClient.publish(topicEvents.c_str(), payload.c_str());
+}
+
 // Callback registration
 void mqtt_on_play(PlayCallback callback) { onPlayCb = callback; }
 void mqtt_on_queue(QueueCallback callback) { onQueueCb = callback; }

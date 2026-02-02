@@ -117,9 +117,9 @@ Track progress through the [ESP32 Build Guide](./ESP32-BUILD-GUIDE.md). Check of
 
 ## Phase 17: Error Handling & Resilience
 
-- [ ] **Step 17.1**: Graceful Degradation
-- [ ] **Step 17.2**: Error Recovery
-- [ ] **Step 17.3**: Watchdog & Restart
+- [x] **Step 17.1**: Graceful Degradation (non-blocking WiFi, NVS approval state, offline cached playback)
+- [x] **Step 17.2**: Error Recovery (NFC init retry, WiFi/MQTT auto-reconnect, SD file removal)
+- [x] **Step 17.3**: Watchdog & Restart (30s task watchdog, 5x vol-down combo, restart reason logging)
 
 Other stuff
 Report logs from device to server for diagnostics

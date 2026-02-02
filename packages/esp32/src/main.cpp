@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <Button2.h>
+#include <Preferences.h>
+#include <esp_task_wdt.h>
+#include "logger.h"
 #include "wifi_manager.h"
 #include "mqtt_client.h"
 #include "nfc_reader.h"
@@ -16,21 +19,72 @@
 #define BTN_NEXT   13
 #define BTN_PREV   14
 
+// Watchdog timeout (seconds)
+#define WDT_TIMEOUT 30
+
 Button2 btnPlay, btnVolUp, btnVolDn, btnNext, btnPrev;
+
+// NVS preferences for persistent state
+static Preferences preferences;
 
 // Device state
 static bool mqtt_broker_found = false;
 static bool device_approved = false;
 static bool device_ready = false;  // WiFi + MQTT + approved
+static bool previously_approved = false;  // Was approved in a previous session
 
 // Sound machine state
 static bool sound_machine_active = false;
+
+// Restart combo tracking (5x volume down within 3 seconds)
+static int restart_combo_count = 0;
+static unsigned long restart_combo_start = 0;
+#define RESTART_COMBO_PRESSES 5
+#define RESTART_COMBO_WINDOW_MS 3000
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Restart reason logging
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void log_restart_reason() {
+    esp_reset_reason_t reason = esp_reset_reason();
+    const char* reason_str = "UNKNOWN";
+
+    switch (reason) {
+        case ESP_RST_POWERON:  reason_str = "Power-on"; break;
+        case ESP_RST_EXT:      reason_str = "External reset"; break;
+        case ESP_RST_SW:       reason_str = "Software reset"; break;
+        case ESP_RST_PANIC:    reason_str = "Panic/exception"; break;
+        case ESP_RST_INT_WDT:  reason_str = "Interrupt watchdog"; break;
+        case ESP_RST_TASK_WDT: reason_str = "Task watchdog"; break;
+        case ESP_RST_WDT:      reason_str = "Other watchdog"; break;
+        case ESP_RST_DEEPSLEEP: reason_str = "Deep sleep wake"; break;
+        case ESP_RST_BROWNOUT: reason_str = "Brownout"; break;
+        case ESP_RST_SDIO:     reason_str = "SDIO"; break;
+        default: break;
+    }
+
+    LOG_I(MOD_SYS, "Restart reason: %s", reason_str);
+
+    if (reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT || reason == ESP_RST_WDT) {
+        LOG_W(MOD_SYS, "Device restarted due to watchdog timeout");
+    }
+
+    if (reason == ESP_RST_PANIC) {
+        LOG_E(MOD_SYS, "Device restarted due to panic/exception");
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WiFi callbacks
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onWifiConnected() {
+    LOG_I(MOD_WIFI, "Connected");
+
+    // Enable remote logging
+    logger_set_remote(true);
+
     // Download system sounds if not already on SD
     static bool sounds_downloaded = false;
     if (!sounds_downloaded) {
@@ -38,14 +92,14 @@ void onWifiConnected() {
         audio_download_sounds();
     }
 
-    // Check for firmware updates on WiFi connect (non-blocking)
+    // Check for firmware updates
     static bool update_checked = false;
     if (!update_checked) {
         update_checked = true;
         ota_check_for_update();
     }
 
-    // Try to discover and connect to MQTT broker
+    // Discover and connect to MQTT broker
     if (!mqtt_broker_found) {
         mqtt_broker_found = mqtt_discover_broker();
     }
@@ -63,79 +117,70 @@ void onWifiDisconnected() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onPlay(const char* url, int mediaId) {
-    Serial.printf("[Play] URL: %s, mediaId: %d\n", url, mediaId);
-    // Prefer SD cache if available
+    LOG_I(MOD_AUDIO, "Play mediaId=%d", mediaId);
     if (sd_cache_has(mediaId)) {
         String path = sd_cache_path(mediaId);
-        Serial.printf("[Play] Using SD cache: %s\n", path.c_str());
+        LOG_D(MOD_AUDIO, "Using SD cache: %s", path.c_str());
         audio_play_sd_file(path.c_str(), mediaId);
     } else {
         audio_play_url(url, mediaId);
-        // Queue for background download
         sd_cache_queue_download(mediaId, url);
     }
 }
 
 void onQueueTrack(const char* url, int mediaId) {
-    Serial.printf("[Queue] URL: %s, mediaId: %d\n", url, mediaId);
-    // Prefer SD cache if available
+    LOG_D(MOD_AUDIO, "Queue mediaId=%d", mediaId);
     if (sd_cache_has(mediaId)) {
         String path = sd_cache_path(mediaId);
-        Serial.printf("[Queue] Using SD cache: %s\n", path.c_str());
         audio_queue_sd_file(path.c_str(), mediaId);
     } else {
         audio_queue_url(url, mediaId);
-        // Queue for background download
         sd_cache_queue_download(mediaId, url);
     }
 }
 
 void onPause() {
-    Serial.println("[Pause]");
+    LOG_D(MOD_AUDIO, "Pause");
     audio_pause();
 }
 
 void onResume() {
-    Serial.println("[Resume]");
+    LOG_D(MOD_AUDIO, "Resume");
     audio_resume();
 }
 
 void onStop() {
-    Serial.println("[Stop]");
+    LOG_D(MOD_AUDIO, "Stop");
     audio_stop();
 }
 
 void onVolume(int level) {
-    Serial.printf("[Volume] Level: %d\n", level);
+    LOG_D(MOD_AUDIO, "Volume=%d", level);
     audio_set_volume(level);
 }
 
 void onOta(const char* url, const char* version, const char* sha256) {
-    Serial.printf("[OTA] Received update command: %s (version %s)\n", url, version);
-    if (sha256) {
-        Serial.printf("[OTA] SHA256: %.16s...\n", sha256);
-    }
+    LOG_I(MOD_OTA, "Update available: v%s", version);
 
-    // Stop any audio playback before updating
     if (audio_get_state() != AUDIO_IDLE) {
-        Serial.println("[OTA] Stopping audio for update...");
+        LOG_I(MOD_OTA, "Stopping audio for update");
         audio_stop();
         delay(500);
     }
 
-    // Disable NFC during update
     nfc_set_enabled(false);
-
-    // Start the OTA update with SHA256 verification
     ota_start_update(url, version, sha256);
 }
 
 void onApproved() {
-    Serial.println("[Approved] Device approved by server");
+    LOG_I(MOD_SYS, "Device approved by server");
     device_approved = true;
     nfc_set_enabled(true);
 
-    // Device is now fully ready
+    preferences.begin("musicbox", false);
+    preferences.putBool("approved", true);
+    preferences.end();
+
     if (!device_ready) {
         device_ready = true;
         audio_play_startup_sound();
@@ -143,26 +188,25 @@ void onApproved() {
 }
 
 void onErrorSound() {
-    Serial.println("[Error] Unknown card - playing error sound");
+    LOG_W(MOD_CARD, "Unknown card - playing error sound");
     audio_play_error_sound();
 }
 
 void onSoundMachine(const char* url, const char* name, int volume) {
     if (url && name) {
-        Serial.printf("[Sound Machine] Starting: %s (volume: %d)\n", name, volume);
+        LOG_I(MOD_AUDIO, "Sound machine: %s", name);
         sound_machine_active = true;
-        // Set volume if specified (>= 0)
         if (volume >= 0) {
             audio_set_volume(volume);
         }
         audio_play_soundmachine(url, name);
     } else {
-        Serial.println("[Sound Machine] No sound configured for this device");
+        LOG_W(MOD_AUDIO, "No sound machine configured");
     }
 }
 
 void onPlaybackStatus(const char* status, int mediaId) {
-    Serial.printf("[Playback] Status: %s, mediaId: %d\n", status, mediaId);
+    LOG_D(MOD_AUDIO, "Status: %s, mediaId=%d", status, mediaId);
     if (mqtt_is_connected()) {
         mqtt_publish_playback_status(status, mediaId, 0);
     }
@@ -173,36 +217,30 @@ void onPlaybackStatus(const char* status, int mediaId) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onPlayClick(Button2 &btn) {
-    Serial.println("[Button] Play/Pause");
-
-    // If sound machine is active, short press stops it
     if (sound_machine_active) {
-        Serial.println("[Button] Stopping sound machine");
+        LOG_D(MOD_BTN, "Stopping sound machine");
         sound_machine_active = false;
         audio_stop_soundmachine();
         return;
     }
 
     if (audio_get_state() == AUDIO_PLAYING) {
+        LOG_D(MOD_BTN, "Pause");
         audio_pause();
     } else if (audio_get_state() == AUDIO_PAUSED) {
+        LOG_D(MOD_BTN, "Resume");
         audio_resume();
     }
 }
 
 void onPlayLongPress(Button2 &btn) {
-    Serial.println("[Button] Play long press - requesting sound machine");
+    if (sound_machine_active) return;
 
-    // Don't start sound machine if already active
-    if (sound_machine_active) {
-        return;
-    }
-
-    // Request sound machine config from server via MQTT
     if (mqtt_is_connected()) {
+        LOG_D(MOD_BTN, "Requesting sound machine");
         mqtt_publish_soundmachine_request();
     } else {
-        Serial.println("[Button] Cannot start sound machine - MQTT not connected");
+        LOG_W(MOD_BTN, "Cannot start sound machine - offline");
     }
 }
 
@@ -210,7 +248,6 @@ void onVolUpClick(Button2 &btn) {
     int vol = audio_get_volume();
     if (vol < 21) {
         audio_set_volume(vol + 1);
-        Serial.printf("[Button] Volume: %d\n", vol + 1);
     }
 }
 
@@ -218,17 +255,29 @@ void onVolDnClick(Button2 &btn) {
     int vol = audio_get_volume();
     if (vol > 0) {
         audio_set_volume(vol - 1);
-        Serial.printf("[Button] Volume: %d\n", vol - 1);
+    }
+
+    unsigned long now = millis();
+    if (now - restart_combo_start > RESTART_COMBO_WINDOW_MS) {
+        restart_combo_count = 1;
+        restart_combo_start = now;
+    } else {
+        restart_combo_count++;
+        if (restart_combo_count >= RESTART_COMBO_PRESSES) {
+            LOG_I(MOD_SYS, "Manual restart triggered");
+            delay(100);
+            ESP.restart();
+        }
     }
 }
 
 void onNextClick(Button2 &btn) {
-    Serial.println("[Button] Next");
+    LOG_D(MOD_BTN, "Next");
     audio_skip_next();
 }
 
 void onPrevClick(Button2 &btn) {
-    Serial.println("[Button] Previous");
+    LOG_D(MOD_BTN, "Previous");
     audio_skip_prev();
 }
 
@@ -237,18 +286,14 @@ void onPrevClick(Button2 &btn) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onCardScanned(const char* uid) {
-    // Music starting is the feedback - no scan sound needed
-    // Check cache first for instant playback
     CachedCard* cached = card_cache_lookup(uid);
     if (cached && cached->trackCount > 0) {
-        Serial.printf("[Card] Cache hit: %s (%d tracks)\n", uid, cached->trackCount);
+        LOG_I(MOD_CARD, "Card %s: %d tracks", uid, cached->trackCount);
 
-        // Set volume if card has specific volume
         if (cached->volume >= 0) {
             audio_set_volume(cached->volume);
         }
 
-        // Play first track - prefer SD cache, fallback to streaming
         int firstMediaId = cached->mediaIds[0];
         char url[128];
         snprintf(url, sizeof(url), "http://%s:%d/api/media/stream/%d",
@@ -256,16 +301,14 @@ void onCardScanned(const char* uid) {
 
         if (sd_cache_has(firstMediaId)) {
             String path = sd_cache_path(firstMediaId);
-            Serial.printf("[Card] Playing from SD: %d\n", firstMediaId);
+            LOG_D(MOD_CARD, "Playing from SD: %d", firstMediaId);
             audio_play_sd_file(path.c_str(), firstMediaId);
         } else {
-            Serial.printf("[Card] Streaming: %d\n", firstMediaId);
+            LOG_D(MOD_CARD, "Streaming: %d", firstMediaId);
             audio_play_url(url, firstMediaId);
-            // Queue for background download
             sd_cache_queue_download(firstMediaId, url);
         }
 
-        // Queue remaining tracks
         for (int i = 1; i < cached->trackCount; i++) {
             int mediaId = cached->mediaIds[i];
             snprintf(url, sizeof(url), "http://%s:%d/api/media/stream/%d",
@@ -273,25 +316,20 @@ void onCardScanned(const char* uid) {
 
             if (sd_cache_has(mediaId)) {
                 String path = sd_cache_path(mediaId);
-                Serial.printf("[Card] Queueing from SD: %d\n", mediaId);
                 audio_queue_sd_file(path.c_str(), mediaId);
             } else {
-                Serial.printf("[Card] Queueing stream: %d\n", mediaId);
                 audio_queue_url(url, mediaId);
-                // Queue for background download
                 sd_cache_queue_download(mediaId, url);
             }
         }
 
-        // Notify server we handled it locally (for logging/UI) - server won't send play commands
         if (mqtt_is_connected()) {
             mqtt_publish_card_played_locally(uid);
         }
         return;
     }
 
-    // Cache miss - send to server for lookup
-    Serial.printf("[Card] Cache miss: %s\n", uid);
+    LOG_I(MOD_CARD, "Card %s: not cached, asking server", uid);
     if (mqtt_is_connected()) {
         mqtt_publish_card_scanned(uid);
     }
@@ -304,17 +342,28 @@ void onCardScanned(const char* uid) {
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    Serial.println("\n========== MUSICBOX DEVICE ==========\n");
+    Serial.println("\n========== MUSICBOX ==========\n");
 
-    // Initialize audio (SPIFFS + I2S)
-    // Note: SD card is initialized inside audio task on Core 0
+    logger_init();
+    log_restart_reason();
+
+    // Enable task watchdog
+    esp_task_wdt_init(WDT_TIMEOUT, true);
+    esp_task_wdt_add(NULL);
+    LOG_I(MOD_SYS, "Watchdog enabled (%ds)", WDT_TIMEOUT);
+
+    // Check for previous approval (offline mode)
+    preferences.begin("musicbox", true);
+    previously_approved = preferences.getBool("approved", false);
+    preferences.end();
+    if (previously_approved) {
+        LOG_I(MOD_SYS, "Previously approved - offline mode available");
+    }
+
     audio_init();
-
-    // Initialize card cache
     card_cache_init();
 
-    // Initialize buttons (active low with internal pull-up)
-    Serial.println("[Buttons] Initializing...");
+    // Initialize buttons
     btnPlay.begin(BTN_PLAY, INPUT_PULLUP, true);
     btnVolUp.begin(BTN_VOL_UP, INPUT_PULLUP, true);
     btnVolDn.begin(BTN_VOL_DN, INPUT_PULLUP, true);
@@ -323,24 +372,23 @@ void setup() {
 
     btnPlay.setClickHandler(onPlayClick);
     btnPlay.setLongClickHandler(onPlayLongPress);
-    btnPlay.setLongClickTime(1000);  // 1 second for long press
+    btnPlay.setLongClickTime(1000);
     btnVolUp.setClickHandler(onVolUpClick);
     btnVolDn.setClickHandler(onVolDnClick);
     btnNext.setClickHandler(onNextClick);
     btnPrev.setClickHandler(onPrevClick);
-    Serial.println("[Buttons] Ready");
 
-    // Initialize NFC reader
     nfc_init();
     nfc_on_card_scanned(onCardScanned);
 
-    // Register playback status callback
-    audio_on_playback_status(onPlaybackStatus);
+    if (previously_approved) {
+        LOG_I(MOD_SYS, "Enabling NFC for offline playback");
+        nfc_set_enabled(true);
+    }
 
-    // Initialize OTA updater
+    audio_on_playback_status(onPlaybackStatus);
     ota_init();
 
-    // Initialize MQTT (sets up callbacks and topics)
     mqtt_init();
     mqtt_on_play(onPlay);
     mqtt_on_queue(onQueueTrack);
@@ -353,40 +401,54 @@ void setup() {
     mqtt_on_error_sound(onErrorSound);
     mqtt_on_soundmachine(onSoundMachine);
 
-    // Initialize WiFi (will trigger onWifiConnected when ready)
     wifi_init(onWifiConnected, onWifiDisconnected);
+
+    LOG_I(MOD_SYS, "Setup complete");
 }
 
 void loop() {
-    // Handle WiFi reconnection
-    wifi_loop();
+    esp_task_wdt_reset();
 
-    // Handle MQTT
+    wifi_loop();
     mqtt_loop();
 
-    // Poll buttons (before NFC which has blocking timeout)
     btnPlay.loop();
     btnVolUp.loop();
     btnVolDn.loop();
     btnNext.loop();
     btnPrev.loop();
 
-    // Poll NFC reader
     nfc_loop();
 
-    // Periodic status update
+    // Send buffered logs to server
+    static unsigned long last_log_send = 0;
+    if (mqtt_is_connected() && logger_has_pending() && millis() - last_log_send > 5000) {
+        last_log_send = millis();
+        char logBuf[1024];
+        int len = logger_get_buffer(logBuf, sizeof(logBuf));
+        if (len > 0) {
+            mqtt_publish_logs(logBuf);
+        }
+    }
+
+    // Periodic status (every 30s to reduce noise)
     static unsigned long last_status = 0;
-    if (millis() - last_status > 10000) {
+    if (millis() - last_status > 30000) {
         last_status = millis();
-        Serial.printf("[Status] WiFi: %s | MQTT: %s | Approved: %s | NFC: %s | Audio: %s | SD: %s (%d files) | Uptime: %lus\n",
-            wifi_is_connected() ? "connected" : "disconnected",
-            mqtt_is_connected() ? "connected" : "disconnected",
-            device_approved ? "yes" : "no",
-            nfc_is_ready() ? "ready" : "error",
-            audio_get_state() == AUDIO_PLAYING ? "playing" :
-                (audio_get_state() == AUDIO_PAUSED ? "paused" : "idle"),
-            sd_cache_available() ? "ready" : "unavailable",
+
+        const char* mode = "online";
+        if (!wifi_is_connected() || !mqtt_is_connected()) {
+            mode = previously_approved ? "offline" : "disconnected";
+        }
+
+        LOG_I(MOD_SYS, "%s | wifi=%d mqtt=%d nfc=%d sd=%d(%d) audio=%d up=%lus",
+            mode,
+            wifi_is_connected() ? 1 : 0,
+            mqtt_is_connected() ? 1 : 0,
+            nfc_is_ready() ? 1 : 0,
+            sd_cache_available() ? 1 : 0,
             sd_cache_file_count(),
+            audio_get_state(),
             millis() / 1000);
     }
 

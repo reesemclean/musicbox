@@ -46,18 +46,20 @@ void wifi_init(WifiConnectedCallback on_connected, WifiDisconnectedCallback on_d
     // Register event handler
     WiFi.onEvent(onWiFiEvent);
 
-    // Start connection
-    Serial.println("[WiFi] Connecting...");
+    // Start connection (non-blocking)
+    // Device starts immediately, WiFi connects in background
+    Serial.println("[WiFi] Connecting (non-blocking)...");
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-    // Wait for initial connection (non-blocking after 10s)
-    for (int i = 0; i < 20 && !connected; i++) {
+    // Brief wait to give WiFi a chance to connect quickly
+    // But don't block for long - device should be usable offline
+    for (int i = 0; i < 6 && !connected; i++) {
         delay(500);
     }
 
     if (!connected) {
-        Serial.println("[WiFi] Initial connection failed, will retry in loop");
+        Serial.println("[WiFi] Still connecting, device continuing in offline mode");
     }
 }
 
