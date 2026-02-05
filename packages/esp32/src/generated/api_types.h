@@ -46,6 +46,7 @@
 #define API_PATH_API_PODCASTS_REFRESH "/api/podcasts/refresh"
 #define API_PATH_API_SOUNDMACHINE_CONFIG_BY_PARAM "/api/soundmachine/config/{mac}"
 #define API_PATH_API_SOUNDMACHINE_SOUNDS "/api/soundmachine/sounds"
+#define API_PATH_API_SOUNDS_BY_PARAM "/api/sounds/{filename}"
 
 // Card lookup response types
 typedef enum {

@@ -26,33 +26,35 @@ import { CSS } from '@dnd-kit/utilities'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { GripVertical, ListMusic, Music, Plus, Trash2, X, Loader2, Play, Pause } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, type Media } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { usePlayer } from '@/hooks/usePlayerState'
+import { getMedia } from '@/server/media'
+import {
+  getPlaylistById,
+  deletePlaylist,
+  addMediaToPlaylist,
+  removeMediaFromPlaylist,
+  reorderPlaylist,
+} from '@/server/playlists'
 
+type Media = Awaited<ReturnType<typeof getMedia>>[number]
 type PlaylistMedia = Media & { position: number }
 
 const playlistQueryOptions = (playlistId: number) =>
   queryOptions({
     queryKey: ['playlist', playlistId],
     queryFn: async () => {
-      const { data, error } = await api.GET('/api/playlists/{id}', {
-        params: { path: { id: String(playlistId) } },
-      })
-      if (error) throw notFound()
-      return data
+      try {
+        return await getPlaylistById({ data: { id: playlistId } })
+      } catch {
+        throw notFound()
+      }
     },
   })
 
 const songsQueryOptions = queryOptions({
   queryKey: ['media', 'songs'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/media', {
-      params: { query: { type: 'song' } },
-    })
-    if (error) throw new Error('Failed to load songs')
-    return data
-  },
+  queryFn: () => getMedia({ data: { type: 'song' } }),
 })
 
 export const Route = createFileRoute('/_library/playlists/$playlistId')({
@@ -97,11 +99,7 @@ function PlaylistDetailPage() {
   // Reorder mutation
   const reorderMutation = useMutation({
     mutationFn: async (mediaIds: number[]) => {
-      const { error } = await api.PUT('/api/playlists/{id}/reorder', {
-        params: { path: { id: String(id) } },
-        body: { mediaIds },
-      })
-      if (error) throw new Error('Failed to reorder')
+      await reorderPlaylist({ data: { playlistId: id, mediaIds } })
     },
     onMutate: async (mediaIds) => {
       await queryClient.cancelQueries({ queryKey: ['playlist', id] })
@@ -132,10 +130,7 @@ function PlaylistDetailPage() {
   // Remove song mutation
   const removeMutation = useMutation({
     mutationFn: async (mediaId: number) => {
-      const { error } = await api.DELETE('/api/playlists/{id}/media/{mediaId}', {
-        params: { path: { id: String(id), mediaId: String(mediaId) } },
-      })
-      if (error) throw new Error('Failed to remove song')
+      await removeMediaFromPlaylist({ data: { playlistId: id, mediaId } })
     },
     onMutate: async (mediaId) => {
       await queryClient.cancelQueries({ queryKey: ['playlist', id] })
@@ -168,11 +163,7 @@ function PlaylistDetailPage() {
   // Add song mutation
   const addMutation = useMutation({
     mutationFn: async (mediaId: number) => {
-      const { error } = await api.POST('/api/playlists/{id}/media', {
-        params: { path: { id: String(id) } },
-        body: { mediaId },
-      })
-      if (error) throw new Error('Failed to add song')
+      await addMediaToPlaylist({ data: { playlistId: id, mediaId } })
     },
     onMutate: async (mediaId) => {
       await queryClient.cancelQueries({ queryKey: ['playlist', id] })
@@ -210,10 +201,7 @@ function PlaylistDetailPage() {
   // Delete playlist mutation
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.DELETE('/api/playlists/{id}', {
-        params: { path: { id: String(id) } },
-      })
-      if (error) throw new Error('Failed to delete playlist')
+      await deletePlaylist({ data: { id } })
     },
     onSuccess: () => {
       toast.success('Playlist deleted')

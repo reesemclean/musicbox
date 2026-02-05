@@ -1,6 +1,5 @@
 #include "sd_cache.h"
 #include "card_cache.h"
-#include "secrets.h"
 #include <SPI.h>
 #include <SD.h>
 #include <HTTPClient.h>

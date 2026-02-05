@@ -1,5 +1,4 @@
 #include "ota_updater.h"
-#include "secrets.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>

@@ -19,24 +19,18 @@ const DEFAULT_STATE: PlayerState = {
   queueIndex: 0,
 }
 
-// Load initial state from localStorage
-function getInitialState(): PlayerState {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('musicbox-player-state')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        return {
-          ...DEFAULT_STATE,
-          ...parsed,
-          isPlaying: false, // Never auto-play on load
-        }
-      } catch {
-        // Fall through to default
-      }
+// Load state from localStorage (called after hydration)
+function loadPersistedState(): Partial<PlayerState> | null {
+  if (typeof window === 'undefined') return null
+  const saved = localStorage.getItem('musicbox-player-state')
+  if (saved) {
+    try {
+      return JSON.parse(saved)
+    } catch {
+      return null
     }
   }
-  return DEFAULT_STATE
+  return null
 }
 
 // Actions
@@ -57,6 +51,7 @@ type PlayerAction =
   | { type: 'NEXT' }
   | { type: 'PREVIOUS' }
   | { type: 'CLEAR_PLAYER' }
+  | { type: 'HYDRATE'; state: Partial<PlayerState> }
 
 // Reducer
 function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
@@ -116,6 +111,12 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
         ...DEFAULT_STATE,
         volume: state.volume,
       }
+    case 'HYDRATE':
+      return {
+        ...state,
+        ...action.state,
+        isPlaying: false, // Never auto-play on hydrate
+      }
     default:
       return state
   }
@@ -140,11 +141,15 @@ interface PlayerContextType {
 const PlayerContext = createContext<PlayerContextType | null>(null)
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(
-    playerReducer,
-    undefined,
-    getInitialState
-  )
+  const [state, dispatch] = useReducer(playerReducer, DEFAULT_STATE)
+
+  // Hydrate from localStorage after initial render (avoids SSR mismatch)
+  useEffect(() => {
+    const persisted = loadPersistedState()
+    if (persisted) {
+      dispatch({ type: 'HYDRATE', state: persisted })
+    }
+  }, [])
 
   // Persist to localStorage on state changes
   useEffect(() => {

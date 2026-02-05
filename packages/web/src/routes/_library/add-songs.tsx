@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Download,
   Loader2,
@@ -11,49 +11,56 @@ import {
   XCircle,
   Music,
   Disc,
-} from 'lucide-react'
-import { toast } from 'sonner'
-import { api } from '@/lib/api-client'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+} from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  search,
+  queueSongDownload,
+  queueAlbumDownload,
+  getQueue,
+  retryQueuedDownload,
+  removeFromDownloadQueue,
+} from "@/server/downloads";
 
 type SongResult = {
-  videoId: string
-  title: string
-  artists: string[]
-  album?: string | null
-  duration?: number | null
-  thumbnails?: Array<{ url: string; width: number; height: number }>
-}
+  videoId: string;
+  title: string;
+  artists: string[];
+  album?: string | null;
+  duration?: number | null;
+  thumbnails?: Array<{ url: string; width: number; height: number }>;
+};
 
 type AlbumResult = {
-  browseId: string
-  title: string
-  artist: string
-  year?: number | null
-  trackCount?: number | null
-  thumbnails?: Array<{ url: string; width: number; height: number }>
-}
+  browseId: string;
+  title: string;
+  artist: string;
+  year?: number | null;
+  trackCount?: number | null;
+  thumbnails?: Array<{ url: string; width: number; height: number }>;
+};
 
 type QueueItem = {
-  id: number
-  videoId: string
-  title: string
-  artist: string | null
-  album: string | null
-  thumbnailUrl: string | null
-  status: 'pending' | 'downloading' | 'failed'
-  progress: number
-  error: string | null
-  createdAt: string
-}
+  id: number;
+  videoId: string;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  thumbnailUrl: string | null;
+  status: "pending" | "downloading" | "failed";
+  progress: number;
+  error: string | null;
+  createdAt: Date;
+};
 
-export const Route = createFileRoute('/_library/add-songs')({
+export const Route = createFileRoute("/_library/add-songs")({
   component: AddSongsPage,
-})
+});
 
 function AddSongsPage() {
-  const [activeTab, setActiveTab] = useState<'youtube' | 'upload'>('youtube')
+  const [activeTab, setActiveTab] = useState<"youtube" | "upload">("youtube");
 
   return (
     <div>
@@ -67,197 +74,185 @@ function AddSongsPage() {
       {/* Tabs */}
       <div className="flex gap-2 mb-6">
         <Button
-          variant={activeTab === 'youtube' ? 'default' : 'outline'}
-          onClick={() => setActiveTab('youtube')}
+          variant={activeTab === "youtube" ? "default" : "outline"}
+          onClick={() => setActiveTab("youtube")}
         >
           <Search className="h-4 w-4 mr-2" />
           YouTube Music
         </Button>
         <Button
-          variant={activeTab === 'upload' ? 'default' : 'outline'}
-          onClick={() => setActiveTab('upload')}
+          variant={activeTab === "upload" ? "default" : "outline"}
+          onClick={() => setActiveTab("upload")}
         >
           <Upload className="h-4 w-4 mr-2" />
           Upload
         </Button>
       </div>
 
-      {activeTab === 'youtube' && <YouTubeMusicTab />}
-      {activeTab === 'upload' && <UploadTab />}
+      {activeTab === "youtube" && <YouTubeMusicTab />}
+      {activeTab === "upload" && <UploadTab />}
     </div>
-  )
+  );
 }
 
 function YouTubeMusicTab() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchType, setSearchType] = useState<'songs' | 'albums'>('songs')
-  const [songResults, setSongResults] = useState<SongResult[]>([])
-  const [albumResults, setAlbumResults] = useState<AlbumResult[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const queryClient = useQueryClient()
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchType, setSearchType] = useState<"songs" | "albums">("songs");
+  const [songResults, setSongResults] = useState<SongResult[]>([]);
+  const [albumResults, setAlbumResults] = useState<AlbumResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const queryClient = useQueryClient();
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Poll download queue
   const { data: queue = [] } = useQuery({
-    queryKey: ['downloadQueue'],
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/downloads/queue')
-      if (error) throw new Error('Failed to load queue')
-      return data as QueueItem[]
-    },
+    queryKey: ["downloadQueue"],
+    queryFn: () => getQueue(),
     refetchInterval: 2000,
-  })
+  });
 
   // Track completed downloads for toasts
-  const prevQueueRef = useRef<QueueItem[]>([])
+  const prevQueueRef = useRef<QueueItem[]>([]);
   useEffect(() => {
-    const prevQueue = prevQueueRef.current
-    const currentQueue = queue
+    const prevQueue = prevQueueRef.current;
+    const currentQueue = queue;
 
     prevQueue.forEach((prevItem) => {
       if (
-        (prevItem.status === 'downloading' || prevItem.status === 'pending') &&
+        (prevItem.status === "downloading" || prevItem.status === "pending") &&
         !currentQueue.find((item) => item.videoId === prevItem.videoId)
       ) {
-        toast.success(`Download complete: ${prevItem.title}`)
-        queryClient.invalidateQueries({ queryKey: ['media'] })
+        toast.success(`Download complete: ${prevItem.title}`);
+        queryClient.invalidateQueries({ queryKey: ["media"] });
       }
-    })
+    });
 
     currentQueue.forEach((currentItem) => {
-      const prevItem = prevQueue.find((item) => item.videoId === currentItem.videoId)
-      if (prevItem && prevItem.status !== 'failed' && currentItem.status === 'failed') {
+      const prevItem = prevQueue.find(
+        (item) => item.videoId === currentItem.videoId,
+      );
+      if (
+        prevItem &&
+        prevItem.status !== "failed" &&
+        currentItem.status === "failed"
+      ) {
         toast.error(`Download failed: ${currentItem.title}`, {
-          description: currentItem.error || 'Unknown error',
-        })
+          description: currentItem.error || "Unknown error",
+        });
       }
-    })
+    });
 
-    prevQueueRef.current = currentQueue
-  }, [queue, queryClient])
+    prevQueueRef.current = currentQueue;
+  }, [queue, queryClient]);
 
   // Debounced search
   const performSearch = useCallback(async () => {
     if (!searchQuery.trim()) {
-      setSongResults([])
-      setAlbumResults([])
-      return
+      setSongResults([]);
+      setAlbumResults([]);
+      return;
     }
 
-    setIsSearching(true)
+    setIsSearching(true);
     try {
-      const { data, error } = await api.GET('/api/downloads/search', {
-        params: { query: { q: searchQuery, type: searchType } },
-      })
-      if (error) throw error
+      const data = await search({
+        data: { query: searchQuery, type: searchType },
+      });
 
-      if (searchType === 'songs') {
-        setSongResults(data as unknown as SongResult[])
-        setAlbumResults([])
+      if (searchType === "songs") {
+        setSongResults(data as unknown as SongResult[]);
+        setAlbumResults([]);
       } else {
-        setAlbumResults(data as unknown as AlbumResult[])
-        setSongResults([])
+        setAlbumResults(data as unknown as AlbumResult[]);
+        setSongResults([]);
       }
     } catch (error) {
-      console.error('Search failed:', error)
-      toast.error('Search failed')
+      console.error("Search failed:", error);
+      toast.error("Search failed");
     } finally {
-      setIsSearching(false)
+      setIsSearching(false);
     }
-  }, [searchQuery, searchType])
+  }, [searchQuery, searchType]);
 
   useEffect(() => {
     if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current)
+      clearTimeout(searchTimeoutRef.current);
     }
 
     if (searchQuery.trim()) {
-      searchTimeoutRef.current = setTimeout(performSearch, 500)
+      searchTimeoutRef.current = setTimeout(performSearch, 500);
     } else {
-      setSongResults([])
-      setAlbumResults([])
+      setSongResults([]);
+      setAlbumResults([]);
     }
 
     return () => {
       if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
+        clearTimeout(searchTimeoutRef.current);
       }
-    }
-  }, [searchQuery, searchType, performSearch])
+    };
+  }, [searchQuery, searchType, performSearch]);
 
   const downloadSongMutation = useMutation({
     mutationFn: async (song: SongResult) => {
-      const { error } = await api.POST('/api/downloads', {
-        body: {
+      await queueSongDownload({
+        data: {
           videoId: song.videoId,
           title: song.title,
-          artist: song.artists.join(', '),
+          artist: song.artists.join(", "),
           album: song.album || undefined,
           thumbnailUrl: song.thumbnails?.[0]?.url,
         },
-      })
-      if (error) throw error
+      });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['downloadQueue'] })
-      toast.success('Download started')
+      queryClient.invalidateQueries({ queryKey: ["downloadQueue"] });
+      toast.success("Download started");
     },
     onError: () => {
-      toast.error('Failed to start download')
+      toast.error("Failed to start download");
     },
-  })
+  });
 
   const downloadAlbumMutation = useMutation({
     mutationFn: async (album: AlbumResult) => {
-      const { data, error } = await api.POST('/api/downloads/album', {
-        body: { browseId: album.browseId },
-      })
-      if (error) throw error
-      return data
+      return queueAlbumDownload({ data: { browseId: album.browseId } });
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['downloadQueue'] })
-      queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      queryClient.invalidateQueries({ queryKey: ["downloadQueue"] });
+      queryClient.invalidateQueries({ queryKey: ["playlists"] });
       toast.success(`Album download started`, {
         description: `Downloading ${data?.trackCount} tracks from "${data?.albumTitle}"`,
-      })
+      });
     },
     onError: () => {
-      toast.error('Failed to download album')
+      toast.error("Failed to download album");
     },
-  })
+  });
 
   const retryMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const { error } = await api.POST('/api/downloads/{id}/retry', {
-        params: { path: { id: String(id) } },
-      })
-      if (error) throw error
-    },
+    mutationFn: (id: number) => retryQueuedDownload({ data: { id } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['downloadQueue'] })
-      toast.success('Retrying download')
+      queryClient.invalidateQueries({ queryKey: ["downloadQueue"] });
+      toast.success("Retrying download");
     },
-  })
+  });
 
   const removeMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const { error } = await api.DELETE('/api/downloads/{id}', {
-        params: { path: { id: String(id) } },
-      })
-      if (error) throw error
-    },
+    mutationFn: (id: number) => removeFromDownloadQueue({ data: { id } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['downloadQueue'] })
-      toast.success('Removed from queue')
+      queryClient.invalidateQueries({ queryKey: ["downloadQueue"] });
+      toast.success("Removed from queue");
     },
-  })
+  });
 
   const isDownloading = (videoId: string) => {
     return queue.some(
-      (item) => item.videoId === videoId && (item.status === 'downloading' || item.status === 'pending')
-    )
-  }
+      (item) =>
+        item.videoId === videoId &&
+        (item.status === "downloading" || item.status === "pending"),
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -265,14 +260,14 @@ function YouTubeMusicTab() {
       <div className="flex gap-2">
         <div className="flex border border-border rounded-lg overflow-hidden">
           <button
-            onClick={() => setSearchType('songs')}
-            className={`px-3 py-2 text-sm ${searchType === 'songs' ? 'bg-accent' : 'hover:bg-accent/50'}`}
+            onClick={() => setSearchType("songs")}
+            className={`px-3 py-2 text-sm ${searchType === "songs" ? "bg-accent" : "hover:bg-accent/50"}`}
           >
             Songs
           </button>
           <button
-            onClick={() => setSearchType('albums')}
-            className={`px-3 py-2 text-sm ${searchType === 'albums' ? 'bg-accent' : 'hover:bg-accent/50'}`}
+            onClick={() => setSearchType("albums")}
+            className={`px-3 py-2 text-sm ${searchType === "albums" ? "bg-accent" : "hover:bg-accent/50"}`}
           >
             Albums
           </button>
@@ -317,21 +312,26 @@ function YouTubeMusicTab() {
                 <div className="flex-1 min-w-0 overflow-hidden">
                   <p className="font-medium truncate">{song.title}</p>
                   <p className="text-sm text-muted-foreground truncate">
-                    {song.artists.join(', ')}
+                    {song.artists.join(", ")}
                   </p>
                   {song.album && (
-                    <p className="text-xs text-muted-foreground truncate">{song.album}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {song.album}
+                    </p>
                   )}
                 </div>
                 <div className="text-sm text-muted-foreground shrink-0">
                   {song.duration
-                    ? `${Math.floor(song.duration / 60)}:${(song.duration % 60).toString().padStart(2, '0')}`
-                    : '—'}
+                    ? `${Math.floor(song.duration / 60)}:${(song.duration % 60).toString().padStart(2, "0")}`
+                    : "—"}
                 </div>
                 <Button
                   className="shrink-0"
                   onClick={() => downloadSongMutation.mutate(song)}
-                  disabled={downloadSongMutation.isPending || isDownloading(song.videoId)}
+                  disabled={
+                    downloadSongMutation.isPending ||
+                    isDownloading(song.videoId)
+                  }
                   size="sm"
                 >
                   {isDownloading(song.videoId) ? (
@@ -377,20 +377,27 @@ function YouTubeMusicTab() {
                 )}
                 <div className="flex-1 min-w-0 overflow-hidden">
                   <p className="font-medium truncate">{album.title}</p>
-                  <p className="text-sm text-muted-foreground truncate">{album.artist}</p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {album.artist}
+                  </p>
                   <p className="text-xs text-muted-foreground truncate">
                     {album.year && `${album.year}`}
-                    {album.year && album.trackCount && ' • '}
+                    {album.year && album.trackCount && " • "}
                     {album.trackCount && `${album.trackCount} tracks`}
                   </p>
                 </div>
                 <Button
                   className="shrink-0"
                   onClick={() => downloadAlbumMutation.mutate(album)}
-                  disabled={downloadAlbumMutation.isPending && downloadAlbumMutation.variables?.browseId === album.browseId}
+                  disabled={
+                    downloadAlbumMutation.isPending &&
+                    downloadAlbumMutation.variables?.browseId === album.browseId
+                  }
                   size="sm"
                 >
-                  {downloadAlbumMutation.isPending && downloadAlbumMutation.variables?.browseId === album.browseId ? (
+                  {downloadAlbumMutation.isPending &&
+                  downloadAlbumMutation.variables?.browseId ===
+                    album.browseId ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Starting...
@@ -419,21 +426,23 @@ function YouTubeMusicTab() {
                 className="bg-card rounded-lg border border-border p-4 flex items-start gap-3"
               >
                 <div className="mt-1">
-                  {item.status === 'downloading' && (
+                  {item.status === "downloading" && (
                     <Loader2 className="h-5 w-5 text-blue-400 animate-spin" />
                   )}
-                  {item.status === 'pending' && (
+                  {item.status === "pending" && (
                     <Loader2 className="h-5 w-5 text-muted-foreground" />
                   )}
-                  {item.status === 'failed' && (
+                  {item.status === "failed" && (
                     <XCircle className="h-5 w-5 text-destructive" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{item.title}</p>
-                  <p className="text-sm text-muted-foreground truncate">{item.artist}</p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {item.artist}
+                  </p>
 
-                  {item.status === 'downloading' && (
+                  {item.status === "downloading" && (
                     <div className="mt-2">
                       <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                         <span>Downloading</span>
@@ -448,15 +457,19 @@ function YouTubeMusicTab() {
                     </div>
                   )}
 
-                  {item.status === 'pending' && (
-                    <p className="text-xs text-muted-foreground mt-1">Waiting to start...</p>
+                  {item.status === "pending" && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Waiting to start...
+                    </p>
                   )}
 
-                  {item.status === 'failed' && item.error && (
-                    <p className="text-xs text-destructive mt-1">{item.error}</p>
+                  {item.status === "failed" && item.error && (
+                    <p className="text-xs text-destructive mt-1">
+                      {item.error}
+                    </p>
                   )}
                 </div>
-                {item.status === 'failed' && (
+                {item.status === "failed" && (
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -484,84 +497,91 @@ function YouTubeMusicTab() {
       )}
 
       {/* Empty state */}
-      {songResults.length === 0 && albumResults.length === 0 && queue.length === 0 && !searchQuery && (
-        <div className="text-center py-12">
-          <Download className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h2 className="text-lg font-semibold mb-2">Download from YouTube Music</h2>
-          <p className="text-muted-foreground">
-            Search for songs or albums above to download them to your library.
-          </p>
-        </div>
-      )}
+      {songResults.length === 0 &&
+        albumResults.length === 0 &&
+        queue.length === 0 &&
+        !searchQuery && (
+          <div className="text-center py-12">
+            <Download className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h2 className="text-lg font-semibold mb-2">
+              Download from YouTube Music
+            </h2>
+            <p className="text-muted-foreground">
+              Search for songs or albums above to download them to your library.
+            </p>
+          </div>
+        )}
     </div>
-  )
+  );
 }
 
 function UploadTab() {
-  const [isDragging, setIsDragging] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const queryClient = useQueryClient()
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isDragging, setIsDragging] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
-      const formData = new FormData()
-      formData.append('file', file)
+      const formData = new FormData();
+      formData.append("file", file);
 
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/media`,
-        {
-          method: 'POST',
-          body: formData,
-        }
-      )
+      const response = await fetch("/api/media", {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Upload failed')
+        const error = await response.json();
+        throw new Error(error.error || "Upload failed");
       }
 
-      return response.json()
+      return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['media'] })
-      toast.success('Song uploaded successfully')
-      setSelectedFile(null)
+      queryClient.invalidateQueries({ queryKey: ["media"] });
+      toast.success("Song uploaded successfully");
+      setSelectedFile(null);
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Upload failed')
+      toast.error(error instanceof Error ? error.message : "Upload failed");
     },
-  })
+  });
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
+    e.preventDefault();
+    setIsDragging(false);
 
-    const file = e.dataTransfer.files[0]
-    if (file && file.type.startsWith('audio/')) {
-      setSelectedFile(file)
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("audio/")) {
+      setSelectedFile(file);
     } else {
-      toast.error('Please drop an audio file')
+      toast.error("Please drop an audio file");
     }
-  }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const file = e.target.files?.[0];
     if (file) {
-      setSelectedFile(file)
+      setSelectedFile(file);
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
       {/* Drop zone */}
       <div
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
         className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
-          isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+          isDragging
+            ? "border-primary bg-primary/5"
+            : "border-border hover:border-primary/50"
         }`}
       >
         <input
@@ -573,7 +593,7 @@ function UploadTab() {
         />
         <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
         <p className="text-lg font-medium mb-2">
-          {isDragging ? 'Drop to upload' : 'Click or drag to upload'}
+          {isDragging ? "Drop to upload" : "Click or drag to upload"}
         </p>
         <p className="text-sm text-muted-foreground">
           Supports MP3, M4A, FLAC, WAV, OGG
@@ -621,5 +641,5 @@ function UploadTab() {
         </div>
       )}
     </div>
-  )
+  );
 }

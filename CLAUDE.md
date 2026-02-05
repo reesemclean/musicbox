@@ -10,7 +10,7 @@ When working on this project, read the following files into context:
 ## Project Structure
 
 - `packages/esp32/` - ESP32 PlatformIO project for the hardware player
-- `packages/api/` - Hono API server with SQLite database
+- `packages/web/` - TanStack Start web app (UI + API server + SQLite database)
 
 ## Control Plane Design
 

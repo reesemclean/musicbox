@@ -1,0 +1,29 @@
+# ============================================================================
+# MusicBox Firmware Builder
+# One-shot container: compiles ESP32 firmware, writes to /firmware/, then exits.
+#
+# Env vars (provided via docker-compose):
+#   WIFI_SSID, WIFI_PASS, MQTT_BROKER_HOST, MQTT_BROKER_PORT,
+#   API_HOST, API_PORT, FIRMWARE_VERSION
+# ============================================================================
+
+FROM nixos/nix:latest
+
+# Enable flakes
+RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
+
+WORKDIR /build
+
+# Copy flake files first (better layer caching)
+COPY flake.nix flake.lock ./
+
+# Pre-fetch Nix dependencies
+RUN nix develop --command true
+
+# Copy ESP32 source
+COPY packages/esp32/ packages/esp32/
+
+COPY scripts/docker-build-firmware.sh /docker-build-firmware.sh
+RUN chmod +x /docker-build-firmware.sh
+
+ENTRYPOINT ["/docker-build-firmware.sh"]

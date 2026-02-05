@@ -1,5 +1,4 @@
 #include "wifi_manager.h"
-#include "secrets.h"
 #include <WiFi.h>
 
 // State

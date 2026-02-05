@@ -1,8 +1,8 @@
 import { Link, Outlet, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { CreditCard, ListMusic, Mic, Music, Plus, Smartphone } from 'lucide-react'
-import { api } from '@/lib/api-client'
 import { MiniPlayer } from '@/components/MiniPlayer'
+import { getQueue } from '@/server/downloads'
 
 export const Route = createFileRoute('/_library')({
   component: LibraryLayout,
@@ -12,11 +12,7 @@ function LibraryLayout() {
   // Poll download queue for badge
   const { data: queue = [] } = useQuery({
     queryKey: ['downloadQueue'],
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/downloads/queue')
-      if (error) return []
-      return data
-    },
+    queryFn: () => getQueue(),
     refetchInterval: 2000,
   })
 

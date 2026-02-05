@@ -10,7 +10,6 @@
 #include "card_cache.h"
 #include "sd_cache.h"
 #include "ota_updater.h"
-#include "secrets.h"
 
 // Button pins
 #define BTN_PLAY   10
@@ -36,11 +35,9 @@ static bool previously_approved = false;  // Was approved in a previous session
 // Sound machine state
 static bool sound_machine_active = false;
 
-// Restart combo tracking (5x volume down within 3 seconds)
-static int restart_combo_count = 0;
-static unsigned long restart_combo_start = 0;
-#define RESTART_COMBO_PRESSES 5
-#define RESTART_COMBO_WINDOW_MS 3000
+// Restart combo: hold vol up + vol down for 2 seconds
+static unsigned long both_vol_pressed_start = 0;
+#define RESTART_HOLD_MS 2000
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Restart reason logging
@@ -246,7 +243,8 @@ void onPlayLongPress(Button2 &btn) {
 
 void onVolUpClick(Button2 &btn) {
     int vol = audio_get_volume();
-    if (vol < 21) {
+    int maxVol = audio_get_max_volume();
+    if (vol < maxVol) {
         audio_set_volume(vol + 1);
     }
 }
@@ -255,19 +253,6 @@ void onVolDnClick(Button2 &btn) {
     int vol = audio_get_volume();
     if (vol > 0) {
         audio_set_volume(vol - 1);
-    }
-
-    unsigned long now = millis();
-    if (now - restart_combo_start > RESTART_COMBO_WINDOW_MS) {
-        restart_combo_count = 1;
-        restart_combo_start = now;
-    } else {
-        restart_combo_count++;
-        if (restart_combo_count >= RESTART_COMBO_PRESSES) {
-            LOG_I(MOD_SYS, "Manual restart triggered");
-            delay(100);
-            ESP.restart();
-        }
     }
 }
 
@@ -417,6 +402,19 @@ void loop() {
     btnVolDn.loop();
     btnNext.loop();
     btnPrev.loop();
+
+    // Check for restart combo: hold vol up + vol down for 2 seconds
+    if (btnVolUp.isPressed() && btnVolDn.isPressed()) {
+        if (both_vol_pressed_start == 0) {
+            both_vol_pressed_start = millis();
+        } else if (millis() - both_vol_pressed_start >= RESTART_HOLD_MS) {
+            LOG_I(MOD_SYS, "Manual restart (vol up+down held)");
+            delay(100);
+            ESP.restart();
+        }
+    } else {
+        both_vol_pressed_start = 0;
+    }
 
     nfc_loop();
 

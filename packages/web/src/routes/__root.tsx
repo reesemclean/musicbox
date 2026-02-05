@@ -5,6 +5,7 @@ import { TanStackDevtools } from '@tanstack/react-devtools'
 
 import { Toaster } from '@/components/ui/sonner'
 import { PlayerProvider } from '@/hooks/usePlayerState'
+import { MqttProvider } from '@/hooks/MqttProvider'
 
 import appCss from '../styles.css?url'
 
@@ -49,9 +50,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <QueryClientProvider client={queryClient}>
-          <PlayerProvider>
-            {children}
-          </PlayerProvider>
+          <MqttProvider>
+            <PlayerProvider>
+              {children}
+            </PlayerProvider>
+          </MqttProvider>
           <Toaster />
           <TanStackDevtools
             config={{

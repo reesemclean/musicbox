@@ -34,8 +34,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { api } from '@/lib/api-client'
 import { toast } from 'sonner'
+import {
+  getFeeds,
+  getFeedById,
+  addFeed,
+  updateFeed,
+  deleteFeed,
+  refreshPodcastFeed,
+  refreshAllPodcastFeeds,
+} from '@/server/podcasts'
 
 export const Route = createFileRoute('/_library/podcasts')({
   component: PodcastsPage,
@@ -49,21 +57,14 @@ function PodcastsPage() {
 
   const { data: feeds = [], isLoading } = useQuery({
     queryKey: ['podcasts'],
-    queryFn: async () => {
-      const { data } = await api.GET('/api/podcasts')
-      return data ?? []
-    },
+    queryFn: () => getFeeds(),
     // Poll every 2 seconds to update episode counts during downloads
     refetchInterval: 2000,
   })
 
   const addFeedMutation = useMutation({
     mutationFn: async ({ feedUrl, retentionCount }: { feedUrl: string; retentionCount: number }) => {
-      const { data, error } = await api.POST('/api/podcasts', {
-        body: { feedUrl, retentionCount },
-      })
-      if (error) throw new Error(error.error)
-      return data
+      return addFeed({ data: { feedUrl, retentionCount } })
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['podcasts'] })
@@ -73,22 +74,18 @@ function PodcastsPage() {
       toast.success(`Subscribed to ${data.name}`)
     },
     onError: (error) => {
-      toast.error(error.message)
+      toast.error(error instanceof Error ? error.message : 'Failed to add feed')
     },
   })
 
   const refreshAllMutation = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.POST('/api/podcasts/refresh')
-      if (error) throw new Error('Failed to refresh feeds')
-      return data
-    },
+    mutationFn: () => refreshAllPodcastFeeds(),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['podcasts'] })
       toast.success(`Refreshed ${data.succeeded} of ${data.total} feeds`)
     },
     onError: (error) => {
-      toast.error(error.message)
+      toast.error(error instanceof Error ? error.message : 'Failed to refresh feeds')
     },
   })
 
@@ -222,8 +219,8 @@ interface Feed {
   feedUrl: string
   imageUrl: string | null
   retentionCount: number
-  lastFetchedAt: string | null
-  createdAt: string
+  lastFetchedAt: Date | null
+  createdAt: Date
   episodeCount?: number
 }
 
@@ -245,50 +242,33 @@ function FeedCard({ feed }: { feed: Feed }) {
 
   const { data: feedDetail } = useQuery({
     queryKey: ['podcast', feed.id],
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/podcasts/{id}', {
-        params: { path: { id: feed.id.toString() } },
-      })
-      if (error) throw new Error(error.error)
-      return data
-    },
+    queryFn: () => getFeedById({ data: { id: feed.id } }),
     enabled: expanded,
     refetchInterval: (query) => {
       // Poll every 2 seconds if there are pending/downloading episodes
       const episodes = query.state.data?.episodes ?? []
       const hasPending = episodes.some((ep) => {
-        const meta = ep.metadata ? JSON.parse(ep.metadata) : {}
-        return meta.downloadStatus === 'pending' || meta.downloadStatus === 'downloading'
+        const meta = ep.metadata as { downloadStatus?: string } | null
+        return meta?.downloadStatus === 'pending' || meta?.downloadStatus === 'downloading'
       })
       return hasPending ? 2000 : false
     },
   })
 
   const refreshMutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await api.POST('/api/podcasts/{id}/refresh', {
-        params: { path: { id: feed.id.toString() } },
-      })
-      if (error) throw new Error(error.error)
-    },
+    mutationFn: () => refreshPodcastFeed({ data: { id: feed.id } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['podcasts'] })
       queryClient.invalidateQueries({ queryKey: ['podcast', feed.id] })
       toast.success('Feed refreshed')
     },
     onError: (error) => {
-      toast.error(error.message)
+      toast.error(error instanceof Error ? error.message : 'Failed to refresh feed')
     },
   })
 
   const updateMutation = useMutation({
-    mutationFn: async (retentionCount: number) => {
-      const { error } = await api.PATCH('/api/podcasts/{id}', {
-        params: { path: { id: feed.id.toString() } },
-        body: { retentionCount },
-      })
-      if (error) throw new Error(error.error)
-    },
+    mutationFn: (retentionCount: number) => updateFeed({ data: { id: feed.id, retentionCount } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['podcasts'] })
       queryClient.invalidateQueries({ queryKey: ['podcast', feed.id] })
@@ -296,29 +276,24 @@ function FeedCard({ feed }: { feed: Feed }) {
       toast.success('Settings updated')
     },
     onError: (error) => {
-      toast.error(error.message)
+      toast.error(error instanceof Error ? error.message : 'Failed to update feed')
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await api.DELETE('/api/podcasts/{id}', {
-        params: { path: { id: feed.id.toString() } },
-      })
-      if (error) throw new Error('Failed to delete feed')
-    },
+    mutationFn: () => deleteFeed({ data: { id: feed.id } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['podcasts'] })
       toast.success('Podcast removed')
     },
     onError: (error) => {
-      toast.error(error.message)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete feed')
     },
   })
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'Never'
-    const date = new Date(dateStr)
+  const formatDate = (dateInput: Date | string | null) => {
+    if (!dateInput) return 'Never'
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput)
     return date.toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
@@ -478,7 +453,7 @@ function FeedCard({ feed }: { feed: Feed }) {
           ) : (
             <div className="divide-y">
               {feedDetail.episodes.map((episode) => {
-                const metadata = episode.metadata ? JSON.parse(episode.metadata) : {}
+                const metadata = (episode.metadata ?? {}) as { downloadStatus?: string; pubDate?: string }
                 const downloadStatus = metadata.downloadStatus || 'complete'
                 return (
                   <div key={episode.id} className="p-4 flex items-center gap-4">

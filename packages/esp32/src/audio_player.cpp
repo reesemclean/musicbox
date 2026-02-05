@@ -1,6 +1,5 @@
 #include "audio_player.h"
 #include "sd_cache.h"
-#include "secrets.h"
 #include <Arduino.h>
 #include <SD.h>
 #include <HTTPClient.h>
@@ -86,6 +85,7 @@ static volatile AudioState state = AUDIO_IDLE;
 static volatile int current_media_id = -1;
 static bool current_is_sd_file = false;
 static int current_volume = 10;
+static int max_volume = 21;  // Default: no limit
 static bool playing_system_sound = false;
 
 // Sound machine mode (looping playback)
@@ -454,6 +454,11 @@ static void handle_stop() {
 static void handle_set_volume(int level) {
     if (level < 0) level = 0;
     if (level > 21) level = 21;
+    // Enforce max volume limit
+    if (level > max_volume) {
+        level = max_volume;
+        Serial.printf("[Audio] Volume clamped to max: %d\n", max_volume);
+    }
     current_volume = level;
     audio.setVolume(level);
     Serial.printf("[Audio] Volume: %d\n", level);
@@ -896,6 +901,23 @@ void audio_set_volume(int level) {
 
 int audio_get_volume() {
     return current_volume;
+}
+
+void audio_set_max_volume(int level) {
+    if (level < 0) level = 0;
+    if (level > 21) level = 21;
+    max_volume = level;
+    Serial.printf("[Audio] Max volume set to: %d\n", max_volume);
+    // If current volume exceeds new max, reduce it
+    if (current_volume > max_volume) {
+        current_volume = max_volume;
+        audio.setVolume(current_volume);
+        Serial.printf("[Audio] Current volume reduced to max: %d\n", current_volume);
+    }
+}
+
+int audio_get_max_volume() {
+    return max_volume;
 }
 
 AudioState audio_get_state() {

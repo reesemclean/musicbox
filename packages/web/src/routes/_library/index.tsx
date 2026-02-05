@@ -1,32 +1,26 @@
 import { useState, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Music, Search, Loader2, Pencil, Trash2, X, Play, Pause, Plus, MoreHorizontal, Check } from 'lucide-react'
+import { Music, Search, Loader2, Pencil, Trash2, X, Play, Pause, Plus, Check } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, type Media, type Playlist } from '@/lib/api-client'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { usePlayer } from '@/hooks/usePlayerState'
+import { getMedia, updateMedia, deleteMedia } from '@/server/media'
+import { getPlaylists, createPlaylist, addMediaToPlaylist } from '@/server/playlists'
+
+type Media = Awaited<ReturnType<typeof getMedia>>[number]
+type Playlist = Awaited<ReturnType<typeof getPlaylists>>[number]
 
 const songsQueryOptions = queryOptions({
   queryKey: ['media', 'songs'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/media', {
-      params: { query: { type: 'song' } },
-    })
-    if (error) throw new Error('Failed to load songs')
-    return data
-  },
+  queryFn: () => getMedia({ data: { type: 'song' } }),
 })
 
 const playlistsQueryOptions = queryOptions({
   queryKey: ['playlists'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/playlists')
-    if (error) throw new Error('Failed to load playlists')
-    return data
-  },
+  queryFn: () => getPlaylists(),
 })
 
 export const Route = createFileRoute('/_library/')({
@@ -130,11 +124,7 @@ function SongsLibraryPage() {
   const addToPlaylistMutation = useMutation({
     mutationFn: async ({ playlistId, mediaIds }: { playlistId: number; mediaIds: number[] }) => {
       for (const mediaId of mediaIds) {
-        const { error } = await api.POST('/api/playlists/{id}/media', {
-          params: { path: { id: playlistId.toString() } },
-          body: { mediaId },
-        })
-        if (error) throw new Error('Failed to add song to playlist')
+        await addMediaToPlaylist({ data: { playlistId, mediaId } })
       }
     },
     onSuccess: () => {
@@ -150,19 +140,13 @@ function SongsLibraryPage() {
   // Create playlist and add songs mutation
   const createPlaylistMutation = useMutation({
     mutationFn: async ({ name, mediaIds }: { name: string; mediaIds: number[] }) => {
-      const { data, error } = await api.POST('/api/playlists', {
-        body: { name },
-      })
-      if (error) throw new Error('Failed to create playlist')
+      const playlist = await createPlaylist({ data: { name } })
 
       // Add songs to the new playlist
       for (const mediaId of mediaIds) {
-        await api.POST('/api/playlists/{id}/media', {
-          params: { path: { id: data.id.toString() } },
-          body: { mediaId },
-        })
+        await addMediaToPlaylist({ data: { playlistId: playlist.id, mediaId } })
       }
-      return data
+      return playlist
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['playlists'] })
@@ -178,10 +162,7 @@ function SongsLibraryPage() {
   const bulkDeleteMutation = useMutation({
     mutationFn: async (mediaIds: number[]) => {
       for (const id of mediaIds) {
-        const { error } = await api.DELETE('/api/media/{id}', {
-          params: { path: { id: id.toString() } },
-        })
-        if (error) throw new Error('Failed to delete')
+        await deleteMedia({ data: { id } })
       }
     },
     onMutate: (mediaIds) => {
@@ -664,9 +645,9 @@ function EditSongDialog({
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.PATCH('/api/media/{id}', {
-        params: { path: { id: String(song.id) } },
-        body: {
+      await updateMedia({
+        data: {
+          id: song.id,
           title,
           metadata: {
             artist: artist || null,
@@ -674,7 +655,6 @@ function EditSongDialog({
           },
         },
       })
-      if (error) throw new Error('Failed to update')
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['media', 'songs'] })
@@ -773,10 +753,7 @@ function DeleteSongDialog({
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.DELETE('/api/media/{id}', {
-        params: { path: { id: String(song.id) } },
-      })
-      if (error) throw new Error('Failed to delete')
+      await deleteMedia({ data: { id: song.id } })
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['media', 'songs'] })

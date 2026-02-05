@@ -5,7 +5,6 @@ import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'url'
-import { nitro } from 'nitro/vite'
 
 const config = defineConfig({
   resolve: {
@@ -13,9 +12,12 @@ const config = defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  ssr: {
+    // mqtt.js has Node-specific code paths that break Vite's SSR bundler
+    external: ['mqtt'],
+  },
   plugins: [
     devtools(),
-    nitro(),
     tailwindcss(),
     viteTsConfigPaths({
       projects: ['./tsconfig.json'],

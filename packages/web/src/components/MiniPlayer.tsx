@@ -1,11 +1,22 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
+import { ClientOnly } from '@tanstack/react-router'
 import { Pause, Play, SkipBack, SkipForward, Music } from 'lucide-react'
 import { usePlayer } from '@/hooks/usePlayerState'
-import { api } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
+import { getMediaById } from '@/server/media'
+import { getPlaylistById, type PlaylistWithItems } from '@/server/playlists'
+
 
 export function MiniPlayer() {
+  return (
+    <ClientOnly fallback={<MiniPlayerEmpty />}>
+      <MiniPlayerInner />
+    </ClientOnly>
+  )
+}
+
+function MiniPlayerInner() {
   const player = usePlayer()
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -13,36 +24,27 @@ export function MiniPlayer() {
   const { data: currentMedia, error } = useQuery({
     queryKey: ['media', player.state.currentMediaId],
     queryFn: async () => {
-      const { data, error } = await api.GET('/api/media/{id}', {
-        params: { path: { id: player.state.currentMediaId!.toString() } },
-      })
-      if (error) throw new Error('Failed to load media')
-      return data
+      const result = await getMediaById({ data: { id: player.state.currentMediaId! } })
+      return result
     },
     enabled: player.state.currentMediaId !== null,
-    placeholderData: (previousData) => previousData,
   })
 
   // Fetch current playlist if one is playing
   const { data: currentPlaylist } = useQuery({
     queryKey: ['playlist', player.state.currentPlaylistId],
     queryFn: async () => {
-      const { data, error } = await api.GET('/api/playlists/{id}', {
-        params: { path: { id: player.state.currentPlaylistId!.toString() } },
-      })
-      if (error) throw new Error('Failed to load playlist')
-      return data
+      const result = await getPlaylistById({ data: { id: player.state.currentPlaylistId! } })
+      return result as PlaylistWithItems
     },
     enabled:
       player.state.currentPlaylistId !== null &&
       player.state.currentPlaylistId !== 0,
-    placeholderData: (previousData) => previousData,
   })
 
-  // Create streaming URL
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+  // Create streaming URL (API routes served from same server)
   const audioUrl = player.state.currentMediaId
-    ? `${apiUrl}/api/media/stream/${player.state.currentMediaId}`
+    ? `/api/media/stream/${player.state.currentMediaId}`
     : null
 
   // Auto-play when audio is ready and isPlaying is true

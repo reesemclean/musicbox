@@ -13,6 +13,9 @@
       in {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
+            # Node.js for API and Web
+            nodejs_24
+
             # ESP32 Development
             platformio-core
 
@@ -22,18 +25,21 @@
               ytmusicapi
             ]))
 
-            # MQTT Broker (for local development)
-            mosquitto
+            # MQTT Broker: Use Homebrew (nixpkgs version has WebSocket bugs)
+            # brew install mosquitto
+            # /opt/homebrew/sbin/mosquitto -c mosquitto.conf -v
           ];
 
           shellHook = ''
             echo "MusicBox Development Environment"
             echo "================================="
             echo ""
-            echo "ESP32 Development:"
-            echo "  pio run          # Build firmware"
-            echo "  pio run -t upload # Upload to device"
-            echo "  pio device monitor # Serial monitor"
+            echo "Node.js: $(node --version)"
+            echo "npm: $(npm --version)"
+            echo ""
+            echo "Commands:"
+            echo "  cd packages/web && npm run dev    # Start web app"
+            echo "  cd packages/esp32 && pio run      # Build firmware"
           '';
         };
       }

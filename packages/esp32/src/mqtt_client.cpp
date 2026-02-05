@@ -1,7 +1,7 @@
 #include "mqtt_client.h"
 #include "card_cache.h"
 #include "sd_cache.h"
-#include "secrets.h"
+#include "audio_player.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <PubSubClient.h>
@@ -222,6 +222,12 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         const char* status = doc["status"];
         if (status && strcmp(status, "approved") == 0 && onApprovedCb) {
             onApprovedCb();
+        }
+        // Handle maxVolume setting
+        if (doc["maxVolume"].is<int>()) {
+            int maxVol = doc["maxVolume"] | 21;
+            audio_set_max_volume(maxVol);
+            Serial.printf("[MQTT] Max volume set to: %d\n", maxVol);
         }
     }
     else if (strcmp(command, "sync_cards") == 0) {

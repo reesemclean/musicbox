@@ -1,40 +1,41 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
-import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, X, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download } from 'lucide-react'
-import { api, type Device } from '@/lib/api-client'
+// Note: useEffect kept for DeviceRemoteControl component
+import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, X, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
+import { getMedia } from '@/server/media'
+import {
+  getDevices,
+  updateDevice,
+  pauseDevice,
+  resumeDevice,
+  stopDevice,
+  setDeviceVolume,
+  triggerDeviceUpdate,
+} from '@/server/devices'
+import { getFirmwareInfo } from '@/server/firmware'
+
+type Device = Awaited<ReturnType<typeof getDevices>>[number]
 
 // Sound machine sounds query
 const soundsQueryOptions = queryOptions({
   queryKey: ['soundmachine-sounds'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/soundmachine/sounds')
-    if (error) throw new Error('Failed to load sounds')
-    return data
-  },
+  queryFn: () => getMedia({ data: { type: 'soundmachine' } }),
 })
 
 // Firmware info query
 const firmwareQueryOptions = queryOptions({
   queryKey: ['firmware-latest'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/firmware/latest')
-    if (error) return null // No firmware available is ok
-    return data
-  },
+  queryFn: () => getFirmwareInfo(),
 })
 
 const devicesQueryOptions = queryOptions({
   queryKey: ['devices'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/devices')
-    if (error) throw new Error('Failed to load devices')
-    return data
-  },
+  queryFn: () => getDevices(),
   refetchInterval: 5000, // Poll for new devices
 })
 
@@ -50,57 +51,10 @@ export const Route = createFileRoute('/_library/devices')({
 })
 
 function DevicesPage() {
-  const queryClient = useQueryClient()
   const { data: devices } = useSuspenseQuery(devicesQueryOptions)
 
-  // Listen for playback status updates via WebSocket - triggers refetch
-  useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
-    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws/control'
-    let reconnectTimeout: ReturnType<typeof setTimeout>
-    let mounted = true
-    let ws: WebSocket | null = null
-
-    const connect = () => {
-      if (!mounted) return
-
-      ws = new WebSocket(wsUrl)
-
-      ws.onmessage = (event) => {
-        if (!mounted) return
-        try {
-          const data = JSON.parse(event.data)
-          if (data.type === 'playback_status') {
-            // Refetch devices to get updated playback status
-            queryClient.invalidateQueries({ queryKey: ['devices'] })
-          }
-        } catch {
-          // Ignore non-JSON messages
-        }
-      }
-
-      ws.onclose = () => {
-        if (mounted) {
-          reconnectTimeout = setTimeout(connect, 3000)
-        }
-      }
-
-      ws.onerror = () => {
-        ws?.close()
-      }
-    }
-
-    connect()
-
-    return () => {
-      mounted = false
-      clearTimeout(reconnectTimeout)
-      if (ws) {
-        ws.onclose = null
-        ws.close()
-      }
-    }
-  }, [queryClient])
+  // MQTT connection handles query invalidation automatically via MqttProvider
+  // Playback status events invalidate the ['devices'] query key
 
   // Separate pending devices to show prominently
   const pendingDevices = devices.filter((d) => d.status === 'pending')
@@ -140,11 +94,7 @@ function PendingDeviceCard({ device }: { device: Device }) {
 
   const approveMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.PATCH('/api/devices/{id}', {
-        params: { path: { id: device.id.toString() } },
-        body: { status: 'approved' },
-      })
-      if (error) throw new Error('Failed to approve device')
+      await updateDevice({ data: { id: device.id, status: 'approved' } })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] })
@@ -157,11 +107,7 @@ function PendingDeviceCard({ device }: { device: Device }) {
 
   const rejectMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.PATCH('/api/devices/{id}', {
-        params: { path: { id: device.id.toString() } },
-        body: { status: 'rejected' },
-      })
-      if (error) throw new Error('Failed to reject device')
+      await updateDevice({ data: { id: device.id, status: 'rejected' } })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] })
@@ -348,16 +294,14 @@ function DeviceRemoteControl({ device }: { device: Device }) {
   const { data: firmware } = useQuery(firmwareQueryOptions)
 
   const [soundMachineVolume, setSoundMachineVolume] = useState(device.soundMachineVolume ?? 10)
+  const [maxVolume, setMaxVolume] = useState(device.maxVolume ?? 21)
 
   // Check if update is available
   const updateAvailable = firmware && device.firmwareVersion && firmware.version !== device.firmwareVersion
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.POST('/api/devices/{id}/update', {
-        params: { path: { id: device.id.toString() } },
-      })
-      if (error) throw new Error('Failed to trigger update')
+      await triggerDeviceUpdate({ data: { id: device.id } })
     },
     onSuccess: () => {
       toast.success('Firmware update started')
@@ -367,19 +311,29 @@ function DeviceRemoteControl({ device }: { device: Device }) {
 
   const soundMachineMutation = useMutation({
     mutationFn: async (update: { soundId?: string | null; volume?: number | null }) => {
-      const body: { soundMachineSound?: string | null; soundMachineVolume?: number | null } = {}
-      if (update.soundId !== undefined) body.soundMachineSound = update.soundId
-      if (update.volume !== undefined) body.soundMachineVolume = update.volume
-      const { error } = await api.PATCH('/api/devices/{id}', {
-        params: { path: { id: device.id.toString() } },
-        body,
+      await updateDevice({
+        data: {
+          id: device.id,
+          soundMachineSound: update.soundId,
+          soundMachineVolume: update.volume,
+        },
       })
-      if (error) throw new Error('Failed to update sound machine setting')
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] })
     },
     onError: () => toast.error('Failed to update sound machine setting'),
+  })
+
+  const maxVolumeMutation = useMutation({
+    mutationFn: async (newMaxVolume: number | null) => {
+      await updateDevice({ data: { id: device.id, maxVolume: newMaxVolume } })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      toast.success('Max volume updated')
+    },
+    onError: () => toast.error('Failed to update max volume'),
   })
 
   const handleSoundMachineVolumeChange = (values: number[]) => {
@@ -388,12 +342,15 @@ function DeviceRemoteControl({ device }: { device: Device }) {
     soundMachineMutation.mutate({ volume: newVolume })
   }
 
+  const handleMaxVolumeChange = (values: number[]) => {
+    const newMaxVol = values[0]
+    setMaxVolume(newMaxVol)
+    maxVolumeMutation.mutate(newMaxVol)
+  }
+
   const pauseMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.POST('/api/devices/{id}/pause', {
-        params: { path: { id: device.id.toString() } },
-      })
-      if (error) throw new Error('Failed to pause')
+      await pauseDevice({ data: { id: device.id } })
     },
     onSuccess: () => {
       toast.success('Playback paused')
@@ -403,10 +360,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
 
   const resumeMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.POST('/api/devices/{id}/resume', {
-        params: { path: { id: device.id.toString() } },
-      })
-      if (error) throw new Error('Failed to resume')
+      await resumeDevice({ data: { id: device.id } })
     },
     onSuccess: () => {
       toast.success('Playback resumed')
@@ -416,10 +370,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.POST('/api/devices/{id}/stop', {
-        params: { path: { id: device.id.toString() } },
-      })
-      if (error) throw new Error('Failed to stop')
+      await stopDevice({ data: { id: device.id } })
     },
     onSuccess: () => {
       toast.success('Playback stopped')
@@ -429,11 +380,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
 
   const volumeMutation = useMutation({
     mutationFn: async (level: number) => {
-      const { error } = await api.POST('/api/devices/{id}/volume', {
-        params: { path: { id: device.id.toString() } },
-        body: { level },
-      })
-      if (error) throw new Error('Failed to set volume')
+      await setDeviceVolume({ data: { id: device.id, level } })
     },
     onError: () => toast.error('Failed to set volume'),
   })
@@ -576,6 +523,22 @@ function DeviceRemoteControl({ device }: { device: Device }) {
           )}
         </div>
 
+        {/* Max Volume */}
+        <div className="flex items-center gap-3">
+          <Shield className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm">Max Volume</span>
+          <Slider
+            value={[maxVolume]}
+            onValueChange={handleMaxVolumeChange}
+            max={21}
+            min={1}
+            step={1}
+            className="w-24"
+            disabled={maxVolumeMutation.isPending || updateTriggered}
+          />
+          <span className="text-sm text-muted-foreground w-5">{maxVolume}</span>
+        </div>
+
         {/* Firmware */}
         <div className="flex items-center gap-3">
           <Download className="h-4 w-4 text-muted-foreground" />
@@ -644,14 +607,13 @@ function ConnectionStatus({ isOnline }: { isOnline: boolean }) {
   )
 }
 
-function LastSeen({ lastSeen }: { lastSeen: string | null }) {
+function LastSeen({ lastSeen }: { lastSeen: Date | null }) {
   if (!lastSeen) {
     return <span className="text-muted-foreground">—</span>
   }
 
-  const date = new Date(lastSeen)
   const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
+  const diffMs = now.getTime() - lastSeen.getTime()
   const diffMins = Math.floor(diffMs / (1000 * 60))
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
@@ -670,17 +632,16 @@ function LastSeen({ lastSeen }: { lastSeen: string | null }) {
   return (
     <div className="flex items-center gap-1 text-sm text-muted-foreground">
       <Clock className="h-3 w-3" />
-      <span title={date.toLocaleString()}>{timeAgo}</span>
+      <span title={lastSeen.toLocaleString()}>{timeAgo}</span>
     </div>
   )
 }
 
-function getIsOnline(lastSeen: string | null): boolean {
+function getIsOnline(lastSeen: Date | null): boolean {
   if (!lastSeen) return false
 
-  const date = new Date(lastSeen)
   const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
+  const diffMs = now.getTime() - lastSeen.getTime()
   const fiveMinutes = 5 * 60 * 1000
 
   return diffMs < fiveMinutes

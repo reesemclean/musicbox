@@ -3,17 +3,15 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ListMusic, Plus, Trash2, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, type Playlist } from '@/lib/api-client'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { getPlaylists, createPlaylist, deletePlaylist } from '@/server/playlists'
+
+type Playlist = Awaited<ReturnType<typeof getPlaylists>>[number]
 
 export const playlistsQueryOptions = queryOptions({
   queryKey: ['playlists'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/playlists')
-    if (error) throw new Error('Failed to load playlists')
-    return data
-  },
+  queryFn: () => getPlaylists(),
 })
 
 export const Route = createFileRoute('/_library/playlists/')({
@@ -145,11 +143,7 @@ function CreatePlaylistDialog({ onClose }: { onClose: () => void }) {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await api.POST('/api/playlists', {
-        body: { name },
-      })
-      if (error) throw new Error('Failed to create playlist')
-      return data
+      return createPlaylist({ data: { name } })
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['playlists'] })
@@ -160,7 +154,7 @@ function CreatePlaylistDialog({ onClose }: { onClose: () => void }) {
       const tempPlaylist: Playlist = {
         id: -Date.now(),
         name,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(),
       }
       queryClient.setQueryData<Playlist[]>(['playlists'], (old) =>
         old ? [...old, tempPlaylist] : [tempPlaylist]
@@ -238,10 +232,7 @@ function DeletePlaylistDialog({
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.DELETE('/api/playlists/{id}', {
-        params: { path: { id: String(playlist.id) } },
-      })
-      if (error) throw new Error('Failed to delete')
+      await deletePlaylist({ data: { id: playlist.id } })
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['playlists'] })

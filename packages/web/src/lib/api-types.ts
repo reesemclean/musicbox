@@ -657,6 +657,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sounds/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get system sound
+         * @description Stream a system sound file (startup.mp3, scan.mp3, error.mp3)
+         */
+        get: operations["getApiSoundsByFilename"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -732,7 +752,6 @@ export interface operations {
     getApiMedia: {
         parameters: {
             query?: {
-                /** @description Filter by media type */
                 type?: "song" | "podcast" | "soundmachine";
             };
             header?: never;
@@ -908,9 +927,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    title?: string;
+                    metadata?: {
+                        artist?: string | null;
+                        album?: string | null;
+                        year?: number | null;
+                        genre?: string | null;
+                    };
+                };
             };
         };
         responses: {
@@ -980,9 +1007,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    name: string;
+                };
             };
         };
         responses: {
@@ -1098,7 +1127,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    name?: string;
+                };
+            };
+        };
         responses: {
             /** @description Updated playlist */
             200: {
@@ -1136,9 +1171,12 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    mediaId: number;
+                    position?: number;
+                };
             };
         };
         responses: {
@@ -1203,9 +1241,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    mediaIds: number[];
+                };
             };
         };
         responses: {
@@ -1259,9 +1299,30 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    uid: string;
+                    name?: string;
+                    volume?: number;
+                    /** @constant */
+                    type: "media";
+                    mediaId: number;
+                } | {
+                    uid: string;
+                    name?: string;
+                    volume?: number;
+                    /** @constant */
+                    type: "playlist";
+                    playlistId: number;
+                } | {
+                    uid: string;
+                    name?: string;
+                    volume?: number;
+                    /** @constant */
+                    type: "podcast";
+                    podcastFeedId: number;
+                };
             };
         };
         responses: {
@@ -1449,7 +1510,29 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    volume?: number | null;
+                    /** @constant */
+                    type: "media";
+                    mediaId: number;
+                } | {
+                    name?: string;
+                    volume?: number | null;
+                    /** @constant */
+                    type: "playlist";
+                    playlistId: number;
+                } | {
+                    name?: string;
+                    volume?: number | null;
+                    /** @constant */
+                    type: "podcast";
+                    podcastFeedId: number;
+                };
+            };
+        };
         responses: {
             /** @description Updated card */
             200: {
@@ -1576,6 +1659,7 @@ export interface operations {
                         lastIp: string | null;
                         soundMachineSound: string | null;
                         soundMachineVolume: number | null;
+                        maxVolume: number | null;
                         /** Format: date-time */
                         createdAt: string;
                         playback?: {
@@ -1618,6 +1702,7 @@ export interface operations {
                         lastIp: string | null;
                         soundMachineSound: string | null;
                         soundMachineVolume: number | null;
+                        maxVolume: number | null;
                         /** Format: date-time */
                         createdAt: string;
                         playback?: {
@@ -1686,9 +1771,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    name?: string;
+                    /** @enum {string} */
+                    status?: "pending" | "approved" | "rejected";
+                    soundMachineSound?: string | null;
+                    soundMachineVolume?: number | null;
+                    maxVolume?: number | null;
+                };
             };
         };
         responses: {
@@ -1710,6 +1802,7 @@ export interface operations {
                         lastIp: string | null;
                         soundMachineSound: string | null;
                         soundMachineVolume: number | null;
+                        maxVolume: number | null;
                         /** Format: date-time */
                         createdAt: string;
                         playback?: {
@@ -1881,9 +1974,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    level: number;
+                };
             };
         };
         responses: {
@@ -2020,9 +2115,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    videoId: string;
+                    title: string;
+                    artist: string;
+                    album?: string;
+                    thumbnailUrl?: string;
+                };
             };
         };
         responses: {
@@ -2137,9 +2238,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    browseId: string;
+                };
             };
         };
         responses: {
@@ -2230,9 +2333,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    /** Format: uri */
+                    feedUrl: string;
+                    /** @default 3 */
+                    retentionCount?: number;
+                };
             };
         };
         responses: {
@@ -2349,9 +2457,12 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": unknown;
+                "application/json": {
+                    name?: string;
+                    retentionCount?: number;
+                };
             };
         };
         responses: {
@@ -2503,6 +2614,37 @@ export interface operations {
                         title: string;
                         duration: number | null;
                     }[];
+                };
+            };
+        };
+    };
+    getApiSoundsByFilename: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sound file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sound not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
             };
         };

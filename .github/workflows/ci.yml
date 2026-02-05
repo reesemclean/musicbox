@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Install dependencies
+        run: nix develop --command npm ci
+
+      - name: Build
+        run: nix develop --command npm run build
+
+      - name: Test
+        run: nix develop --command npm run test
+
+  esp32:
+    name: ESP32 Firmware
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/esp32
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build firmware
+        env:
+          WIFI_SSID: ci
+          WIFI_PASS: ci
+        run: nix develop --command pio run

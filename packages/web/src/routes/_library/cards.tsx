@@ -1,77 +1,39 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CreditCard, Music, ListMusic, Mic, Trash2, Loader2, X, Plus, Wifi } from 'lucide-react'
 import { toast } from 'sonner'
-import { api } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { getCards, createCard, deleteCard } from '@/server/cards'
+import { getMedia } from '@/server/media'
+import { getPlaylists } from '@/server/playlists'
+import { getFeeds } from '@/server/podcasts'
+import { useMqttContext } from '@/hooks/MqttProvider'
 
-type Card = {
-  id: number
-  uid: string
-  name: string | null
-  mediaId: number | null
-  playlistId: number | null
-  podcastFeedId: number | null
-  volume: number | null
-  createdAt: string
-}
-
-type Media = {
-  id: number
-  type: 'song' | 'podcast' | 'soundmachine'
-  title: string
-  metadata: unknown
-}
-
-type Playlist = {
-  id: number
-  name: string
-}
-
-type PodcastFeed = {
-  id: number
-  name: string
-  feedUrl: string
-}
+type Card = Awaited<ReturnType<typeof getCards>>[number]
+type Media = Awaited<ReturnType<typeof getMedia>>[number]
+type Playlist = Awaited<ReturnType<typeof getPlaylists>>[number]
+type PodcastFeed = Awaited<ReturnType<typeof getFeeds>>[number]
 
 const cardsQueryOptions = queryOptions({
   queryKey: ['cards'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/cards')
-    if (error) throw new Error('Failed to load cards')
-    return data
-  },
+  queryFn: () => getCards(),
 })
 
 const songsQueryOptions = queryOptions({
   queryKey: ['media', 'songs'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/media', {
-      params: { query: { type: 'song' } },
-    })
-    if (error) throw new Error('Failed to load songs')
-    return data
-  },
+  queryFn: () => getMedia({ data: { type: 'song' } }),
 })
 
 const playlistsQueryOptions = queryOptions({
   queryKey: ['playlists'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/playlists')
-    if (error) throw new Error('Failed to load playlists')
-    return data
-  },
+  queryFn: () => getPlaylists(),
 })
 
 const podcastFeedsQueryOptions = queryOptions({
   queryKey: ['podcast-feeds'],
-  queryFn: async () => {
-    const { data, error } = await api.GET('/api/podcasts')
-    if (error) throw new Error('Failed to load podcast feeds')
-    return data
-  },
+  queryFn: () => getFeeds(),
 })
 
 export const Route = createFileRoute('/_library/cards')({
@@ -87,65 +49,29 @@ function CardsPage() {
   const [unknownCardUid, setUnknownCardUid] = useState<string | null>(null)
 
   const { data: cards } = useSuspenseQuery(cardsQueryOptions)
+  const { lastCardScanned, clearLastCardScanned } = useMqttContext()
 
-  // Listen for unknown card events globally
+  // Handle card scans from MQTT - show toast for unknown cards
   useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
-    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws/control'
-    let reconnectTimeout: ReturnType<typeof setTimeout>
-    let mounted = true
-    let ws: WebSocket | null = null
-
-    const connect = () => {
-      if (!mounted) return
-
-      ws = new WebSocket(wsUrl)
-
-      ws.onmessage = (event) => {
-        if (!mounted) return
-        try {
-          const data = JSON.parse(event.data)
-          if (data.type === 'card_unknown' && data.uid) {
-            // Show toast with option to register
-            toast('Unknown card scanned', {
-              description: `Card ${data.uid} is not registered`,
-              action: {
-                label: 'Register',
-                onClick: () => {
-                  setUnknownCardUid(data.uid)
-                  setShowRegister(true)
-                },
-              },
-              duration: 10000,
-            })
-          }
-        } catch {
-          // Ignore non-JSON messages
-        }
+    if (lastCardScanned && !lastCardScanned.handledLocally) {
+      // Check if this card is registered
+      const isRegistered = cards.some((c) => c.uid === lastCardScanned.uid)
+      if (!isRegistered) {
+        toast('Unknown card scanned', {
+          description: `Card ${lastCardScanned.uid} is not registered`,
+          action: {
+            label: 'Register',
+            onClick: () => {
+              setUnknownCardUid(lastCardScanned.uid)
+              setShowRegister(true)
+            },
+          },
+          duration: 10000,
+        })
       }
-
-      ws.onclose = () => {
-        if (mounted) {
-          reconnectTimeout = setTimeout(connect, 3000)
-        }
-      }
-
-      ws.onerror = () => {
-        ws?.close()
-      }
+      clearLastCardScanned()
     }
-
-    connect()
-
-    return () => {
-      mounted = false
-      clearTimeout(reconnectTimeout)
-      if (ws) {
-        ws.onclose = null
-        ws.close()
-      }
-    }
-  }, [])
+  }, [lastCardScanned, cards, clearLastCardScanned])
 
   return (
     <div>
@@ -285,9 +211,8 @@ type RegistrationStep = 'waiting' | 'configure'
 function RegisterCardDialog({ onClose, initialUid }: { onClose: () => void; initialUid?: string | null }) {
   const [step, setStep] = useState<RegistrationStep>(initialUid ? 'configure' : 'waiting')
   const [scannedUid, setScannedUid] = useState<string | null>(initialUid || null)
-  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
-  const wsRef = useRef<WebSocket | null>(null)
   const queryClient = useQueryClient()
+  const { isConnected, lastCardScanned, clearLastCardScanned } = useMqttContext()
 
   // Fetch songs, playlists, and podcasts for the configure step (non-suspense to avoid flash)
   const { data: songs = [], isLoading: songsLoading } = useQuery(songsQueryOptions)
@@ -295,60 +220,14 @@ function RegisterCardDialog({ onClose, initialUid }: { onClose: () => void; init
   const { data: podcastFeeds = [], isLoading: podcastsLoading } = useQuery(podcastFeedsQueryOptions)
   const isLoading = songsLoading || playlistsLoading || podcastsLoading
 
-  // Connect to WebSocket for card scan events with auto-reconnect
+  // Listen for card scans from MQTT
   useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
-    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws/control'
-    let reconnectTimeout: ReturnType<typeof setTimeout>
-    let mounted = true
-    let ws: WebSocket | null = null
-
-    const connect = () => {
-      if (!mounted) return
-
-      ws = new WebSocket(wsUrl)
-      wsRef.current = ws
-
-      ws.onopen = () => {
-        if (mounted) setWsStatus('connected')
-      }
-
-      ws.onmessage = (event) => {
-        if (!mounted) return
-        try {
-          const data = JSON.parse(event.data)
-          if (data.type === 'card_scanned' && data.uid) {
-            setScannedUid(data.uid)
-            setStep('configure')
-          }
-        } catch {
-          // Ignore non-JSON messages
-        }
-      }
-
-      ws.onclose = () => {
-        if (mounted) {
-          setWsStatus('disconnected')
-          reconnectTimeout = setTimeout(connect, 1000)
-        }
-      }
-
-      ws.onerror = () => {
-        ws?.close()
-      }
+    if (step === 'waiting' && lastCardScanned) {
+      setScannedUid(lastCardScanned.uid)
+      setStep('configure')
+      clearLastCardScanned()
     }
-
-    connect()
-
-    return () => {
-      mounted = false
-      clearTimeout(reconnectTimeout)
-      if (ws) {
-        ws.onclose = null // Prevent reconnect on intentional close
-        ws.close()
-      }
-    }
-  }, [])
+  }, [step, lastCardScanned, clearLastCardScanned])
 
   // Simulate card scan for testing
   const simulateScan = () => {
@@ -369,7 +248,7 @@ function RegisterCardDialog({ onClose, initialUid }: { onClose: () => void; init
 
         {step === 'waiting' && (
           <WaitingForScan
-            wsStatus={wsStatus}
+            isConnected={isConnected}
             onSimulate={simulateScan}
             onClose={onClose}
           />
@@ -398,15 +277,15 @@ function RegisterCardDialog({ onClose, initialUid }: { onClose: () => void; init
 }
 
 function WaitingForScan({
-  wsStatus,
+  isConnected,
   onSimulate,
   onClose,
 }: {
-  wsStatus: 'connecting' | 'connected' | 'disconnected'
+  isConnected: boolean
   onSimulate: () => void
   onClose: () => void
 }) {
-  const statusColor = wsStatus === 'connected' ? 'bg-green-500' : wsStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
+  const statusColor = isConnected ? 'bg-green-500' : 'bg-yellow-500'
 
   return (
     <div className="text-center py-8">
@@ -428,9 +307,9 @@ function WaitingForScan({
           Simulate Scan
         </Button>
       </div>
-      {wsStatus === 'disconnected' && (
-        <p className="text-sm text-red-600 mt-4">
-          WebSocket disconnected. Make sure the API server is running.
+      {!isConnected && (
+        <p className="text-sm text-yellow-600 mt-4">
+          Connecting to MQTT broker...
         </p>
       )}
     </div>
@@ -464,17 +343,13 @@ function ConfigureCard({
       const selectedItem = items.find((item) => item.id === selectedId)
       const cardName = name || ('title' in selectedItem! ? selectedItem.title : selectedItem!.name)
 
-      let body
       if (contentType === 'song') {
-        body = { uid, name: cardName, type: 'media' as const, mediaId: selectedId! }
+        await createCard({ data: { uid, name: cardName, type: 'media', mediaId: selectedId! } })
       } else if (contentType === 'playlist') {
-        body = { uid, name: cardName, type: 'playlist' as const, playlistId: selectedId! }
+        await createCard({ data: { uid, name: cardName, type: 'playlist', playlistId: selectedId! } })
       } else {
-        body = { uid, name: cardName, type: 'podcast' as const, podcastFeedId: selectedId! }
+        await createCard({ data: { uid, name: cardName, type: 'podcast', podcastFeedId: selectedId! } })
       }
-
-      const { error } = await api.POST('/api/cards', { body })
-      if (error) throw new Error('Failed to create card')
     },
     onSuccess: () => {
       toast.success('Card registered successfully')
@@ -602,10 +477,7 @@ function DeleteCardDialog({
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await api.DELETE('/api/cards/{id}', {
-        params: { path: { id: String(card.id) } },
-      })
-      if (error) throw new Error('Failed to delete')
+      await deleteCard({ data: { id: card.id } })
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['cards'] })

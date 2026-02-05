@@ -1,0 +1,54 @@
+name: Build and Publish Docker Image (Manual)
+
+# NOTE: For production releases, use git tags instead:
+#   git tag v1.0.0 && git push origin v1.0.0
+# This triggers the release.yml workflow which builds the image and creates a release.
+#
+# Firmware is built at deploy time via docker-compose (firmware-builder service).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag (e.g., dev, test)'
+        required: true
+        default: 'dev'
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ github.event.inputs.tag }}
+            type=sha,prefix=
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
