@@ -15,8 +15,9 @@ packages/web/.vinxi
 **/musicbox.db
 **/musicbox.db-journal
 
-# ESP32 (not needed for Docker)
-packages/esp32
+# ESP32 build artifacts (source needed for firmware-builder)
+packages/esp32/.pio
+packages/esp32/.vscode
 
 # IDE
 .vscode
