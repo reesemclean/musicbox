@@ -13,18 +13,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Source .env if present
-if [ -f "$ROOT_DIR/packages/esp32/.env" ]; then
-  set -a
-  . "$ROOT_DIR/packages/esp32/.env"
-  set +a
-fi
-
-if [ "$WIFI_SSID" = "" ] || [ "$WIFI_SSID" = "changeme" ]; then
-  echo "Warning: WIFI_SSID not set. Firmware will use dummy credentials."
-  echo "Copy packages/esp32/.env.example to packages/esp32/.env and fill in your values."
-fi
-
 VERSION="${1:-dev}"
 
 echo "Building firmware version: $VERSION"

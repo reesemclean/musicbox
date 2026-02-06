@@ -1,13 +1,29 @@
 # ============================================================================
 # MusicBox Docker Image
-# Unified build - Web + API in single package
-# Built with Nitro (node-server preset) for standalone Node.js deployment.
+# Unified build - Web + API + embedded firmware in single package.
+# Firmware is now generic (no baked-in network config), built once at image
+# build time and served for OTA updates.
 # ============================================================================
 
+# --- Firmware Build Stage ---
+FROM python:3.12 AS firmware-builder
+
+RUN pip install --no-cache-dir platformio
+
+WORKDIR /build
+COPY packages/esp32/ packages/esp32/
+
+# Install platform, toolchain, and libraries with a dummy build
+RUN cd packages/esp32 && pio run 2>&1 || true
+
+# Real build
+ARG FIRMWARE_VERSION=latest
+RUN cd packages/esp32 && FIRMWARE_VERSION=${FIRMWARE_VERSION} pio run
+
+# --- Web Build Stage ---
 FROM node:24-alpine AS base
 RUN apk add --no-cache tini python3 curl
 
-# --- Build Stage ---
 FROM node:24-alpine AS builder
 
 # Install build dependencies
@@ -32,8 +48,12 @@ COPY --from=builder /app/packages/web/.output ./.output
 COPY packages/web/drizzle ./drizzle
 COPY packages/web/seed-data ./seed-data
 
-# Firmware is provided via shared volume from firmware-builder container
-# (see docker-compose.yml)
+# Copy firmware binary and generate manifest
+COPY --from=firmware-builder /build/packages/esp32/.pio/build/esp32-s3-devkitc-1/firmware.bin ./firmware/firmware.bin
+
+# Generate firmware manifest
+ARG FIRMWARE_VERSION=latest
+RUN echo "{\"version\": \"${FIRMWARE_VERSION}\"}" > ./firmware/manifest.json
 
 # Create data directories
 RUN mkdir -p /data /data/songs /data/podcasts /data/soundmachine /data/sounds

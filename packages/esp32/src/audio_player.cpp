@@ -1,4 +1,5 @@
 #include "audio_player.h"
+#include "device_config.h"
 #include "sd_cache.h"
 #include <Arduino.h>
 #include <SD.h>
@@ -138,7 +139,7 @@ static bool downloadSoundToSD(const char* urlPath, const char* sdPath) {
     }
 
     char fullUrl[256];
-    snprintf(fullUrl, sizeof(fullUrl), "%s%s", API_BASE_URL, urlPath);
+    snprintf(fullUrl, sizeof(fullUrl), "%s%s", config_api_base_url(), urlPath);
 
     Serial.printf("[Audio] Downloading %s...\n", fullUrl);
 

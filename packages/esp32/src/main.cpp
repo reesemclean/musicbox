@@ -1,7 +1,8 @@
 #include <Arduino.h>
 #include <Button2.h>
-#include <Preferences.h>
 #include <esp_task_wdt.h>
+#include "device_config.h"
+#include "provisioning.h"
 #include "logger.h"
 #include "wifi_manager.h"
 #include "mqtt_client.h"
@@ -23,9 +24,6 @@
 
 Button2 btnPlay, btnVolUp, btnVolDn, btnNext, btnPrev;
 
-// NVS preferences for persistent state
-static Preferences preferences;
-
 // Device state
 static bool mqtt_broker_found = false;
 static bool device_approved = false;
@@ -35,9 +33,10 @@ static bool previously_approved = false;  // Was approved in a previous session
 // Sound machine state
 static bool sound_machine_active = false;
 
-// Restart combo: hold vol up + vol down for 2 seconds
+// Combo: hold vol up + vol down — restart on release after 2s, factory reset at 5s
 static unsigned long both_vol_pressed_start = 0;
-#define RESTART_HOLD_MS 2000
+#define RESTART_HOLD_MS       2000
+#define FACTORY_RESET_HOLD_MS 5000
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Restart reason logging
@@ -167,9 +166,7 @@ void onApproved() {
     device_approved = true;
     nfc_set_enabled(true);
 
-    preferences.begin("musicbox", false);
-    preferences.putBool("approved", true);
-    preferences.end();
+    config_set_approved(true);
 
     if (!device_ready) {
         device_ready = true;
@@ -275,7 +272,7 @@ void onCardScanned(const char* uid) {
         int firstMediaId = cached->mediaIds[0];
         char url[256];
         snprintf(url, sizeof(url), "%s/api/media/stream/%d",
-                 API_BASE_URL, firstMediaId);
+                 config_api_base_url(), firstMediaId);
 
         if (sd_cache_has(firstMediaId)) {
             String path = sd_cache_path(firstMediaId);
@@ -290,7 +287,7 @@ void onCardScanned(const char* uid) {
         for (int i = 1; i < cached->trackCount; i++) {
             int mediaId = cached->mediaIds[i];
             snprintf(url, sizeof(url), "%s/api/media/stream/%d",
-                     API_BASE_URL, mediaId);
+                     config_api_base_url(), mediaId);
 
             if (sd_cache_has(mediaId)) {
                 String path = sd_cache_path(mediaId);
@@ -325,15 +322,23 @@ void setup() {
     logger_init();
     log_restart_reason();
 
+    // Load config from NVS
+    config_init();
+
+    // If not provisioned, start captive portal (blocks until configured)
+    if (!config_is_provisioned()) {
+        LOG_I(MOD_SYS, "Not provisioned - starting captive portal");
+        provisioning_start();  // Restarts device on completion
+        return;  // Won't reach here
+    }
+
     // Enable task watchdog
     esp_task_wdt_init(WDT_TIMEOUT, true);
     esp_task_wdt_add(NULL);
     LOG_I(MOD_SYS, "Watchdog enabled (%ds)", WDT_TIMEOUT);
 
     // Check for previous approval (offline mode)
-    preferences.begin("musicbox", true);
-    previously_approved = preferences.getBool("approved", false);
-    preferences.end();
+    previously_approved = config_get()->approved;
     if (previously_approved) {
         LOG_I(MOD_SYS, "Previously approved - offline mode available");
     }
@@ -396,16 +401,26 @@ void loop() {
     btnNext.loop();
     btnPrev.loop();
 
-    // Check for restart combo: hold vol up + vol down for 2 seconds
+    // Combo: vol up + vol down held
+    //   Release after 2s → restart
+    //   Hold 5s → factory reset (clears NVS, back to captive portal)
     if (btnVolUp.isPressed() && btnVolDn.isPressed()) {
         if (both_vol_pressed_start == 0) {
             both_vol_pressed_start = millis();
-        } else if (millis() - both_vol_pressed_start >= RESTART_HOLD_MS) {
-            LOG_I(MOD_SYS, "Manual restart (vol up+down held)");
-            delay(100);
-            ESP.restart();
+        } else if (millis() - both_vol_pressed_start >= FACTORY_RESET_HOLD_MS) {
+            LOG_I(MOD_SYS, "Factory reset (vol up+down held 5s)");
+            config_factory_reset();  // Clears NVS and restarts
         }
     } else {
+        // Buttons released — check if held long enough for restart
+        if (both_vol_pressed_start > 0) {
+            unsigned long held = millis() - both_vol_pressed_start;
+            if (held >= RESTART_HOLD_MS) {
+                LOG_I(MOD_SYS, "Manual restart (vol up+down released after %lums)", held);
+                delay(100);
+                ESP.restart();
+            }
+        }
         both_vol_pressed_start = 0;
     }
 

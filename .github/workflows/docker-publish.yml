@@ -1,8 +1,8 @@
-name: Build and Publish Docker Images (Manual)
+name: Build and Publish Docker Image (Manual)
 
 # NOTE: For production releases, use git tags instead:
 #   git tag v1.0.0 && git push origin v1.0.0
-# This triggers the release.yml workflow which builds the images and creates a release.
+# This triggers the release.yml workflow which builds the image and creates a release.
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ env:
 
 jobs:
   build:
-    name: Build Docker Images
+    name: Build Docker Image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,9 +33,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Web app image
-      - name: Extract metadata (web)
-        id: meta-web
+      - name: Extract metadata
+        id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}
@@ -43,30 +42,13 @@ jobs:
             type=raw,value=${{ github.event.inputs.tag }}
             type=sha,prefix=
 
-      - name: Build and push web image
+      - name: Build and push image
         uses: docker/build-push-action@v5
         with:
           context: .
           target: production
           push: true
-          tags: ${{ steps.meta-web.outputs.tags }}
-          labels: ${{ steps.meta-web.outputs.labels }}
-
-      # Firmware builder image
-      - name: Extract metadata (firmware-builder)
-        id: meta-firmware
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}-firmware-builder
-          tags: |
-            type=raw,value=${{ github.event.inputs.tag }}
-            type=sha,prefix=
-
-      - name: Build and push firmware-builder image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.firmware
-          push: true
-          tags: ${{ steps.meta-firmware.outputs.tags }}
-          labels: ${{ steps.meta-firmware.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            FIRMWARE_VERSION=${{ github.event.inputs.tag }}

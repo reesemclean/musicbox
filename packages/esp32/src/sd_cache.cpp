@@ -1,4 +1,5 @@
 #include "sd_cache.h"
+#include "device_config.h"
 #include "card_cache.h"
 #include <SPI.h>
 #include <SD.h>
@@ -568,7 +569,7 @@ void sd_cache_sync_with_cards() {
             // Build URL and queue download
             char url[256];
             snprintf(url, sizeof(url), "%s/api/media/stream/%d",
-                     API_BASE_URL, mediaId);
+                     config_api_base_url(), mediaId);
             sd_cache_queue_download(mediaId, url);
             queuedDownloads++;
         }

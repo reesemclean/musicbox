@@ -1,8 +1,10 @@
 #include "mqtt_client.h"
+#include "device_config.h"
 #include "card_cache.h"
 #include "sd_cache.h"
 #include "audio_player.h"
 #include <WiFi.h>
+#include <HTTPClient.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -72,16 +74,57 @@ void mqtt_init() {
 }
 
 bool mqtt_discover_broker() {
-    #if defined(MQTT_BROKER_HOST)
-    brokerHost = MQTT_BROKER_HOST;
-    brokerPort = MQTT_BROKER_PORT;
-    brokerDiscovered = true;
-    Serial.printf("[MQTT] Broker: %s:%d\n", brokerHost.c_str(), brokerPort);
-    return true;
-    #else
-    Serial.println("[MQTT] No MQTT broker configured");
+    const DeviceConfig* cfg = config_get();
+
+    // Fetch MQTT config from server
+    char url[256];
+    snprintf(url, sizeof(url), "%s/api/device/config", cfg->api_base_url);
+
+    Serial.printf("[MQTT] Fetching broker config from %s\n", url);
+
+    HTTPClient http;
+    http.begin(url);
+    http.setTimeout(10000);
+
+    int httpCode = http.GET();
+    if (httpCode == 200) {
+        String payload = http.getString();
+        http.end();
+
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, payload);
+        if (!error && doc["mqtt"]["host"].is<const char*>()) {
+            const char* host = doc["mqtt"]["host"];
+            uint16_t port = doc["mqtt"]["port"] | 1883;
+
+            brokerHost = host;
+            brokerPort = port;
+            brokerDiscovered = true;
+
+            // Cache in NVS for offline fallback
+            config_set_mqtt(host, port);
+
+            Serial.printf("[MQTT] Broker discovered: %s:%d\n", brokerHost.c_str(), brokerPort);
+            return true;
+        }
+
+        Serial.println("[MQTT] Failed to parse broker config");
+    } else {
+        http.end();
+        Serial.printf("[MQTT] Config fetch failed: HTTP %d\n", httpCode);
+    }
+
+    // Fallback: use cached NVS values
+    if (cfg->mqtt_host[0] != '\0') {
+        brokerHost = cfg->mqtt_host;
+        brokerPort = cfg->mqtt_port;
+        brokerDiscovered = true;
+        Serial.printf("[MQTT] Using cached broker: %s:%d\n", brokerHost.c_str(), brokerPort);
+        return true;
+    }
+
+    Serial.println("[MQTT] No broker available");
     return false;
-    #endif
 }
 
 void mqtt_connect() {
@@ -137,7 +180,7 @@ bool mqtt_is_connected() {
 static void publishRegistration() {
     JsonDocument doc;
     doc["mac"] = deviceMac;
-    doc["firmwareVersion"] = "1.0.0";  // TODO: Get from build
+    doc["firmwareVersion"] = FIRMWARE_VERSION;
     doc["ip"] = WiFi.localIP().toString();
 
     String payload;

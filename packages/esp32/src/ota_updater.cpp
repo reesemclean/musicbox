@@ -1,4 +1,5 @@
 #include "ota_updater.h"
+#include "device_config.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -98,7 +99,7 @@ bool ota_check_for_update() {
 
     HTTPClient http;
     char url[128];
-    snprintf(url, sizeof(url), "%s/api/firmware/latest", API_BASE_URL);
+    snprintf(url, sizeof(url), "%s/api/firmware/latest", config_api_base_url());
 
     http.begin(url);
     http.setTimeout(10000);

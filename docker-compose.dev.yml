@@ -2,26 +2,13 @@
 # MusicBox Docker Compose - Local Development
 #
 # Builds from source instead of pulling images.
+# Firmware is built as part of the main image (no separate firmware-builder).
 #
 # Usage:
-#   WIFI_SSID=xxx WIFI_PASS=yyy docker compose -f docker-compose.dev.yml up --build
+#   DEVICE_MQTT_HOST=192.168.1.100 docker compose -f docker-compose.dev.yml up --build
 # ============================================================================
 
 services:
-  firmware-builder:
-    build:
-      context: .
-      dockerfile: Dockerfile.firmware
-    environment:
-      - WIFI_SSID=${WIFI_SSID}
-      - WIFI_PASS=${WIFI_PASS}
-      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-mqtt}
-      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
-      - API_BASE_URL=${API_BASE_URL:-http://musicbox:3000}
-      - FIRMWARE_VERSION=${FIRMWARE_VERSION:-dev}
-    volumes:
-      - firmware_data:/firmware
-
   musicbox:
     build:
       context: .
@@ -35,12 +22,11 @@ services:
       - MQTT_BROKER_URL=mqtt://mqtt:1883
       - API_BASE_URL=http://musicbox:3000
       - VITE_MQTT_WS_URL=ws://localhost:9001
+      - DEVICE_MQTT_HOST=${DEVICE_MQTT_HOST:-localhost}
+      - DEVICE_MQTT_PORT=${DEVICE_MQTT_PORT:-1883}
     volumes:
       - musicbox_data:/data
-      - firmware_data:/app/firmware:ro
     depends_on:
-      firmware-builder:
-        condition: service_completed_successfully
       mqtt:
         condition: service_started
     restart: unless-stopped
@@ -57,7 +43,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  firmware_data:
   musicbox_data:
   mosquitto_data:
   mosquitto_logs:

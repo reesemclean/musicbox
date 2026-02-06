@@ -2,34 +2,24 @@
 # MusicBox Docker Compose (Production)
 #
 # For use with Portainer or any Docker host.
-# Both images are pre-built and pulled from ghcr.io.
-# The firmware-builder compiles ESP32 firmware at deploy time using your
-# network-specific env vars (WIFI_SSID, API_BASE_URL, etc.).
+# Image is pre-built and pulled from ghcr.io.
+# Firmware is embedded in the image (generic — no baked-in network config).
+# Devices self-provision via captive portal on first boot.
+#
+# Required env vars:
+#   DEVICE_MQTT_HOST  — LAN-reachable MQTT broker address for ESP32 devices
 #
 # Usage:
-#   WIFI_SSID=xxx WIFI_PASS=yyy docker compose up -d
+#   DEVICE_MQTT_HOST=mqtt.example.com docker compose up -d
 #
 # This will start:
-#   - Firmware Builder (one-shot: compiles firmware with your config, then exits)
-#   - MusicBox (port 3000) - Web UI + API (serves firmware for OTA)
+#   - MusicBox (port 3000) - Web UI + API + embedded firmware for OTA
 #   - MQTT Broker (port 1883 + 9001 for WebSocket)
 #
 # Data is persisted in Docker volumes.
 # ============================================================================
 
 services:
-  firmware-builder:
-    image: ghcr.io/reesemclean/musicbox-firmware-builder:latest
-    environment:
-      - WIFI_SSID=${WIFI_SSID}
-      - WIFI_PASS=${WIFI_PASS}
-      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-mqtt}
-      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
-      - API_BASE_URL=${API_BASE_URL:-http://musicbox:3000}
-      - FIRMWARE_VERSION=${FIRMWARE_VERSION:-latest}
-    volumes:
-      - firmware_data:/firmware
-
   musicbox:
     image: ghcr.io/reesemclean/musicbox:latest
     ports:
@@ -41,12 +31,11 @@ services:
       - MQTT_BROKER_URL=mqtt://mqtt:1883
       - API_BASE_URL=http://musicbox:3000
       - VITE_MQTT_WS_URL=ws://localhost:9001
+      - DEVICE_MQTT_HOST=${DEVICE_MQTT_HOST:-localhost}
+      - DEVICE_MQTT_PORT=${DEVICE_MQTT_PORT:-1883}
     volumes:
       - musicbox_data:/data
-      - firmware_data:/app/firmware:ro
     depends_on:
-      firmware-builder:
-        condition: service_completed_successfully
       mqtt:
         condition: service_started
     restart: unless-stopped
@@ -88,8 +77,6 @@ configs:
       allow_anonymous true
 
 volumes:
-  firmware_data:
-    name: musicbox_firmware
   musicbox_data:
     name: musicbox_data
   mosquitto_data:

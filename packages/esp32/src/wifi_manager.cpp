@@ -1,4 +1,5 @@
 #include "wifi_manager.h"
+#include "device_config.h"
 #include <WiFi.h>
 
 // State
@@ -49,7 +50,8 @@ void wifi_init(WifiConnectedCallback on_connected, WifiDisconnectedCallback on_d
     // Device starts immediately, WiFi connects in background
     Serial.println("[WiFi] Connecting (non-blocking)...");
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    const DeviceConfig* cfg = config_get();
+    WiFi.begin(cfg->wifi_ssid, cfg->wifi_pass);
 
     // Brief wait to give WiFi a chance to connect quickly
     // But don't block for long - device should be usable offline
@@ -71,8 +73,9 @@ void wifi_loop() {
     last_reconnect_attempt = now;
     Serial.printf("[WiFi] Reconnecting (backoff: %ds)...\n", reconnect_delay / 1000);
 
+    const DeviceConfig* cfg = config_get();
     WiFi.disconnect();
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    WiFi.begin(cfg->wifi_ssid, cfg->wifi_pass);
 
     reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay);
 }
