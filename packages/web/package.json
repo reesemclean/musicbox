@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite dev --port 3000",
     "build": "vite build",
+    "start": "node .output/server/index.mjs",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "db:migrate": "tsx src/db/migrate.ts",
@@ -36,8 +37,8 @@
     "lucide-react": "^0.561.0",
     "mqtt": "^5.15.0",
     "music-metadata": "^11.11.2",
+    "nitro": "npm:nitro-nightly@latest",
     "openapi-fetch": "^0.15.0",
-
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "rss-parser": "^3.13.0",
