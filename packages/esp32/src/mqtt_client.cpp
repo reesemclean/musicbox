@@ -3,7 +3,6 @@
 #include "sd_cache.h"
 #include "audio_player.h"
 #include <WiFi.h>
-#include <ESPmDNS.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -73,33 +72,14 @@ void mqtt_init() {
 }
 
 bool mqtt_discover_broker() {
-    Serial.println("[MQTT] Discovering broker via mDNS...");
-
-    if (MDNS.begin("musicbox-device")) {
-        // Look for MQTT service
-        int n = MDNS.queryService("mqtt", "tcp");
-        if (n > 0) {
-            // Use first discovered broker
-            brokerHost = MDNS.IP(0).toString();
-            brokerPort = MDNS.port(0);
-            brokerDiscovered = true;
-            Serial.printf("[MQTT] Discovered broker via mDNS: %s:%d\n", brokerHost.c_str(), brokerPort);
-            MDNS.end();
-            return true;
-        }
-        MDNS.end();
-    }
-
-    // Fall back to configured broker
     #if defined(MQTT_BROKER_HOST)
-    Serial.println("[MQTT] mDNS discovery failed, using configured broker");
     brokerHost = MQTT_BROKER_HOST;
     brokerPort = MQTT_BROKER_PORT;
     brokerDiscovered = true;
-    Serial.printf("[MQTT] Using configured broker: %s:%d\n", brokerHost.c_str(), brokerPort);
+    Serial.printf("[MQTT] Broker: %s:%d\n", brokerHost.c_str(), brokerPort);
     return true;
     #else
-    Serial.println("[MQTT] No MQTT broker found and no fallback configured");
+    Serial.println("[MQTT] No MQTT broker configured");
     return false;
     #endif
 }

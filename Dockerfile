@@ -25,7 +25,7 @@ FROM base AS production
 WORKDIR /app
 
 # Copy build output
-COPY --from=builder /app/packages/web/.output ./
+COPY --from=builder /app/packages/web/dist ./dist
 
 # Copy runtime files
 COPY packages/web/drizzle ./drizzle
@@ -51,4 +51,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "server/index.mjs"]
+CMD ["node", "dist/server/server.js"]

@@ -9,8 +9,10 @@
 
 FROM nixos/nix:latest
 
-# Enable flakes
-RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
+# Enable flakes, use only official cache (skip FlakeHub which requires registration)
+RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf && \
+    echo "substituters = https://cache.nixos.org" >> /etc/nix/nix.conf && \
+    echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" >> /etc/nix/nix.conf
 
 WORKDIR /build
 

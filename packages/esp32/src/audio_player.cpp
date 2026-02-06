@@ -130,11 +130,11 @@ static PlaybackStatusCallback on_playback_status = nullptr;
 // Internal functions (run on Core 0)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Download a file from server to SD card
+// Download a file from server to SD card (skips if already exists)
 static bool downloadSoundToSD(const char* urlPath, const char* sdPath) {
-    // Always re-download to ensure files are valid
+    // Skip if file already exists on SD
     if (SD.exists(sdPath)) {
-        SD.remove(sdPath);
+        return true;
     }
 
     char fullUrl[256];

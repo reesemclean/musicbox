@@ -89,13 +89,6 @@ void onWifiConnected() {
         audio_download_sounds();
     }
 
-    // Check for firmware updates
-    static bool update_checked = false;
-    if (!update_checked) {
-        update_checked = true;
-        ota_check_for_update();
-    }
-
     // Discover and connect to MQTT broker
     if (!mqtt_broker_found) {
         mqtt_broker_found = mqtt_discover_broker();
