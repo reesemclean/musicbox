@@ -65,8 +65,27 @@ services:
     volumes:
       - mosquitto_data:/mosquitto/data
       - mosquitto_logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_config:/mosquitto/config
+    configs:
+      - source: mosquitto_conf
+        target: /mosquitto/config/mosquitto.conf
     restart: unless-stopped
+
+configs:
+  mosquitto_conf:
+    content: |
+      persistence true
+      persistence_location /mosquitto/data/
+      log_dest stdout
+      log_type error
+      log_type warning
+      log_type notice
+      log_type information
+      listener 1883
+      allow_anonymous true
+      listener 9001
+      protocol websockets
+      allow_anonymous true
 
 volumes:
   firmware_data:
@@ -77,3 +96,5 @@ volumes:
     name: mosquitto_data
   mosquitto_logs:
     name: mosquitto_logs
+  mosquitto_config:
+    name: mosquitto_config

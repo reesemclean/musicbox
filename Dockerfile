@@ -27,6 +27,10 @@ WORKDIR /app
 # Copy build output
 COPY --from=builder /app/packages/web/dist ./dist
 
+# Install production dependencies
+COPY packages/web/package*.json ./
+RUN npm ci --omit=dev
+
 # Copy runtime files
 COPY packages/web/drizzle ./drizzle
 COPY packages/web/seed-data ./seed-data
