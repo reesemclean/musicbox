@@ -17,8 +17,7 @@ services:
       - WIFI_PASS=${WIFI_PASS}
       - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-mqtt}
       - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
-      - API_HOST=${API_HOST:-musicbox}
-      - API_PORT=${API_PORT:-3000}
+      - API_BASE_URL=${API_BASE_URL:-http://musicbox:3000}
       - FIRMWARE_VERSION=${FIRMWARE_VERSION:-dev}
     volumes:
       - firmware_data:/firmware

@@ -566,9 +566,9 @@ void sd_cache_sync_with_cards() {
         int mediaId = wantedIds[i];
         if (!sd_cache_has(mediaId)) {
             // Build URL and queue download
-            char url[128];
-            snprintf(url, sizeof(url), "http://%s:%d/api/media/stream/%d",
-                     API_HOST, API_PORT, mediaId);
+            char url[256];
+            snprintf(url, sizeof(url), "%s/api/media/stream/%d",
+                     API_BASE_URL, mediaId);
             sd_cache_queue_download(mediaId, url);
             queuedDownloads++;
         }

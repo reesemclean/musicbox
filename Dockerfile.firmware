@@ -4,7 +4,7 @@
 #
 # Env vars (provided via docker-compose):
 #   WIFI_SSID, WIFI_PASS, MQTT_BROKER_HOST, MQTT_BROKER_PORT,
-#   API_HOST, API_PORT, FIRMWARE_VERSION
+#   API_BASE_URL, FIRMWARE_VERSION
 # ============================================================================
 
 FROM nixos/nix:latest

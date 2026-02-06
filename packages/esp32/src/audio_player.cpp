@@ -138,7 +138,7 @@ static bool downloadSoundToSD(const char* urlPath, const char* sdPath) {
     }
 
     char fullUrl[256];
-    snprintf(fullUrl, sizeof(fullUrl), "http://%s:%d%s", API_HOST, API_PORT, urlPath);
+    snprintf(fullUrl, sizeof(fullUrl), "%s%s", API_BASE_URL, urlPath);
 
     Serial.printf("[Audio] Downloading %s...\n", fullUrl);
 

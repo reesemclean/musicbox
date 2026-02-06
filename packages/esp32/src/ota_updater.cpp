@@ -98,7 +98,7 @@ bool ota_check_for_update() {
 
     HTTPClient http;
     char url[128];
-    snprintf(url, sizeof(url), "http://%s:%d/api/firmware/latest", API_HOST, API_PORT);
+    snprintf(url, sizeof(url), "%s/api/firmware/latest", API_BASE_URL);
 
     http.begin(url);
     http.setTimeout(10000);

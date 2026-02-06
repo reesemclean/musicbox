@@ -10,7 +10,7 @@ env:
 
 jobs:
   build-docker:
-    name: Build Docker Image & Release
+    name: Build Docker Images & Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -26,8 +26,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
+      # Web app image
+      - name: Extract metadata (web)
+        id: meta-web
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}
@@ -36,14 +37,34 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push image
+      - name: Build and push web image
         uses: docker/build-push-action@v5
         with:
           context: .
           target: production
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+
+      # Firmware builder image
+      - name: Extract metadata (firmware-builder)
+        id: meta-firmware
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-firmware-builder
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push firmware-builder image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.firmware
+          push: true
+          tags: ${{ steps.meta-firmware.outputs.tags }}
+          labels: ${{ steps.meta-firmware.outputs.labels }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1

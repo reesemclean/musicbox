@@ -1,10 +1,8 @@
-name: Build and Publish Docker Image (Manual)
+name: Build and Publish Docker Images (Manual)
 
 # NOTE: For production releases, use git tags instead:
 #   git tag v1.0.0 && git push origin v1.0.0
-# This triggers the release.yml workflow which builds the image and creates a release.
-#
-# Firmware is built at deploy time via docker-compose (firmware-builder service).
+# This triggers the release.yml workflow which builds the images and creates a release.
 
 on:
   workflow_dispatch:
@@ -19,7 +17,7 @@ env:
 
 jobs:
   build:
-    name: Build Docker Image
+    name: Build Docker Images
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,8 +33,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
+      # Web app image
+      - name: Extract metadata (web)
+        id: meta-web
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}
@@ -44,11 +43,30 @@ jobs:
             type=raw,value=${{ github.event.inputs.tag }}
             type=sha,prefix=
 
-      - name: Build and push image
+      - name: Build and push web image
         uses: docker/build-push-action@v5
         with:
           context: .
           target: production
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+
+      # Firmware builder image
+      - name: Extract metadata (firmware-builder)
+        id: meta-firmware
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-firmware-builder
+          tags: |
+            type=raw,value=${{ github.event.inputs.tag }}
+            type=sha,prefix=
+
+      - name: Build and push firmware-builder image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.firmware
+          push: true
+          tags: ${{ steps.meta-firmware.outputs.tags }}
+          labels: ${{ steps.meta-firmware.outputs.labels }}
