@@ -4,11 +4,12 @@ import { db } from '../db/index.js'
 import { media } from '../db/schema.js'
 import { eq, and } from 'drizzle-orm'
 
+const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data')
 const SOUNDMACHINE_SEED_DIR = join(process.cwd(), 'seed-data', 'soundmachine')
-const SOUNDMACHINE_DATA_DIR = join(process.cwd(), 'data', 'soundmachine')
+const SOUNDMACHINE_DATA_DIR = join(DATA_DIR, 'soundmachine')
 
 const SYSTEM_SOUNDS_SEED_DIR = join(process.cwd(), 'seed-data', 'system-sounds')
-const SYSTEM_SOUNDS_DATA_DIR = join(process.cwd(), 'data', 'sounds')
+const SYSTEM_SOUNDS_DATA_DIR = join(DATA_DIR, 'sounds')
 
 /**
  * Seeds sound machine files and database entries.

@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/db/index.js'
 import { media } from '@/db/schema.js'
 
-const DATA_DIR = join(process.cwd(), 'data')
+const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data')
 
 export const Route = createFileRoute('/api/media/stream/$id')({
   server: {

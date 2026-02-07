@@ -62,7 +62,6 @@ services:
     volumes:
       - mosquitto_data:/mosquitto/data
       - mosquitto_logs:/mosquitto/log
-      - mosquitto_config:/mosquitto/config
     configs:
       - source: mosquitto_conf
         target: /mosquitto/config/mosquitto.conf
@@ -91,5 +90,3 @@ volumes:
     name: mosquitto_data
   mosquitto_logs:
     name: mosquitto_logs
-  mosquitto_config:
-    name: mosquitto_config
