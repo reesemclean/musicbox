@@ -22,7 +22,8 @@ RUN cd packages/esp32 && FIRMWARE_VERSION=${FIRMWARE_VERSION} pio run
 
 # --- Web Build Stage ---
 FROM node:24-alpine AS base
-RUN apk add --no-cache tini python3 curl
+RUN apk add --no-cache tini python3 py3-pip curl ffmpeg && \
+    pip install --no-cache-dir --break-system-packages ytmusicapi yt-dlp
 
 FROM node:24-alpine AS builder
 

@@ -21,16 +21,16 @@
 
 services:
   musicbox:
-    image: ghcr.io/reesemclean/musicbox:latest
+    image: ghcr.io/reesemclean/musicbox:dev
     ports:
-      - "3000:3000"
+      - "${MUSICBOX_PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
       - DATABASE_URL=/data/musicbox.db
       - DATA_DIR=/data
       - MQTT_BROKER_URL=mqtt://mqtt:1883
-      - API_BASE_URL=http://musicbox:3000
-      - VITE_MQTT_WS_URL=ws://localhost:9001
+      - API_BASE_URL=${API_BASE_URL:-http://musicbox:3000}
+      - VITE_MQTT_WS_URL=${VITE_MQTT_WS_URL:-ws://localhost:9001}
       - DEVICE_MQTT_HOST=${DEVICE_MQTT_HOST:-localhost}
       - DEVICE_MQTT_PORT=${DEVICE_MQTT_PORT:-1883}
     volumes:
@@ -40,7 +40,15 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:3000",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -49,8 +57,8 @@ services:
   mqtt:
     image: eclipse-mosquitto:2
     ports:
-      - "1883:1883"   # MQTT protocol
-      - "9001:9001"   # WebSocket for browser clients
+      - "1883:1883" # MQTT protocol
+      - "9001:9001" # WebSocket for browser clients
     volumes:
       - mosquitto_data:/mosquitto/data
       - mosquitto_logs:/mosquitto/log

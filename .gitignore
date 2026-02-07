@@ -16,5 +16,4 @@ result
 # macOS
 .DS_Store
 
-secrets.h
 .env
