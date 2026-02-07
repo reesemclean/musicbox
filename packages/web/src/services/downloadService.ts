@@ -7,7 +7,7 @@ import { db } from '../db/index.js'
 import { downloadQueue, media, playlists, playlistMedia } from '../db/schema.js'
 import { getAlbum } from './ytmusicService.js'
 
-const DATA_ROOT = path.join(process.cwd(), 'data')
+const DATA_ROOT = process.env.DATA_DIR || path.join(process.cwd(), 'data')
 
 /**
  * Queue a song for download from YouTube Music

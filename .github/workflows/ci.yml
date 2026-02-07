@@ -17,20 +17,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-
-      - name: Setup Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/web/package-lock.json
 
       - name: Install dependencies
-        run: nix develop --command npm ci
+        run: npm ci
 
       - name: Build
-        run: nix develop --command npm run build
+        run: npm run build
 
       - name: Test
-        run: nix develop --command npm run test
+        run: npm run test
 
   esp32:
     name: ESP32 Firmware
@@ -42,11 +42,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
-      - name: Setup Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Install PlatformIO
+        run: pip install platformio
 
       - name: Build firmware
-        run: nix develop --command pio run
+        run: pio run

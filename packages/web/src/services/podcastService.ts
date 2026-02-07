@@ -6,7 +6,7 @@ import { eq, desc, inArray } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { podcastFeeds, media } from '../db/schema.js'
 
-const DATA_ROOT = path.join(process.cwd(), 'data')
+const DATA_ROOT = process.env.DATA_DIR || path.join(process.cwd(), 'data')
 const parser = new Parser()
 
 interface PodcastMetadata {

@@ -52,7 +52,7 @@ export const deleteMedia = createServerFn({ method: 'POST' })
     // Delete file from disk
     const { existsSync, unlinkSync } = await import('node:fs')
     const { join } = await import('node:path')
-    const fullPath = join(process.cwd(), 'data', item.filePath)
+    const fullPath = join(process.env.DATA_DIR || join(process.cwd(), 'data'), item.filePath)
     if (existsSync(fullPath)) {
       unlinkSync(fullPath)
     }
