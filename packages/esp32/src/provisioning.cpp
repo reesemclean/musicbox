@@ -27,9 +27,10 @@ bool provisioning_start() {
 
     if (connected) {
         // Save WiFi credentials
-        const char* ssid = wm.getWiFiSSID().c_str();
-        const char* pass = wm.getWiFiPass().c_str();
-        config_set_wifi(ssid, pass);
+        // Keep String objects alive so c_str() pointers remain valid
+        String ssid = wm.getWiFiSSID();
+        String pass = wm.getWiFiPass();
+        config_set_wifi(ssid.c_str(), pass.c_str());
 
         // Save server URL
         const char* serverUrl = serverUrlParam.getValue();

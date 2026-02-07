@@ -20,6 +20,7 @@ import { Route as LibraryPlaylistsIndexRouteImport } from './routes/_library/pla
 import { Route as ApiSoundsFilenameRouteImport } from './routes/api/sounds/$filename'
 import { Route as ApiFirmwareLatestRouteImport } from './routes/api/firmware/latest'
 import { Route as ApiFirmwareDownloadRouteImport } from './routes/api/firmware/download'
+import { Route as ApiDeviceConfigRouteImport } from './routes/api/device/config'
 import { Route as LibraryPlaylistsPlaylistIdRouteImport } from './routes/_library/playlists.$playlistId'
 import { Route as ApiSoundmachineConfigMacRouteImport } from './routes/api/soundmachine/config/$mac'
 import { Route as ApiMediaStreamIdRouteImport } from './routes/api/media/stream/$id'
@@ -79,6 +80,11 @@ const ApiFirmwareDownloadRoute = ApiFirmwareDownloadRouteImport.update({
   path: '/api/firmware/download',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDeviceConfigRoute = ApiDeviceConfigRouteImport.update({
+  id: '/api/device/config',
+  path: '/api/device/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LibraryPlaylistsPlaylistIdRoute =
   LibraryPlaylistsPlaylistIdRouteImport.update({
     id: '/$playlistId',
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/playlists': typeof LibraryPlaylistsRouteWithChildren
   '/podcasts': typeof LibraryPodcastsRoute
   '/playlists/$playlistId': typeof LibraryPlaylistsPlaylistIdRoute
+  '/api/device/config': typeof ApiDeviceConfigRoute
   '/api/firmware/download': typeof ApiFirmwareDownloadRoute
   '/api/firmware/latest': typeof ApiFirmwareLatestRoute
   '/api/sounds/$filename': typeof ApiSoundsFilenameRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/podcasts': typeof LibraryPodcastsRoute
   '/': typeof LibraryIndexRoute
   '/playlists/$playlistId': typeof LibraryPlaylistsPlaylistIdRoute
+  '/api/device/config': typeof ApiDeviceConfigRoute
   '/api/firmware/download': typeof ApiFirmwareDownloadRoute
   '/api/firmware/latest': typeof ApiFirmwareLatestRoute
   '/api/sounds/$filename': typeof ApiSoundsFilenameRoute
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/_library/podcasts': typeof LibraryPodcastsRoute
   '/_library/': typeof LibraryIndexRoute
   '/_library/playlists/$playlistId': typeof LibraryPlaylistsPlaylistIdRoute
+  '/api/device/config': typeof ApiDeviceConfigRoute
   '/api/firmware/download': typeof ApiFirmwareDownloadRoute
   '/api/firmware/latest': typeof ApiFirmwareLatestRoute
   '/api/sounds/$filename': typeof ApiSoundsFilenameRoute
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/playlists'
     | '/podcasts'
     | '/playlists/$playlistId'
+    | '/api/device/config'
     | '/api/firmware/download'
     | '/api/firmware/latest'
     | '/api/sounds/$filename'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/podcasts'
     | '/'
     | '/playlists/$playlistId'
+    | '/api/device/config'
     | '/api/firmware/download'
     | '/api/firmware/latest'
     | '/api/sounds/$filename'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/_library/podcasts'
     | '/_library/'
     | '/_library/playlists/$playlistId'
+    | '/api/device/config'
     | '/api/firmware/download'
     | '/api/firmware/latest'
     | '/api/sounds/$filename'
@@ -204,6 +216,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   LibraryRoute: typeof LibraryRouteWithChildren
+  ApiDeviceConfigRoute: typeof ApiDeviceConfigRoute
   ApiFirmwareDownloadRoute: typeof ApiFirmwareDownloadRoute
   ApiFirmwareLatestRoute: typeof ApiFirmwareLatestRoute
   ApiSoundsFilenameRoute: typeof ApiSoundsFilenameRoute
@@ -291,6 +304,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiFirmwareDownloadRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/device/config': {
+      id: '/api/device/config'
+      path: '/api/device/config'
+      fullPath: '/api/device/config'
+      preLoaderRoute: typeof ApiDeviceConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_library/playlists/$playlistId': {
       id: '/_library/playlists/$playlistId'
       path: '/$playlistId'
@@ -358,6 +378,7 @@ const LibraryRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   LibraryRoute: LibraryRouteWithChildren,
+  ApiDeviceConfigRoute: ApiDeviceConfigRoute,
   ApiFirmwareDownloadRoute: ApiFirmwareDownloadRoute,
   ApiFirmwareLatestRoute: ApiFirmwareLatestRoute,
   ApiSoundsFilenameRoute: ApiSoundsFilenameRoute,

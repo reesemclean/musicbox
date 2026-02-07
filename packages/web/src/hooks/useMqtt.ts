@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import mqtt, { type MqttClient } from 'mqtt'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { getMqttConfig } from '@/server/mqtt'
 
 // Event types from devices (matching server-side types)
 export interface CardScannedEvent {
@@ -163,8 +164,13 @@ export function useMqtt({ onEvent, enabled = true }: UseMqttOptions = {}) {
 
     mqttManager.setQueryClient(queryClient)
 
-    const wsUrl = import.meta.env.VITE_MQTT_WS_URL || 'ws://localhost:9001'
-    mqttManager.connect(wsUrl)
+    getMqttConfig()
+      .then((config) => {
+        mqttManager.connect(config.wsUrl)
+      })
+      .catch(() => {
+        mqttManager.connect(`ws://${window.location.hostname}:9001`)
+      })
 
     const listener: EventListener = (event) => {
       onEventRef.current?.(event)
