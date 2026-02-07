@@ -5,9 +5,8 @@
 compile_commands.json
 .cache/
 
-# Nix/direnv
-.direnv/
-result
+# mise
+.venv/
 
 # IDE
 .vscode/

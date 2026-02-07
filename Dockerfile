@@ -3,10 +3,12 @@
 # Unified build - Web + API + embedded firmware in single package.
 # Firmware is now generic (no baked-in network config), built once at image
 # build time and served for OTA updates.
+#
+# NOTE: Keep Python/Node versions in sync with .mise.toml
 # ============================================================================
 
 # --- Firmware Build Stage ---
-FROM python:3.12 AS firmware-builder
+FROM python:3.13 AS firmware-builder
 
 RUN pip install --no-cache-dir platformio
 
@@ -22,8 +24,10 @@ RUN cd packages/esp32 && FIRMWARE_VERSION=${FIRMWARE_VERSION} pio run
 
 # --- Web Build Stage ---
 FROM node:24-alpine AS base
+COPY requirements.txt /tmp/requirements.txt
 RUN apk add --no-cache tini python3 py3-pip curl ffmpeg && \
-    pip install --no-cache-dir --break-system-packages ytmusicapi yt-dlp
+    pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && \
+    rm /tmp/requirements.txt
 
 FROM node:24-alpine AS builder
 
