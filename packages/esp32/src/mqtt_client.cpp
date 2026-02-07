@@ -7,6 +7,7 @@
 #include <HTTPClient.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <esp_mac.h>
 
 // WiFi client for MQTT
 static WiFiClient wifiClient;
@@ -45,9 +46,9 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length);
 static void publishRegistration();
 
 void mqtt_init() {
-    // Get MAC address
+    // Get MAC address from hardware eFuse (works before WiFi init)
     uint8_t mac[6];
-    WiFi.macAddress(mac);
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
     char macStr[18];
     snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);

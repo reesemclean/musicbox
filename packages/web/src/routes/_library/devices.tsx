@@ -11,6 +11,7 @@ import { getMedia } from '@/server/media'
 import {
   getDevices,
   updateDevice,
+  deleteDevice,
   pauseDevice,
   resumeDevice,
   stopDevice,
@@ -106,18 +107,20 @@ function PendingDeviceCard({ device }: { device: Device }) {
     },
   })
 
-  const rejectMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: async () => {
-      await updateDevice({ data: { id: device.id, status: 'rejected' } })
+      await deleteDevice({ data: { id: device.id } })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] })
-      toast.success(`Device ${device.name || device.mac} rejected`)
+      toast.success(`Device ${device.name || device.mac} deleted`)
     },
     onError: () => {
-      toast.error('Failed to reject device')
+      toast.error('Failed to delete device')
     },
   })
+
+  const isLoading = approveMutation.isPending || deleteMutation.isPending
 
   return (
     <div className="border border-yellow-200 dark:border-yellow-900 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg p-4">
@@ -144,18 +147,22 @@ function PendingDeviceCard({ device }: { device: Device }) {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            onClick={() => rejectMutation.mutate()}
-            disabled={rejectMutation.isPending || approveMutation.isPending}
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => {
+              if (confirm(`Delete device ${device.name || device.mac}?`)) {
+                deleteMutation.mutate()
+              }
+            }}
+            disabled={isLoading}
           >
-            <X className="h-4 w-4 mr-1" />
-            Reject
+            <Trash2 className="h-4 w-4" />
           </Button>
           <Button
             size="sm"
             onClick={() => approveMutation.mutate()}
-            disabled={rejectMutation.isPending || approveMutation.isPending}
+            disabled={isLoading}
           >
             <Check className="h-4 w-4 mr-1" />
             Approve
@@ -205,10 +212,24 @@ function DevicesTable({ devices }: { devices: Device[] }) {
 
 function DeviceRow({ device }: { device: Device }) {
   const [expanded, setExpanded] = useState(false)
+  const queryClient = useQueryClient()
   const isOnline = getIsOnline(device.lastSeen)
   const canControl = device.status === 'approved' && isOnline
   const playback = device.playback
   const isPlaying = playback?.status === 'playing'
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await deleteDevice({ data: { id: device.id } })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      toast.success(`Device ${device.name || device.mac} deleted`)
+    },
+    onError: () => {
+      toast.error('Failed to delete device')
+    },
+  })
 
   return (
     <>
@@ -261,13 +282,29 @@ function DeviceRow({ device }: { device: Device }) {
           )}
         </td>
         <td className="px-4 py-3">
-          {canControl && (
-            expanded ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )
-          )}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (confirm(`Delete device ${device.name || device.mac}?`)) {
+                  deleteMutation.mutate()
+                }
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            {canControl && (
+              expanded ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )
+            )}
+          </div>
         </td>
       </tr>
       {expanded && canControl && (

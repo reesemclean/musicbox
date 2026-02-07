@@ -14,8 +14,8 @@
 
 // Button pins
 #define BTN_PLAY   11
-#define BTN_VOL_UP 14
-#define BTN_VOL_DN 13
+#define BTN_VOL_UP 13
+#define BTN_VOL_DN 14
 #define BTN_NEXT   12
 #define BTN_PREV   10
 
@@ -332,8 +332,13 @@ void setup() {
         return;  // Won't reach here
     }
 
-    // Enable task watchdog
-    esp_task_wdt_init(WDT_TIMEOUT, true);
+    // Enable task watchdog (ESP-IDF 5.x API)
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = WDT_TIMEOUT * 1000,
+        .idle_core_mask = 0,
+        .trigger_panic = true,
+    };
+    esp_task_wdt_reconfigure(&wdt_config);
     esp_task_wdt_add(NULL);
     LOG_I(MOD_SYS, "Watchdog enabled (%ds)", WDT_TIMEOUT);
 

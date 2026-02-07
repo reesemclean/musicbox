@@ -1,4 +1,5 @@
 #include "nfc_reader.h"
+#include <Wire.h>
 #include <Adafruit_PN532.h>
 
 // I2C pins for PN532
@@ -31,6 +32,7 @@ static CardScannedCallback on_card_scanned_cb = nullptr;
 
 bool nfc_init() {
     Serial.println("[NFC] Initializing PN532...");
+    Wire.begin(PN532_SDA, PN532_SCL);
     nfc.begin();
 
     uint32_t versiondata = nfc.getFirmwareVersion();
