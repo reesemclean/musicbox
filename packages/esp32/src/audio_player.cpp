@@ -763,6 +763,7 @@ bool audio_init() {
 
     // Initialize I2S audio
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+    audio.forceMono(true);  // Mix L+R for single speaker setup
     audio.setVolume(current_volume);
     audio.setConnectionTimeout(2000, 2700);
 

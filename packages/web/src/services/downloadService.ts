@@ -90,6 +90,7 @@ async function processDownload(queueId: number) {
       '--extract-audio',
       '--audio-format', 'mp3',
       '--audio-quality', '0',
+      '--postprocessor-args', 'ffmpeg:-ac 1',  // mix to mono for single-speaker playback
       '--extractor-args', 'youtube:player_client=android',
       '--no-playlist',
       '--output', outputPath.replace('.mp3', '.%(ext)s'),

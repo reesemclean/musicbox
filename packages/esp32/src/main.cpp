@@ -13,11 +13,11 @@
 #include "ota_updater.h"
 
 // Button pins
-#define BTN_PLAY   10
-#define BTN_VOL_UP 11
-#define BTN_VOL_DN 12
-#define BTN_NEXT   13
-#define BTN_PREV   14
+#define BTN_PLAY   11
+#define BTN_VOL_UP 14
+#define BTN_VOL_DN 13
+#define BTN_NEXT   12
+#define BTN_PREV   10
 
 // Watchdog timeout (seconds)
 #define WDT_TIMEOUT 30
