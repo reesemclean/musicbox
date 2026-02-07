@@ -248,7 +248,7 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         }
         // Handle maxVolume setting
         if (doc["maxVolume"].is<int>()) {
-            int maxVol = doc["maxVolume"] | 21;
+            int maxVol = doc["maxVolume"] | 42;
             audio_set_max_volume(maxVol);
             Serial.printf("[MQTT] Max volume set to: %d\n", maxVol);
         }
@@ -306,6 +306,12 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         const char* uid = doc["uid"];
         card_cache_remove(uid);
         sd_cache_sync_with_cards();  // Evict orphaned files
+    }
+    else if (strcmp(command, "clear_cache") == 0) {
+        Serial.println("[MQTT] Clear cache command received");
+        card_cache_clear();
+        sd_cache_clear();
+        Serial.println("[MQTT] Cache cleared");
     }
     else if (strcmp(command, "error_sound") == 0 && onErrorSoundCb) {
         onErrorSoundCb();

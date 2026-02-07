@@ -86,7 +86,7 @@ static volatile AudioState state = AUDIO_IDLE;
 static volatile int current_media_id = -1;
 static bool current_is_sd_file = false;
 static int current_volume = 10;
-static int max_volume = 21;  // Default: no limit
+static int max_volume = 42;  // Default: no limit
 static bool playing_system_sound = false;
 
 // Sound machine mode (looping playback)
@@ -764,6 +764,7 @@ bool audio_init() {
     // Initialize I2S audio
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     audio.forceMono(true);  // Mix L+R for single speaker setup
+    audio.setVolumeSteps(42);
     audio.setVolume(current_volume);
     audio.setConnectionTimeout(2000, 2700);
 

@@ -86,7 +86,7 @@ export interface StopCommand {
 
 export interface VolumeCommand {
   command: 'volume'
-  level: number // 0-21
+  level: number // 0-42
 }
 
 export interface OtaCommand {
@@ -103,7 +103,11 @@ export interface SoundMachineCommand {
   volume: number | null
 }
 
-export type DeviceCommand = PlayCommand | QueueCommand | PauseCommand | ResumeCommand | StopCommand | VolumeCommand | OtaCommand | SoundMachineCommand
+export interface ClearCacheCommand {
+  command: 'clear_cache'
+}
+
+export type DeviceCommand = PlayCommand | QueueCommand | PauseCommand | ResumeCommand | StopCommand | VolumeCommand | OtaCommand | SoundMachineCommand | ClearCacheCommand
 
 // Playback status store (in-memory, keyed by MAC with colons)
 export interface PlaybackStatus {
@@ -527,7 +531,7 @@ class MqttService extends EventEmitter {
     this.publish(TOPICS.deviceCommands(macForTopic), {
       command: 'config',
       status: 'approved',
-      maxVolume: device?.maxVolume ?? 21,
+      maxVolume: device?.maxVolume ?? 42,
     })
 
     // Sync all cards to the device
@@ -724,6 +728,10 @@ class MqttService extends EventEmitter {
 
   triggerOta(mac: string, url: string, version: string, sha256: string): void {
     this.sendCommand(mac, { command: 'ota', url, version, sha256 })
+  }
+
+  clearCache(mac: string): void {
+    this.sendCommand(mac, { command: 'clear_cache' })
   }
 
   isConnected(): boolean {

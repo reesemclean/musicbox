@@ -62,7 +62,7 @@ export const updateDevice = createServerFn({ method: 'POST' })
       mqttService.publish(TOPICS.deviceCommands(macForTopic), {
         command: 'config',
         status: 'approved',
-        maxVolume: updated.maxVolume ?? 21,
+        maxVolume: updated.maxVolume ?? 42,
       })
       console.log(`[Devices] Sent approval to device ${updated.mac}`)
       // Sync cards after approval
@@ -74,9 +74,9 @@ export const updateDevice = createServerFn({ method: 'POST' })
       const macForTopic = updated.mac.replace(/:/g, '')
       mqttService.publish(TOPICS.deviceCommands(macForTopic), {
         command: 'config',
-        maxVolume: updated.maxVolume ?? 21,
+        maxVolume: updated.maxVolume ?? 42,
       })
-      console.log(`[Devices] Sent maxVolume update to device ${updated.mac}: ${updated.maxVolume ?? 21}`)
+      console.log(`[Devices] Sent maxVolume update to device ${updated.mac}: ${updated.maxVolume ?? 42}`)
     }
 
     return updated
@@ -148,5 +148,17 @@ export const triggerDeviceUpdate = createServerFn({ method: 'POST' })
 
     const macForTopic = device.mac.replace(/:/g, '')
     mqttService.publish(TOPICS.deviceCommands(macForTopic), { command: 'check_update' })
+    return { success: true }
+  })
+
+export const clearDeviceCache = createServerFn({ method: 'POST' })
+  .inputValidator((data: { id: number }) => data)
+  .handler(async ({ data }) => {
+    const [device] = await db.select().from(devices).where(eq(devices.id, data.id)).limit(1)
+    if (!device) throw new Error('Device not found')
+    if (device.status !== 'approved') throw new Error('Device not approved')
+
+    const macForTopic = device.mac.replace(/:/g, '')
+    mqttService.clearCache(macForTopic)
     return { success: true }
   })

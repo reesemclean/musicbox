@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 // Note: useEffect kept for DeviceRemoteControl component
-import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, X, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield } from 'lucide-react'
+import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, X, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -16,6 +16,7 @@ import {
   stopDevice,
   setDeviceVolume,
   triggerDeviceUpdate,
+  clearDeviceCache,
 } from '@/server/devices'
 import { getFirmwareInfo } from '@/server/firmware'
 
@@ -294,7 +295,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
   const { data: firmware } = useQuery(firmwareQueryOptions)
 
   const [soundMachineVolume, setSoundMachineVolume] = useState(device.soundMachineVolume ?? 10)
-  const [maxVolume, setMaxVolume] = useState(device.maxVolume ?? 21)
+  const [maxVolume, setMaxVolume] = useState(device.maxVolume ?? 42)
 
   // Check if update is available
   const updateAvailable = firmware && device.firmwareVersion && firmware.version !== device.firmwareVersion
@@ -391,6 +392,16 @@ function DeviceRemoteControl({ device }: { device: Device }) {
     volumeMutation.mutate(newVolume)
   }
 
+  const clearCacheMutation = useMutation({
+    mutationFn: async () => {
+      await clearDeviceCache({ data: { id: device.id } })
+    },
+    onSuccess: () => {
+      toast.success('Cache cleared')
+    },
+    onError: () => toast.error('Failed to clear cache'),
+  })
+
   // Track if update was triggered (persists across re-renders during OTA)
   const [updateTriggered, setUpdateTriggered] = useState(false)
   const [targetVersion, setTargetVersion] = useState<string | null>(null)
@@ -473,7 +484,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
             <Slider
               value={[volume]}
               onValueChange={handleVolumeChange}
-              max={21}
+              max={42}
               step={1}
               className="w-24"
               disabled={updateTriggered}
@@ -513,7 +524,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
               <Slider
                 value={[soundMachineVolume]}
                 onValueChange={handleSoundMachineVolumeChange}
-                max={21}
+                max={42}
                 step={1}
                 className="w-16"
                 disabled={updateTriggered}
@@ -530,7 +541,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
           <Slider
             value={[maxVolume]}
             onValueChange={handleMaxVolumeChange}
-            max={21}
+            max={42}
             min={1}
             step={1}
             className="w-24"
@@ -556,6 +567,20 @@ function DeviceRemoteControl({ device }: { device: Device }) {
           ) : (
             <span className="text-xs text-green-600 dark:text-green-400">Up to date</span>
           )}
+        </div>
+
+        {/* Clear Cache */}
+        <div className="flex items-center gap-3">
+          <Trash2 className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm">SD Cache</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => clearCacheMutation.mutate()}
+            disabled={clearCacheMutation.isPending || updateTriggered}
+          >
+            {clearCacheMutation.isPending ? 'Clearing...' : 'Clear'}
+          </Button>
         </div>
       </div>
     </div>

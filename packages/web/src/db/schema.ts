@@ -87,7 +87,7 @@ export const devices = sqliteTable('devices', {
   lastIp: text('last_ip'),
   soundMachineSound: text('sound_machine_sound'),
   soundMachineVolume: integer('sound_machine_volume'), // 0-21, null = use current volume
-  maxVolume: integer('max_volume'), // 0-21, null = no limit (default 21)
+  maxVolume: integer('max_volume'), // 0-42, null = no limit (default 42)
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 
