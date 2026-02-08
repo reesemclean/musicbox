@@ -18,6 +18,7 @@ import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
 import { Route as LibraryAddSongsRouteImport } from './routes/_library/add-songs'
 import { Route as LibraryPlaylistsIndexRouteImport } from './routes/_library/playlists.index'
 import { Route as ApiSoundsFilenameRouteImport } from './routes/api/sounds/$filename'
+import { Route as ApiMediaUploadRouteImport } from './routes/api/media/upload'
 import { Route as ApiFirmwareLatestRouteImport } from './routes/api/firmware/latest'
 import { Route as ApiFirmwareDownloadRouteImport } from './routes/api/firmware/download'
 import { Route as ApiDeviceConfigRouteImport } from './routes/api/device/config'
@@ -70,6 +71,11 @@ const ApiSoundsFilenameRoute = ApiSoundsFilenameRouteImport.update({
   path: '/api/sounds/$filename',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMediaUploadRoute = ApiMediaUploadRouteImport.update({
+  id: '/api/media/upload',
+  path: '/api/media/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiFirmwareLatestRoute = ApiFirmwareLatestRouteImport.update({
   id: '/api/firmware/latest',
   path: '/api/firmware/latest',
@@ -119,6 +125,7 @@ export interface FileRoutesByFullPath {
   '/api/device/config': typeof ApiDeviceConfigRoute
   '/api/firmware/download': typeof ApiFirmwareDownloadRoute
   '/api/firmware/latest': typeof ApiFirmwareLatestRoute
+  '/api/media/upload': typeof ApiMediaUploadRoute
   '/api/sounds/$filename': typeof ApiSoundsFilenameRoute
   '/playlists/': typeof LibraryPlaylistsIndexRoute
   '/api/cards/lookup/$uid': typeof ApiCardsLookupUidRoute
@@ -135,6 +142,7 @@ export interface FileRoutesByTo {
   '/api/device/config': typeof ApiDeviceConfigRoute
   '/api/firmware/download': typeof ApiFirmwareDownloadRoute
   '/api/firmware/latest': typeof ApiFirmwareLatestRoute
+  '/api/media/upload': typeof ApiMediaUploadRoute
   '/api/sounds/$filename': typeof ApiSoundsFilenameRoute
   '/playlists': typeof LibraryPlaylistsIndexRoute
   '/api/cards/lookup/$uid': typeof ApiCardsLookupUidRoute
@@ -154,6 +162,7 @@ export interface FileRoutesById {
   '/api/device/config': typeof ApiDeviceConfigRoute
   '/api/firmware/download': typeof ApiFirmwareDownloadRoute
   '/api/firmware/latest': typeof ApiFirmwareLatestRoute
+  '/api/media/upload': typeof ApiMediaUploadRoute
   '/api/sounds/$filename': typeof ApiSoundsFilenameRoute
   '/_library/playlists/': typeof LibraryPlaylistsIndexRoute
   '/api/cards/lookup/$uid': typeof ApiCardsLookupUidRoute
@@ -173,6 +182,7 @@ export interface FileRouteTypes {
     | '/api/device/config'
     | '/api/firmware/download'
     | '/api/firmware/latest'
+    | '/api/media/upload'
     | '/api/sounds/$filename'
     | '/playlists/'
     | '/api/cards/lookup/$uid'
@@ -189,6 +199,7 @@ export interface FileRouteTypes {
     | '/api/device/config'
     | '/api/firmware/download'
     | '/api/firmware/latest'
+    | '/api/media/upload'
     | '/api/sounds/$filename'
     | '/playlists'
     | '/api/cards/lookup/$uid'
@@ -207,6 +218,7 @@ export interface FileRouteTypes {
     | '/api/device/config'
     | '/api/firmware/download'
     | '/api/firmware/latest'
+    | '/api/media/upload'
     | '/api/sounds/$filename'
     | '/_library/playlists/'
     | '/api/cards/lookup/$uid'
@@ -219,6 +231,7 @@ export interface RootRouteChildren {
   ApiDeviceConfigRoute: typeof ApiDeviceConfigRoute
   ApiFirmwareDownloadRoute: typeof ApiFirmwareDownloadRoute
   ApiFirmwareLatestRoute: typeof ApiFirmwareLatestRoute
+  ApiMediaUploadRoute: typeof ApiMediaUploadRoute
   ApiSoundsFilenameRoute: typeof ApiSoundsFilenameRoute
   ApiCardsLookupUidRoute: typeof ApiCardsLookupUidRoute
   ApiMediaStreamIdRoute: typeof ApiMediaStreamIdRoute
@@ -288,6 +301,13 @@ declare module '@tanstack/react-router' {
       path: '/api/sounds/$filename'
       fullPath: '/api/sounds/$filename'
       preLoaderRoute: typeof ApiSoundsFilenameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/media/upload': {
+      id: '/api/media/upload'
+      path: '/api/media/upload'
+      fullPath: '/api/media/upload'
+      preLoaderRoute: typeof ApiMediaUploadRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/firmware/latest': {
@@ -381,6 +401,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiDeviceConfigRoute: ApiDeviceConfigRoute,
   ApiFirmwareDownloadRoute: ApiFirmwareDownloadRoute,
   ApiFirmwareLatestRoute: ApiFirmwareLatestRoute,
+  ApiMediaUploadRoute: ApiMediaUploadRoute,
   ApiSoundsFilenameRoute: ApiSoundsFilenameRoute,
   ApiCardsLookupUidRoute: ApiCardsLookupUidRoute,
   ApiMediaStreamIdRoute: ApiMediaStreamIdRoute,

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Music, Search, Loader2, Pencil, Trash2, X, Play, Pause, Plus, Check } from 'lucide-react'
+import { Music, Search, Loader2, Pencil, Trash2, X, Play, Pause, Plus, Check, ChevronRight, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,7 @@ function SongsLibraryPage() {
   const [search, setSearch] = useState('')
   const [groupBy, setGroupBy] = useState<'none' | 'artist' | 'album'>('none')
   const [selectedSongs, setSelectedSongs] = useState<Set<number>>(new Set())
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [editingSong, setEditingSong] = useState<Media | null>(null)
   const [deletingSong, setDeletingSong] = useState<Media | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
@@ -233,34 +234,58 @@ function SongsLibraryPage() {
       {songs.length === 0 && <EmptyState />}
 
       {groupedSongs ? (
-        <div className="space-y-6">
-          {groupedSongs.map(([groupName, groupSongs]) => (
-            <div key={groupName}>
-              <div className="flex items-center gap-3 mb-3 pb-2 border-b border-border">
-                <h2 className="text-xl font-semibold">{groupName}</h2>
-                <span className="text-sm text-muted-foreground">
-                  ({groupSongs.length} song{groupSongs.length !== 1 ? 's' : ''})
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => player.playPlaylist(0, groupSongs.map((s) => s.id))}
+        <div className="space-y-2">
+          {groupedSongs.map(([groupName, groupSongs]) => {
+            const isExpanded = expandedGroups.has(groupName)
+            return (
+              <div key={groupName}>
+                <button
+                  onClick={() => {
+                    const next = new Set(expandedGroups)
+                    if (isExpanded) {
+                      next.delete(groupName)
+                    } else {
+                      next.add(groupName)
+                    }
+                    setExpandedGroups(next)
+                  }}
+                  className="flex items-center gap-3 w-full pb-2 border-b border-border text-left cursor-pointer hover:bg-muted/30 rounded-t px-2 py-2 transition-colors"
                 >
-                  <Play className="h-3 w-3 mr-1" />
-                  Play
-                </Button>
+                  {isExpanded ? (
+                    <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0" />
+                  ) : (
+                    <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                  )}
+                  <h2 className="text-xl font-semibold">{groupName}</h2>
+                  <span className="text-sm text-muted-foreground">
+                    ({groupSongs.length} song{groupSongs.length !== 1 ? 's' : ''})
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      player.playPlaylist(0, groupSongs.map((s) => s.id))
+                    }}
+                  >
+                    <Play className="h-3 w-3 mr-1" />
+                    Play
+                  </Button>
+                </button>
+                {isExpanded && (
+                  <SongsTable
+                    songs={groupSongs}
+                    allSongIds={groupSongs.map((s) => s.id)}
+                    selectedSongs={selectedSongs}
+                    onToggleSelection={toggleSongSelection}
+                    onToggleSelectAll={() => toggleGroupSelection(groupSongs)}
+                    onEdit={setEditingSong}
+                    onDelete={setDeletingSong}
+                  />
+                )}
               </div>
-              <SongsTable
-                songs={groupSongs}
-                allSongIds={groupSongs.map((s) => s.id)}
-                selectedSongs={selectedSongs}
-                onToggleSelection={toggleSongSelection}
-                onToggleSelectAll={() => toggleGroupSelection(groupSongs)}
-                onEdit={setEditingSong}
-                onDelete={setDeletingSong}
-              />
-            </div>
-          ))}
+            )
+          })}
         </div>
       ) : filteredSongs.length > 0 ? (
         <SongsTable

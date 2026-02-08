@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 // Note: useEffect kept for DeviceRemoteControl component
-import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, X, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield, Trash2 } from 'lucide-react'
+import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
