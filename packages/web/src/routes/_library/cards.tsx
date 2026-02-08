@@ -133,28 +133,62 @@ function CardsTable({
   onDelete: (card: Card) => void
 }) {
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <table className="w-full">
-        <thead className="bg-muted/50">
-          <tr className="text-left text-sm text-muted-foreground">
-            <th className="px-4 py-3 font-medium">Card</th>
-            <th className="px-4 py-3 font-medium">UID</th>
-            <th className="px-4 py-3 font-medium">Linked Content</th>
-            <th className="px-4 py-3 font-medium">Volume</th>
-            <th className="px-4 py-3 font-medium w-16"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {cards.map((card) => (
-            <CardRow
-              key={card.id}
-              card={card}
-              onDelete={() => onDelete(card)}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {/* Desktop table */}
+      <div className="hidden md:block border border-border rounded-lg overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-muted/50">
+            <tr className="text-left text-sm text-muted-foreground">
+              <th className="px-4 py-3 font-medium">Card</th>
+              <th className="px-4 py-3 font-medium">UID</th>
+              <th className="px-4 py-3 font-medium">Linked Content</th>
+              <th className="px-4 py-3 font-medium">Volume</th>
+              <th className="px-4 py-3 font-medium w-16"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {cards.map((card) => (
+              <CardRow
+                key={card.id}
+                card={card}
+                onDelete={() => onDelete(card)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-2">
+        {cards.map((card) => {
+          const contentType = getContentType(card)
+          const ContentIcon = getContentIcon(contentType)
+          return (
+            <div key={card.id} className="bg-card rounded-lg border border-border p-3 flex items-center gap-3">
+              <div className="h-10 w-10 bg-muted rounded flex items-center justify-center shrink-0">
+                <CreditCard className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm truncate">{card.name || 'Unnamed Card'}</div>
+                <code className="text-xs text-muted-foreground">{card.uid}</code>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                  <ContentIcon className="h-3 w-3" />
+                  <span>{getContentLabel(card)}</span>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 h-8 w-8 p-0"
+                onClick={() => onDelete(card)}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          )
+        })}
+      </div>
+    </>
   )
 }
 

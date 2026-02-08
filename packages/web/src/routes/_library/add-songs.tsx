@@ -75,7 +75,7 @@ function AddSongsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-6">
         <Button
           variant={activeTab === "youtube" ? "default" : "outline"}
           onClick={() => setActiveTab("youtube")}

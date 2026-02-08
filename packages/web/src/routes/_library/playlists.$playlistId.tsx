@@ -232,9 +232,9 @@ function PlaylistDetailPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 bg-muted rounded-lg flex items-center justify-center">
+          <div className="h-16 w-16 bg-muted rounded-lg flex items-center justify-center shrink-0">
             <ListMusic className="h-8 w-8 text-muted-foreground" />
           </div>
           <div>
@@ -244,7 +244,7 @@ function PlaylistDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {playlistItems.length > 0 && (
             <Button variant="outline" onClick={handlePlayAll}>
               <Play className="h-4 w-4 mr-2" />
@@ -290,7 +290,8 @@ function PlaylistDetailPage() {
           sensors={sensors}
         >
           <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-            <div className="border border-border rounded-lg">
+            {/* Desktop table */}
+            <div className="hidden md:block border border-border rounded-lg">
               <table className="w-full">
                 <thead className="bg-muted/50">
                   <tr className="text-left text-sm text-muted-foreground">
@@ -317,6 +318,22 @@ function PlaylistDetailPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden space-y-2">
+              {playlistItems.map((item, index) => (
+                <SortableMobileCard
+                  key={item.id}
+                  item={item}
+                  isPlaying={player.state.currentMediaId === item.id && player.state.isPlaying}
+                  isCurrent={player.state.currentMediaId === item.id}
+                  onPlay={() => handlePlaySong(index)}
+                  onToggle={player.togglePlayPause}
+                  onRemove={() => removeMutation.mutate(item.id)}
+                  isRemoving={removeMutation.isPending}
+                />
+              ))}
             </div>
           </SortableContext>
         </DndContext>
@@ -427,6 +444,80 @@ function SortableRow({
   )
 }
 
+function SortableMobileCard({
+  item,
+  isPlaying,
+  isCurrent,
+  onPlay,
+  onToggle,
+  onRemove,
+  isRemoving,
+}: {
+  item: PlaylistMedia
+  isPlaying: boolean
+  isCurrent: boolean
+  onPlay: () => void
+  onToggle: () => void
+  onRemove: () => void
+  isRemoving: boolean
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id })
+
+  const hasTransform = transform && (transform.x !== 0 || transform.y !== 0)
+
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition: hasTransform ? transition : undefined,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  const metadata = item.metadata as { artist?: string } | null
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`bg-card rounded-lg border p-3 flex items-center gap-3 ${isCurrent ? 'border-primary/50' : 'border-border'}`}
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing p-1 hover:bg-accent rounded shrink-0"
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 shrink-0"
+        onClick={isCurrent ? onToggle : onPlay}
+      >
+        {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+      </Button>
+      <div className="flex-1 min-w-0">
+        <div className={`font-medium text-sm truncate ${isCurrent ? 'text-primary' : ''}`}>{item.title}</div>
+        <div className="text-xs text-muted-foreground truncate">{metadata?.artist || '—'}</div>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onRemove}
+        disabled={isRemoving}
+        className="shrink-0 h-8 w-8 p-0"
+      >
+        <X className="h-4 w-4 text-destructive" />
+      </Button>
+    </div>
+  )
+}
+
 function AddSongsDialog({
   songs,
   onAdd,
@@ -439,7 +530,7 @@ function AddSongsDialog({
   isAdding: boolean
 }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
       <div className="bg-background border border-border rounded-lg p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Add Songs</h2>
@@ -454,40 +545,31 @@ function AddSongsDialog({
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto border border-border rounded-lg">
-            <table className="w-full">
-              <tbody className="divide-y divide-border">
-                {songs.map((song) => {
-                  const metadata = song.metadata as { artist?: string } | null
-                  return (
-                    <tr key={song.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 bg-muted rounded flex items-center justify-center">
-                            <Music className="h-5 w-5 text-muted-foreground" />
-                          </div>
-                          <div>
-                            <div className="font-medium">{song.title}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {metadata?.artist || 'Unknown artist'}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          size="sm"
-                          onClick={() => onAdd(song.id)}
-                          disabled={isAdding}
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Add
-                        </Button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            {songs.map((song) => {
+              const metadata = song.metadata as { artist?: string } | null
+              return (
+                <div key={song.id} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
+                  <div className="h-10 w-10 bg-muted rounded flex items-center justify-center shrink-0">
+                    <Music className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{song.title}</div>
+                    <div className="text-sm text-muted-foreground truncate">
+                      {metadata?.artist || 'Unknown artist'}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => onAdd(song.id)}
+                    disabled={isAdding}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add
+                  </Button>
+                </div>
+              )
+            })}
           </div>
         )}
 

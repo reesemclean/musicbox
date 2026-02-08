@@ -102,7 +102,7 @@ function PodcastsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Podcasts</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {feeds.length > 0 && (
             <Button
               variant="outline"
@@ -322,7 +322,7 @@ function FeedCard({ feed }: { feed: Feed }) {
 
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold truncate">{feed.name}</h3>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <span>{feed.episodeCount ?? 0} episodes</span>
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />

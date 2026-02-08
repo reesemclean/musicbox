@@ -83,26 +83,56 @@ function PlaylistsTable({
   onDelete: (playlist: Playlist) => void
 }) {
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <table className="w-full">
-        <thead className="bg-muted/50">
-          <tr className="text-left text-sm text-muted-foreground">
-            <th className="px-4 py-3 font-medium">Name</th>
-            <th className="px-4 py-3 font-medium">Created</th>
-            <th className="px-4 py-3 font-medium w-24"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {playlists.map((playlist) => (
-            <PlaylistRow
-              key={playlist.id}
-              playlist={playlist}
-              onDelete={() => onDelete(playlist)}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {/* Desktop table */}
+      <div className="hidden md:block border border-border rounded-lg overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-muted/50">
+            <tr className="text-left text-sm text-muted-foreground">
+              <th className="px-4 py-3 font-medium">Name</th>
+              <th className="px-4 py-3 font-medium">Created</th>
+              <th className="px-4 py-3 font-medium w-24"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {playlists.map((playlist) => (
+              <PlaylistRow
+                key={playlist.id}
+                playlist={playlist}
+                onDelete={() => onDelete(playlist)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile list */}
+      <div className="md:hidden space-y-2">
+        {playlists.map((playlist) => (
+          <div key={playlist.id} className="bg-card rounded-lg border border-border p-3 flex items-center gap-3">
+            <Link to="/playlists/$playlistId" params={{ playlistId: String(playlist.id) }} className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="h-10 w-10 bg-muted rounded flex items-center justify-center shrink-0">
+                <ListMusic className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div className="min-w-0">
+                <div className="font-medium text-sm truncate">{playlist.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(playlist.createdAt).toLocaleDateString()}
+                </div>
+              </div>
+            </Link>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0 h-8 w-8 p-0"
+              onClick={() => onDelete(playlist)}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </div>
+        ))}
+      </div>
+    </>
   )
 }
 

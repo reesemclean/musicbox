@@ -124,15 +124,15 @@ function PendingDeviceCard({ device }: { device: Device }) {
 
   return (
     <div className="border border-yellow-200 dark:border-yellow-900 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg p-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-4">
-          <div className="h-12 w-12 bg-yellow-100 dark:bg-yellow-900/50 rounded-lg flex items-center justify-center">
+          <div className="h-12 w-12 bg-yellow-100 dark:bg-yellow-900/50 rounded-lg flex items-center justify-center shrink-0">
             <Cpu className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="font-medium">{device.name || 'New Device'}</div>
             <code className="text-sm text-muted-foreground">{device.mac}</code>
-            <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-muted-foreground">
               {device.firmwareVersion && (
                 <span>Firmware: {device.firmwareVersion}</span>
               )}
@@ -145,7 +145,7 @@ function PendingDeviceCard({ device }: { device: Device }) {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="ghost"
             size="sm"
@@ -187,25 +187,119 @@ function EmptyState() {
 
 function DevicesTable({ devices }: { devices: Device[] }) {
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <table className="w-full">
-        <thead className="bg-muted/50">
-          <tr className="text-left text-sm text-muted-foreground">
-            <th className="px-4 py-3 font-medium">Device</th>
-            <th className="px-4 py-3 font-medium">Status</th>
-            <th className="px-4 py-3 font-medium">Connection</th>
-            <th className="px-4 py-3 font-medium">Firmware</th>
-            <th className="px-4 py-3 font-medium">Last Seen</th>
-            <th className="px-4 py-3 font-medium">IP Address</th>
-            <th className="px-4 py-3 font-medium w-10"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {devices.map((device) => (
-            <DeviceRow key={device.id} device={device} />
-          ))}
-        </tbody>
-      </table>
+    <>
+      {/* Desktop table */}
+      <div className="hidden md:block border border-border rounded-lg overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-muted/50">
+            <tr className="text-left text-sm text-muted-foreground">
+              <th className="px-4 py-3 font-medium">Device</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Connection</th>
+              <th className="px-4 py-3 font-medium">Firmware</th>
+              <th className="px-4 py-3 font-medium">Last Seen</th>
+              <th className="px-4 py-3 font-medium">IP Address</th>
+              <th className="px-4 py-3 font-medium w-10"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {devices.map((device) => (
+              <DeviceRow key={device.id} device={device} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-2">
+        {devices.map((device) => (
+          <MobileDeviceCard key={device.id} device={device} />
+        ))}
+      </div>
+    </>
+  )
+}
+
+function MobileDeviceCard({ device }: { device: Device }) {
+  const [expanded, setExpanded] = useState(false)
+  const queryClient = useQueryClient()
+  const isOnline = getIsOnline(device.lastSeen)
+  const canControl = device.status === 'approved' && isOnline
+  const playback = device.playback
+  const isPlaying = playback?.status === 'playing'
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await deleteDevice({ data: { id: device.id } })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      toast.success(`Device ${device.name || device.mac} deleted`)
+    },
+    onError: () => {
+      toast.error('Failed to delete device')
+    },
+  })
+
+  return (
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
+      <div
+        className={`p-3 flex items-center gap-3 ${canControl ? 'cursor-pointer' : ''}`}
+        onClick={() => canControl && setExpanded(!expanded)}
+      >
+        <div className={`h-10 w-10 rounded flex items-center justify-center shrink-0 ${isPlaying ? 'bg-green-100 dark:bg-green-900/30' : 'bg-muted'}`}>
+          {isPlaying ? (
+            <Music className="h-5 w-5 text-green-600 dark:text-green-400" />
+          ) : (
+            <Cpu className="h-5 w-5 text-muted-foreground" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm truncate">{device.name || 'Unnamed Device'}</div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <StatusBadge status={device.status} />
+            <ConnectionStatus isOnline={isOnline} />
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (confirm(`Delete device ${device.name || device.mac}?`)) {
+                deleteMutation.mutate()
+              }
+            }}
+            disabled={deleteMutation.isPending}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+          {canControl && (
+            expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border px-3 py-2 text-sm text-muted-foreground space-y-1">
+          {device.firmwareVersion && <div>Firmware: {device.firmwareVersion}</div>}
+          <LastSeen lastSeen={device.lastSeen} />
+          {device.lastIp && (
+            <div className="flex items-center gap-1">
+              <Globe className="h-3 w-3" />
+              <span>{device.lastIp}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {expanded && canControl && (
+        <div className="border-t border-border px-3 py-3 bg-muted/20">
+          <DeviceRemoteControl device={device} />
+        </div>
+      )}
     </div>
   )
 }
@@ -477,7 +571,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
           </div>
         )}
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             {isPaused ? (
               <Button

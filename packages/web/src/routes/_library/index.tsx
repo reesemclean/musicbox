@@ -200,10 +200,10 @@ function SongsLibraryPage() {
 
   return (
     <div className="pb-24">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
         <h1 className="text-2xl font-bold">All Songs</h1>
-        <div className="flex items-center gap-3">
-          <div className="relative w-64">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+          <div className="relative w-full md:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search songs..."
@@ -213,7 +213,7 @@ function SongsLibraryPage() {
             />
           </div>
           <Select value={groupBy} onValueChange={(v) => setGroupBy(v as typeof groupBy)}>
-            <SelectTrigger className="w-40">
+            <SelectTrigger className="w-full md:w-40">
               <SelectValue placeholder="Group by" />
             </SelectTrigger>
             <SelectContent>
@@ -305,7 +305,7 @@ function SongsLibraryPage() {
 
       {/* Floating Action Panel */}
       <div
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-accent border border-border rounded-xl shadow-lg transition-all duration-300 z-50 ${
+        className={`fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 bg-accent border border-border rounded-xl shadow-lg transition-all duration-300 z-50 ${
           selectedSongs.size > 0 ? 'translate-y-0 opacity-100' : 'translate-y-16 opacity-0 pointer-events-none'
         }`}
       >
@@ -525,51 +525,100 @@ function SongsTable({
   const someSelected = songs.some((s) => selectedSongs.has(s.id))
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <table className="w-full">
-        <thead className="bg-muted/50">
-          <tr className="text-left text-sm text-muted-foreground">
-            <th className="px-4 py-3 font-medium w-10">
+    <>
+      {/* Desktop table */}
+      <div className="hidden md:block border border-border rounded-lg overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-muted/50">
+            <tr className="text-left text-sm text-muted-foreground">
+              <th className="px-4 py-3 font-medium w-10">
+                <button
+                  onClick={onToggleSelectAll}
+                  className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+                    allSelected
+                      ? 'bg-primary border-primary text-primary-foreground'
+                      : someSelected
+                      ? 'bg-primary/50 border-primary'
+                      : 'border-muted-foreground/30 hover:border-muted-foreground'
+                  }`}
+                >
+                  {allSelected && <Check className="h-3 w-3" />}
+                  {someSelected && !allSelected && <div className="h-2 w-2 bg-primary-foreground rounded-sm" />}
+                </button>
+              </th>
+              <th className="px-4 py-3 font-medium w-12"></th>
+              <th className="px-4 py-3 font-medium">Title</th>
+              <th className="px-4 py-3 font-medium">Artist</th>
+              <th className="px-4 py-3 font-medium">Album</th>
+              <th className="px-4 py-3 font-medium text-right">Duration</th>
+              <th className="px-4 py-3 font-medium w-24"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {songs.map((song) => (
+              <SongRow
+                key={song.id}
+                song={song}
+                isSelected={selectedSongs.has(song.id)}
+                isPlaying={player.state.currentMediaId === song.id && player.state.isPlaying}
+                isCurrent={player.state.currentMediaId === song.id}
+                onToggleSelection={() => onToggleSelection(song.id)}
+                onPlay={() => handlePlay(song)}
+                onToggle={player.togglePlayPause}
+                onEdit={() => onEdit(song)}
+                onDelete={() => onDelete(song)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-2">
+        {songs.map((song) => {
+          const metadata = song.metadata as { artist?: string } | null
+          const isSelected = selectedSongs.has(song.id)
+          const isCurrent = player.state.currentMediaId === song.id
+          const isPlaying = isCurrent && player.state.isPlaying
+          return (
+            <div
+              key={song.id}
+              className={`bg-card rounded-lg border p-3 flex items-center gap-3 ${isSelected ? 'border-primary/50 bg-primary/5' : 'border-border'}`}
+            >
               <button
-                onClick={onToggleSelectAll}
-                className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
-                  allSelected
+                onClick={() => onToggleSelection(song.id)}
+                className={`h-5 w-5 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                  isSelected
                     ? 'bg-primary border-primary text-primary-foreground'
-                    : someSelected
-                    ? 'bg-primary/50 border-primary'
-                    : 'border-muted-foreground/30 hover:border-muted-foreground'
+                    : 'border-muted-foreground/30'
                 }`}
               >
-                {allSelected && <Check className="h-3 w-3" />}
-                {someSelected && !allSelected && <div className="h-2 w-2 bg-primary-foreground rounded-sm" />}
+                {isSelected && <Check className="h-3 w-3" />}
               </button>
-            </th>
-            <th className="px-4 py-3 font-medium w-12"></th>
-            <th className="px-4 py-3 font-medium">Title</th>
-            <th className="px-4 py-3 font-medium">Artist</th>
-            <th className="px-4 py-3 font-medium">Album</th>
-            <th className="px-4 py-3 font-medium text-right">Duration</th>
-            <th className="px-4 py-3 font-medium w-24"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {songs.map((song) => (
-            <SongRow
-              key={song.id}
-              song={song}
-              isSelected={selectedSongs.has(song.id)}
-              isPlaying={player.state.currentMediaId === song.id && player.state.isPlaying}
-              isCurrent={player.state.currentMediaId === song.id}
-              onToggleSelection={() => onToggleSelection(song.id)}
-              onPlay={() => handlePlay(song)}
-              onToggle={player.togglePlayPause}
-              onEdit={() => onEdit(song)}
-              onDelete={() => onDelete(song)}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                onClick={isCurrent ? player.togglePlayPause : () => handlePlay(song)}
+              >
+                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </Button>
+              <div className="flex-1 min-w-0">
+                <div className={`font-medium text-sm truncate ${isCurrent ? 'text-primary' : ''}`}>{song.title}</div>
+                <div className="text-xs text-muted-foreground truncate">{metadata?.artist || '—'}</div>
+              </div>
+              <span className="text-xs text-muted-foreground shrink-0">{formatDuration(song.duration)}</span>
+              <Button variant="ghost" size="sm" className="shrink-0 h-8 w-8 p-0" onClick={() => onEdit(song)}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="sm" className="shrink-0 h-8 w-8 p-0" onClick={() => onDelete(song)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          )
+        })}
+      </div>
+    </>
   )
 }
 
