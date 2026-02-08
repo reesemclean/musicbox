@@ -373,7 +373,7 @@ class MqttService extends EventEmitter {
         .limit(1)
 
       if (mediaItem) {
-        const url = `${this.getBaseUrl()}/api/media/stream/${mediaItem.id}`
+        const url = `${this.getStreamBaseUrl()}/api/media/stream/${mediaItem.id}`
         console.log(`[MQTT] Playing media: ${mediaItem.title}`)
         this.play(macForTopic, url, mediaItem.id)
 
@@ -403,14 +403,14 @@ class MqttService extends EventEmitter {
 
         // Play first track immediately
         const firstTrack = tracks[0]
-        const firstUrl = `${this.getBaseUrl()}/api/media/stream/${firstTrack.mediaId}`
+        const firstUrl = `${this.getStreamBaseUrl()}/api/media/stream/${firstTrack.mediaId}`
         console.log(`[MQTT] Playing playlist (${tracks.length} tracks), starting: ${firstTrack.title}`)
         this.play(macForTopic, firstUrl, firstTrack.mediaId)
 
         // Queue remaining tracks for gapless playback
         for (let i = 1; i < tracks.length; i++) {
           const track = tracks[i]
-          const url = `${this.getBaseUrl()}/api/media/stream/${track.mediaId}`
+          const url = `${this.getStreamBaseUrl()}/api/media/stream/${track.mediaId}`
           this.queue(macForTopic, url, track.mediaId)
         }
       }
@@ -425,7 +425,7 @@ class MqttService extends EventEmitter {
 
       // TODO: Filter by feedId when we have proper podcast episode → feed linking
       if (latestEpisode) {
-        const url = `${this.getBaseUrl()}/api/media/stream/${latestEpisode.id}`
+        const url = `${this.getStreamBaseUrl()}/api/media/stream/${latestEpisode.id}`
         console.log(`[MQTT] Playing podcast episode: ${latestEpisode.title}`)
         this.play(macForTopic, url, latestEpisode.id)
 
@@ -441,6 +441,10 @@ class MqttService extends EventEmitter {
   private getBaseUrl(): string {
     // Get the API base URL for streaming
     return process.env.API_BASE_URL || 'http://localhost:3001'
+  }
+
+  private getStreamBaseUrl(): string {
+    return process.env.STREAM_BASE_URL || this.getBaseUrl()
   }
 
   private async handleSoundMachineRequest(macNoColons: string, macWithColons: string): Promise<void> {
@@ -480,7 +484,7 @@ class MqttService extends EventEmitter {
       return
     }
 
-    const url = `${this.getBaseUrl()}/api/media/stream/${sound.id}`
+    const url = `${this.getStreamBaseUrl()}/api/media/stream/${sound.id}`
     const volume = device.soundMachineVolume ?? null
     console.log(`[MQTT] Sending sound machine config: ${sound.title} (volume: ${volume ?? 'default'})`)
     this.sendCommand(macNoColons, { command: 'soundmachine', url, name: sound.title, volume })

@@ -62,7 +62,7 @@ export const Route = createFileRoute('/api/soundmachine/config/$mac')({
 
         // Get base URL from request or environment
         const url = new URL(request.url)
-        const baseUrl = process.env.API_BASE_URL || `${url.protocol}//${url.host}`
+        const baseUrl = process.env.STREAM_BASE_URL || process.env.API_BASE_URL || `${url.protocol}//${url.host}`
 
         return Response.json({
           soundId: sound.id,

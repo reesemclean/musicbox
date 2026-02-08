@@ -569,7 +569,7 @@ void sd_cache_sync_with_cards() {
             // Build URL and queue download
             char url[256];
             snprintf(url, sizeof(url), "%s/api/media/stream/%d",
-                     config_api_base_url(), mediaId);
+                     config_stream_base_url(), mediaId);
             sd_cache_queue_download(mediaId, url);
             queuedDownloads++;
         }

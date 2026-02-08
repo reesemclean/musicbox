@@ -272,7 +272,7 @@ void onCardScanned(const char* uid) {
         int firstMediaId = cached->mediaIds[0];
         char url[256];
         snprintf(url, sizeof(url), "%s/api/media/stream/%d",
-                 config_api_base_url(), firstMediaId);
+                 config_stream_base_url(), firstMediaId);
 
         if (sd_cache_has(firstMediaId)) {
             String path = sd_cache_path(firstMediaId);
@@ -287,7 +287,7 @@ void onCardScanned(const char* uid) {
         for (int i = 1; i < cached->trackCount; i++) {
             int mediaId = cached->mediaIds[i];
             snprintf(url, sizeof(url), "%s/api/media/stream/%d",
-                     config_api_base_url(), mediaId);
+                     config_stream_base_url(), mediaId);
 
             if (sd_cache_has(mediaId)) {
                 String path = sd_cache_path(mediaId);

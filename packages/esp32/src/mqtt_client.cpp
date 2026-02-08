@@ -105,6 +105,12 @@ bool mqtt_discover_broker() {
             // Cache in NVS for offline fallback
             config_set_mqtt(host, port);
 
+            // Parse stream base URL if present
+            if (doc["streamBaseUrl"].is<const char*>()) {
+                const char* streamUrl = doc["streamBaseUrl"];
+                config_set_stream_url(streamUrl);
+            }
+
             Serial.printf("[MQTT] Broker discovered: %s:%d\n", brokerHost.c_str(), brokerPort);
             return true;
         }

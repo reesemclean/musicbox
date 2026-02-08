@@ -12,6 +12,7 @@ export const Route = createFileRoute('/api/device/config')({
             host,
             port,
           },
+          streamBaseUrl: process.env.STREAM_BASE_URL || process.env.API_BASE_URL || null,
         })
       },
     },
