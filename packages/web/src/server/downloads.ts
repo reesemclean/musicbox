@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { searchSongs, searchAlbums } from '../services/ytmusicService.js'
+import { searchYouTube } from '../services/youtubeService.js'
 import {
   queueDownload,
   getDownloadQueueStatus,
@@ -15,6 +16,12 @@ export const search = createServerFn({ method: 'GET' })
       return searchAlbums(data.query)
     }
     return searchSongs(data.query)
+  })
+
+export const searchYouTubeVideos = createServerFn({ method: 'GET' })
+  .inputValidator((data: { query: string }) => data)
+  .handler(async ({ data }) => {
+    return searchYouTube(data.query)
   })
 
 export const queueSongDownload = createServerFn({ method: 'POST' })

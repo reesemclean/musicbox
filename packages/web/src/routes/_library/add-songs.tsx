@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   search,
+  searchYouTubeVideos,
   queueSongDownload,
   queueAlbumDownload,
   getQueue,
@@ -60,14 +61,16 @@ export const Route = createFileRoute("/_library/add-songs")({
 });
 
 function AddSongsPage() {
-  const [activeTab, setActiveTab] = useState<"youtube" | "upload">("youtube");
+  const [activeTab, setActiveTab] = useState<
+    "youtube" | "youtubeSearch" | "upload"
+  >("youtube");
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Add Songs</h1>
         <p className="text-muted-foreground mt-1">
-          Download from YouTube Music or upload your own files
+          Download from YouTube Music, YouTube, or upload your own files
         </p>
       </div>
 
@@ -81,6 +84,13 @@ function AddSongsPage() {
           YouTube Music
         </Button>
         <Button
+          variant={activeTab === "youtubeSearch" ? "default" : "outline"}
+          onClick={() => setActiveTab("youtubeSearch")}
+        >
+          <Search className="h-4 w-4 mr-2" />
+          YouTube
+        </Button>
+        <Button
           variant={activeTab === "upload" ? "default" : "outline"}
           onClick={() => setActiveTab("upload")}
         >
@@ -90,6 +100,7 @@ function AddSongsPage() {
       </div>
 
       {activeTab === "youtube" && <YouTubeMusicTab />}
+      {activeTab === "youtubeSearch" && <YouTubeTab />}
       {activeTab === "upload" && <UploadTab />}
     </div>
   );
@@ -511,6 +522,184 @@ function YouTubeMusicTab() {
             </p>
           </div>
         )}
+    </div>
+  );
+}
+
+type YouTubeResult = {
+  videoId: string;
+  title: string;
+  channel: string;
+  duration: number | null;
+  thumbnailUrl: string | null;
+};
+
+function YouTubeTab() {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<YouTubeResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const queryClient = useQueryClient();
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Poll download queue
+  const { data: queue = [] } = useQuery({
+    queryKey: ["downloadQueue"],
+    queryFn: () => getQueue(),
+    refetchInterval: 2000,
+  });
+
+  const performSearch = useCallback(async () => {
+    if (!searchQuery.trim()) {
+      setResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const data = await searchYouTubeVideos({
+        data: { query: searchQuery },
+      });
+      setResults(data as unknown as YouTubeResult[]);
+    } catch (error) {
+      console.error("YouTube search failed:", error);
+      toast.error("YouTube search failed");
+    } finally {
+      setIsSearching(false);
+    }
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (searchQuery.trim()) {
+      searchTimeoutRef.current = setTimeout(performSearch, 500);
+    } else {
+      setResults([]);
+    }
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery, performSearch]);
+
+  const downloadMutation = useMutation({
+    mutationFn: async (result: YouTubeResult) => {
+      await queueSongDownload({
+        data: {
+          videoId: result.videoId,
+          title: result.title,
+          artist: result.channel,
+          thumbnailUrl: result.thumbnailUrl || undefined,
+        },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["downloadQueue"] });
+      toast.success("Download started");
+    },
+    onError: () => {
+      toast.error("Failed to start download");
+    },
+  });
+
+  const isDownloading = (videoId: string) => {
+    return queue.some(
+      (item) =>
+        item.videoId === videoId &&
+        (item.status === "downloading" || item.status === "pending"),
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search YouTube videos..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10 pr-10"
+        />
+        {isSearching && (
+          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+        )}
+      </div>
+
+      {/* Results */}
+      {results.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold mb-3">
+            Videos ({results.length})
+          </h2>
+          <div className="space-y-2">
+            {results.map((result) => (
+              <div
+                key={result.videoId}
+                className="bg-card rounded-lg border border-border p-4 flex items-center gap-4"
+              >
+                {result.thumbnailUrl ? (
+                  <img
+                    src={result.thumbnailUrl}
+                    alt={result.title}
+                    className="w-12 h-12 rounded object-cover shrink-0"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded bg-muted flex items-center justify-center shrink-0">
+                    <Music className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <p className="font-medium truncate">{result.title}</p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {result.channel}
+                  </p>
+                </div>
+                <div className="text-sm text-muted-foreground shrink-0">
+                  {result.duration
+                    ? `${Math.floor(result.duration / 60)}:${(result.duration % 60).toString().padStart(2, "0")}`
+                    : "—"}
+                </div>
+                <Button
+                  className="shrink-0"
+                  onClick={() => downloadMutation.mutate(result)}
+                  disabled={
+                    downloadMutation.isPending || isDownloading(result.videoId)
+                  }
+                  size="sm"
+                >
+                  {isDownloading(result.videoId) ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Downloading
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </>
+                  )}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {results.length === 0 && !searchQuery && (
+        <div className="text-center py-12">
+          <Download className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <h2 className="text-lg font-semibold mb-2">Search YouTube</h2>
+          <p className="text-muted-foreground">
+            Search for videos like audiobooks, stories, and more.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
