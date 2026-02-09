@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { devices } from '../db/schema.js'
 import { mqttService, TOPICS } from '../services/mqttService.js'
-import { loadFirmwareInfo } from './firmware.js'
+import { getFirmwareInfo } from './firmware.js'
 
 export const getDevices = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -147,7 +147,7 @@ export const triggerDeviceUpdate = createServerFn({ method: 'POST' })
     if (!device) throw new Error('Device not found')
     if (device.status !== 'approved') throw new Error('Device not approved')
 
-    const firmware = loadFirmwareInfo()
+    const firmware = await getFirmwareInfo()
     if (!firmware) throw new Error('No firmware available')
 
     const baseUrl = process.env.API_BASE_URL || 'http://localhost:3001'
