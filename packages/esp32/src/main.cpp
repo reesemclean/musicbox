@@ -361,10 +361,10 @@ void setup() {
     btnPlay.setClickHandler(onPlayClick);
     btnPlay.setLongClickHandler(onPlayLongPress);
     btnPlay.setLongClickTime(1000);
-    btnVolUp.setClickHandler(onVolUpClick);
-    btnVolDn.setClickHandler(onVolDnClick);
-    btnNext.setClickHandler(onNextClick);
-    btnPrev.setClickHandler(onPrevClick);
+    btnVolUp.setPressedHandler(onVolUpClick);
+    btnVolDn.setPressedHandler(onVolDnClick);
+    btnNext.setPressedHandler(onNextClick);
+    btnPrev.setPressedHandler(onPrevClick);
 
     nfc_init();
     nfc_on_card_scanned(onCardScanned);
@@ -463,5 +463,5 @@ void loop() {
             millis() / 1000);
     }
 
-    delay(10);
+    delay(2);
 }
