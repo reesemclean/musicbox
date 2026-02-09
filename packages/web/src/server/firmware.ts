@@ -27,6 +27,9 @@ function loadFirmwareInfo() {
   }
 }
 
+// Exported for use by OTA trigger logic
+export { loadFirmwareInfo }
+
 export const getFirmwareInfo = createServerFn({ method: 'GET' })
   .handler(async () => {
     const info = loadFirmwareInfo()

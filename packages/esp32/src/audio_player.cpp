@@ -108,6 +108,7 @@ static bool pending_is_sd_file = false;
 // Deferred playback - set in callback, handled in loop
 static volatile bool deferred_play_pending = false;
 static volatile bool deferred_play_next_queue = false;
+static volatile bool deferred_loop_soundmachine = false;
 
 // Delay after starting system sound to let audio library initialize
 static unsigned long system_sound_start_time = 0;
@@ -553,6 +554,7 @@ static void handle_stop_soundmachine() {
     if (soundmachine_mode) {
         Serial.println("[Audio] Stopping sound machine mode");
         soundmachine_mode = false;
+        deferred_loop_soundmachine = false;
         soundmachine_url[0] = '\0';
         soundmachine_name[0] = '\0';
         audio.stopSong();
@@ -714,6 +716,15 @@ static void audioTask(void* parameter) {
             deferred_play_next_queue = false;
             Serial.println("[Audio] Processing deferred queue playback");
             play_next_in_queue();
+        }
+
+        if (deferred_loop_soundmachine) {
+            deferred_loop_soundmachine = false;
+            if (soundmachine_mode && soundmachine_url[0] != '\0') {
+                Serial.printf("[Audio] Sound machine looping: %s\n", soundmachine_name);
+                audio.connecttohost(soundmachine_url);
+                state = AUDIO_PLAYING;
+            }
         }
 
         // When idle, process downloads (all SD access on Core 0)
@@ -950,10 +961,11 @@ void audio_on_playback_status(PlaybackStatusCallback callback) {
 void audio_eof_mp3(const char* info) {
     Serial.printf("[Audio] Track ended: %s\n", info);
 
-    // Sound machine mode - loop the sound (URL playback works from callback)
+    // Sound machine mode - defer looping to the main audio loop
+    // (connecttohost from within the EOF callback is unreliable)
     if (soundmachine_mode) {
-        Serial.printf("[Audio] Sound machine looping: %s\n", soundmachine_name);
-        audio.connecttohost(soundmachine_url);
+        Serial.printf("[Audio] Sound machine track ended, deferring loop: %s\n", soundmachine_name);
+        deferred_loop_soundmachine = true;
         return;
     }
 
