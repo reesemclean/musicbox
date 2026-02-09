@@ -463,5 +463,5 @@ void loop() {
             millis() / 1000);
     }
 
-    delay(2);
+    delay(10);
 }
