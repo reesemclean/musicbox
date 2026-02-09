@@ -94,7 +94,7 @@ static bool soundmachine_mode = false;
 static char soundmachine_url[256] = {0};
 static char soundmachine_name[64] = {0};
 static unsigned long soundmachine_start_time = 0;
-#define SOUNDMACHINE_INIT_DELAY_MS 500  // Grace period for HTTP stream to connect and buffer
+#define SOUNDMACHINE_INIT_DELAY_MS 200  // Grace period for stream to start (shorter for SD, fine for LAN HTTP)
 
 // Playback queue
 static QueueItem playQueue[MAX_QUEUE_SIZE];
