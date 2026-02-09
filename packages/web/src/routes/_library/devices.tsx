@@ -685,19 +685,33 @@ function DeviceRemoteControl({ device }: { device: Device }) {
         <div className="flex items-center gap-3">
           <Download className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm">v{device.firmwareVersion || '?'}</span>
-          {firmware && updateAvailable && !updateTriggered ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleUpdate}
-            >
-              Update to v{firmware.version}
-            </Button>
+          {firmware && !updateTriggered ? (
+            <>
+              {updateAvailable ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUpdate}
+                >
+                  Update to v{firmware.version}
+                </Button>
+              ) : (
+                <>
+                  <span className="text-xs text-green-600 dark:text-green-400">Up to date</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleUpdate}
+                    className="text-xs text-muted-foreground"
+                  >
+                    Force update
+                  </Button>
+                </>
+              )}
+            </>
           ) : updateTriggered ? (
             <span className="text-xs text-yellow-600 dark:text-yellow-400">Update in progress...</span>
-          ) : (
-            <span className="text-xs text-green-600 dark:text-green-400">Up to date</span>
-          )}
+          ) : null}
         </div>
 
         {/* Clear Cache */}
