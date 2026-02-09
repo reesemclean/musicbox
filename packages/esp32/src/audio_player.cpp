@@ -93,6 +93,8 @@ static bool playing_system_sound = false;
 static bool soundmachine_mode = false;
 static char soundmachine_url[256] = {0};
 static char soundmachine_name[64] = {0};
+static unsigned long soundmachine_start_time = 0;
+#define SOUNDMACHINE_INIT_DELAY_MS 200  // Grace period for stream to start (shorter for SD, fine for LAN HTTP)
 
 // Playback queue
 static QueueItem playQueue[MAX_QUEUE_SIZE];
@@ -547,6 +549,7 @@ static void handle_play_soundmachine(const char* url, const char* name) {
 
     // Start playing
     audio.connecttohost(url);
+    soundmachine_start_time = millis();
     state = AUDIO_PLAYING;
 }
 
@@ -557,6 +560,7 @@ static void handle_stop_soundmachine() {
         deferred_loop_soundmachine = false;
         soundmachine_url[0] = '\0';
         soundmachine_name[0] = '\0';
+        soundmachine_start_time = 0;
         audio.stopSong();
         state = AUDIO_IDLE;
     }
@@ -666,6 +670,23 @@ static void audioTask(void* parameter) {
             state = AUDIO_IDLE;
         }
 
+        // Sound machine loop: detect when audio stopped and restart
+        // This is the primary loop mechanism — audio_eof_mp3 may not fire for HTTP streams
+        if (soundmachine_mode && state == AUDIO_PLAYING && !deferred_loop_soundmachine) {
+            bool can_check_sm = true;
+            if (soundmachine_start_time > 0) {
+                unsigned long elapsed = millis() - soundmachine_start_time;
+                if (elapsed < SOUNDMACHINE_INIT_DELAY_MS) {
+                    can_check_sm = false;
+                }
+            }
+            if (can_check_sm && !audio.isRunning()) {
+                Serial.printf("[Audio] Sound machine restarting (isRunning=false): %s\n", soundmachine_name);
+                audio.connecttohost(soundmachine_url);
+                soundmachine_start_time = millis();
+            }
+        }
+
         // Handle deferred playback (connecttoFS doesn't work from eof callback)
         if (deferred_play_pending) {
             deferred_play_pending = false;
@@ -721,8 +742,9 @@ static void audioTask(void* parameter) {
         if (deferred_loop_soundmachine) {
             deferred_loop_soundmachine = false;
             if (soundmachine_mode && soundmachine_url[0] != '\0') {
-                Serial.printf("[Audio] Sound machine looping: %s\n", soundmachine_name);
+                Serial.printf("[Audio] Sound machine looping (via eof): %s\n", soundmachine_name);
                 audio.connecttohost(soundmachine_url);
+                soundmachine_start_time = millis();
                 state = AUDIO_PLAYING;
             }
         }
