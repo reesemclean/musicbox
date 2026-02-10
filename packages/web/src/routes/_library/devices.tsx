@@ -23,6 +23,15 @@ import { getFirmwareInfo } from '@/server/firmware'
 
 type Device = Awaited<ReturnType<typeof getDevices>>[number]
 
+function formatFirmwareVersion(version: string): string {
+  // Shorten "dev-3f83f2ad93495d5ae7719d53aa69e9b4fe254dc5" → "dev-3f83f2a"
+  const match = version.match(/^(.+)-([0-9a-f]{8,})$/)
+  if (match) {
+    return `${match[1]}-${match[2].substring(0, 7)}`
+  }
+  return version
+}
+
 // Sound machine sounds query
 const soundsQueryOptions = queryOptions({
   queryKey: ['soundmachine-sounds'],
@@ -134,7 +143,7 @@ function PendingDeviceCard({ device }: { device: Device }) {
             <code className="text-sm text-muted-foreground">{device.mac}</code>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-muted-foreground">
               {device.firmwareVersion && (
-                <span>Firmware: {device.firmwareVersion}</span>
+                <span>Firmware: {formatFirmwareVersion(device.firmwareVersion)}</span>
               )}
               {device.lastIp && (
                 <span className="flex items-center gap-1">
@@ -284,7 +293,7 @@ function MobileDeviceCard({ device }: { device: Device }) {
 
       {expanded && (
         <div className="border-t border-border px-3 py-2 text-sm text-muted-foreground space-y-1">
-          {device.firmwareVersion && <div>Firmware: {device.firmwareVersion}</div>}
+          {device.firmwareVersion && <div>Firmware: {formatFirmwareVersion(device.firmwareVersion)}</div>}
           <LastSeen lastSeen={device.lastSeen} />
           {device.lastIp && (
             <div className="flex items-center gap-1">
@@ -359,7 +368,7 @@ function DeviceRow({ device }: { device: Device }) {
         </td>
         <td className="px-4 py-3">
           <span className="text-sm text-muted-foreground">
-            {device.firmwareVersion || '—'}
+            {device.firmwareVersion ? formatFirmwareVersion(device.firmwareVersion) : '—'}
           </span>
         </td>
         <td className="px-4 py-3">
@@ -684,7 +693,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
         {/* Firmware */}
         <div className="flex items-center gap-3">
           <Download className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm">v{device.firmwareVersion || '?'}</span>
+          <span className="text-sm">v{device.firmwareVersion ? formatFirmwareVersion(device.firmwareVersion) : '?'}</span>
           {firmware && !updateTriggered ? (
             <>
               {updateAvailable ? (
@@ -693,7 +702,7 @@ function DeviceRemoteControl({ device }: { device: Device }) {
                   size="sm"
                   onClick={handleUpdate}
                 >
-                  Update to v{firmware.version}
+                  Update to v{formatFirmwareVersion(firmware.version)}
                 </Button>
               ) : (
                 <>
