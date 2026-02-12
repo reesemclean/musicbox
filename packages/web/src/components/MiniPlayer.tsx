@@ -8,15 +8,15 @@ import { getMediaById } from '@/server/media'
 import { getPlaylistById, type PlaylistWithItems } from '@/server/playlists'
 
 
-export function MiniPlayer() {
+export function MiniPlayer({ hideWhenEmpty = false }: { hideWhenEmpty?: boolean }) {
   return (
-    <ClientOnly fallback={<MiniPlayerEmpty />}>
-      <MiniPlayerInner />
+    <ClientOnly fallback={hideWhenEmpty ? null : <MiniPlayerEmpty />}>
+      <MiniPlayerInner hideWhenEmpty={hideWhenEmpty} />
     </ClientOnly>
   )
 }
 
-function MiniPlayerInner() {
+function MiniPlayerInner({ hideWhenEmpty = false }: { hideWhenEmpty?: boolean }) {
   const player = usePlayer()
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -117,12 +117,12 @@ function MiniPlayerInner() {
 
   // Show placeholder when no media is selected
   if (player.state.currentMediaId === null) {
-    return <MiniPlayerEmpty />
+    return hideWhenEmpty ? null : <MiniPlayerEmpty />
   }
 
   // Show error state if media fetch failed
   if (error || !currentMedia || !audioUrl) {
-    return <MiniPlayerEmpty error />
+    return hideWhenEmpty ? null : <MiniPlayerEmpty error />
   }
 
   return (
