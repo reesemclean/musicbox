@@ -73,7 +73,7 @@ function LibraryLayout() {
 
       {/* Mobile bottom bar — visible below md */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40">
-        <MiniPlayer />
+        <MiniPlayer hideWhenEmpty />
         <nav className="flex border-t border-border bg-background">
           <MobileTabLink to="/" icon={Music} label="Songs" exact />
           <MobileTabLink to="/playlists" icon={ListMusic} label="Playlists" />
