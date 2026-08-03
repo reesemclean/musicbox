@@ -83,34 +83,46 @@ No dependencies on each other or on later phases. Safe to do in any order.
 
 ## Phase 2 — Playlist stream prototype (gates Phases 3–4)
 
-- [ ] **2.1 — Validate continuous playlist streaming** (spec §3.5, §3.6, §8.5)
-  These spec sections are marked provisional pending this work. Answer:
-  1. Does byte-level MP3 concatenation produce inaudible track boundaries?
-  2. Does `icy-metaint` interleaving reach the device's `streamtitle` callback
-     intact, carrying enough to identify the now-playing `mediaId`?
-  3. Is time-to-first-audio comparable to a single-track connect?
-  4. What does the server need to compute "position within current playlist" for
-     skip?
+- [x] **2.1 — Validate continuous playlist streaming** (spec §3.5, §3.6, §8.5)
+  **Server side validated** — see
+  [`decisions/2026-08-02-playlist-streaming.md`](./decisions/2026-08-02-playlist-streaming.md).
+  Frame-level concatenation is sample-exact; ICY metadata round-trips with the
+  recovered audio byte-identical to direct concatenation; announce lag is
+  sub-second. Four constraints came out of it and are now in the spec: strip
+  ID3/Xing frames, normalize sample rate at ingest, always send
+  `Content-Length` (never chunked), and cache per-track extracted-audio length.
 
-  Already confirmed: ESP32-audioI2S sends `Icy-MetaData:1` on every
-  `connecttohost()` and parses `icy-metaint:` response headers — the metadata
-  channel exists without forking the library.
-
-  Deliverable: a decision record in `docs/`. A negative result changes Phase 3/4
-  scope (transcoding instead of concatenation, or dropping gapless).
+- [ ] **2.2 — Confirm on hardware** (spec §3.5)
+  The prototype proves the server emits a correct stream; it cannot prove the
+  device consumes it. On real hardware, confirm: the `streamtitle` event fires
+  mid-stream carrying the injected `mediaId`; the decoder crosses a track
+  boundary without an audible artifact; real time-to-first-audio over WiFi.
+  Fallback if the boundary is audible: server-side transcoding — heavier, but
+  no change to the device-facing contract. Can be done alongside Phase 4.
 
 ---
 
 ## Phase 3 — Server
 
+- [ ] **3.0 — Record extracted-audio length at ingest** (spec §8.5, §11.1)
+  New prerequisite from Phase 2. §8.5 must send an exact `Content-Length`, which
+  depends on every track's post-strip audio length; without this cached, the
+  endpoint would read the whole playlist before sending byte one. Add the column
+  (plus frame-derived duration), populate it on upload and yt-dlp ingest, and
+  backfill existing rows. Parsing costs ~4ms for a 6.4MB file, so backfill is
+  cheap.
+
 - [ ] **3.1 — Normalize uploaded media format** (spec §11.1)
   `api/media/upload.ts` accepts m4a/flac/wav/ogg/webm and stores them unchanged.
-  Cheap byte-level concatenation in the playlist stream requires format
-  consistency — normalize to the same mono MP3 the yt-dlp path already produces.
+  The playlist stream requires format consistency — normalize to the same mono
+  MP3 the yt-dlp path produces. Sample rate matters most. Note the library is
+  *already* inconsistent (song: stereo/238k, sound machine: stereo/192k, system
+  sounds: mono/128k), so this needs a backfill pass too, not just new uploads.
 
 - [ ] **3.2 — Playlist continuous-stream endpoint** (spec §8.5)
-  New route serving a whole playlist as one response with ICY metadata at track
-  boundaries. Shape depends on Phase 2's outcome.
+  New route at `GET /api/playlists/stream/:id` serving a whole playlist as one
+  response with ICY metadata at track boundaries. The prototype's
+  frame-extraction module was written to be lifted directly into this.
 
 - [ ] **3.3 — MQTT command layer rework** (spec §6.1, §6.2)
   Remove `queue`, `sync_cards`, `card_update`, `card_delete`, `clear_cache`. Add

@@ -312,11 +312,13 @@ concatenated stream, and the device's existing metadata callback updates
 its notion of "currently playing" and re-emits `playback_status`
 accordingly, with **no new network connection**.
 
-> **⚠ Provisional** — depends on the playlist-stream prototype (backlog 2.1).
-> Open: whether byte-level concatenation suffices for clean boundaries or
-> transcoding is required, and whether ICY metadata injection is reliable
-> enough to carry status. If the prototype fails, the fallback is per-track
-> connections with an audible gap.
+> **⚠ Provisional (device side only).** Server-side concatenation and ICY
+> metadata injection are validated — see
+> `decisions/2026-08-02-playlist-streaming.md`. What remains unconfirmed is
+> how the device consumes it: that the `streamtitle` event fires mid-stream
+> carrying the injected `mediaId`, and that the decoder crosses a track
+> boundary without an audible artifact. Fallback if not: server-side
+> transcoding, which changes no device-facing contract.
 
 ### 3.6 Skip Previous / Restart
 
@@ -341,9 +343,11 @@ to. It becomes a request Server fulfills:
   computing the target position, not the device's — the device keeps no
   track history.
 
-> **⚠ Provisional** — depends on the playlist-stream prototype (backlog 2.1).
-> The exact shape of the skip request/response isn't designed yet; only the
-> requirement that it MUST NOT depend on device-local queue state is settled.
+The skip event MUST carry the device's elapsed position within the current
+track, so Server can apply the restart-vs-previous rule above. Server knows
+the playlist order and, from the last `playback_status`, which track is
+playing — but not how far into it, and the device is the only party that
+does.
 
 ### 3.7 Volume
 
@@ -636,19 +640,31 @@ existing `api/<resource>/<action>/<param>` convention used by
 
 - Begin streaming promptly — comparable to single-track connect time — not
   wait until the full playlist is assembled server-side before sending the
-  first byte.
-- Produce clean track boundaries in the byte stream (silent/inaudible
-  transition, no decode errors) given the source files' format.
-  Concatenation only needs to be this simple if source files are already
-  format-consistent (§11's upload/ingestion normalization); otherwise this
-  endpoint needs to transcode rather than concatenate, which is a heavier
-  and slower operation.
+  first byte. Tracks are read lazily, one at a time.
+- **Emit audio frames only.** Each track's ID3v2 header, ID3v1 trailer, and
+  Xing/Info/LAME VBR header frame MUST be stripped rather than passed
+  through. These are not audio: they force the decoder to resync mid-stream
+  and the VBR header frame decodes as silence. Appending whole files instead
+  measurably loses audio and causes parsers to report a malformed stream.
+- Rely on source files sharing one sample rate and channel count (§11.1).
+  Given that, frame concatenation is sample-exact and needs no transcoding.
+  A library with mixed sample rates would require transcoding instead —
+  heavier and slower, with no change to the device-facing contract.
 - Inject ICY-protocol metadata (`StreamTitle`) at each track boundary,
   encoding enough to identify the `mediaId` now playing, for the device's
-  status-reporting mechanism (§3.5, §6.2).
+  status-reporting mechanism (§3.5, §6.2). Announcement is quantised to the
+  `icy-metaint` interval, so the reported track lags the true boundary by at
+  most one interval (§9) — sub-second, and acceptable for status.
+- **Send an exact `Content-Length`; never fall back to chunked transfer
+  encoding.** Chunk-size framing interleaved with ICY metadata is an
+  untested combination for the device's decoder, and a known-length body is
+  its best-supported path. The length MUST be derived from the same pass
+  that produces the byte plan, so the two cannot disagree.
 
-> **⚠ Provisional** — this endpoint is unbuilt; its feasibility is what the
-> playlist-stream prototype (backlog 2.1) establishes. See §3.5 and §3.6.
+To send `Content-Length` without first reading every file, the server needs
+each track's *extracted audio* byte length up front. That length MUST be
+computed once at ingest and stored alongside the media item (§11), not
+recomputed per request.
 
 ### 8.6 Preview Player
 
@@ -681,6 +697,7 @@ match — values should not silently diverge between spec and code.
 | Soundmachine liveness grace period | 200ms | Same purpose as system-sound init delay; local flash reads are fast, this is a safety margin not a network allowance |
 | Skip-previous restart threshold | 3s | "Meant to restart this track" vs. "meant to go back" |
 | Card-scanned resolution timeout | 3s | Bounds the wait after publishing `card_scanned` before the "can't do anything right now" cue (§5). Long enough that a slow-but-working resolution isn't falsely flagged, short enough not to leave the user guessing |
+| `icy-metaint` (playlist stream) | 8192 bytes | Audio between ICY metadata blocks (§8.5). Also the worst-case lag on reporting a track change: ~510ms at 128kbps, ~275ms at 238kbps |
 | OTA HTTP timeout | 30s | Applies to the version-check and initial connect, not total download time |
 | OTA pre-update audio-stop wait | 3s | Bounded wait for playback to confirm `IDLE` before updating (§7); proceeds anyway on timeout |
 | Vol-up+down → restart | held ≥2s, release-triggered | Deliberate combo, distinguishable from factory reset |
@@ -727,10 +744,17 @@ created, falling back to the filename (extension stripped) as the title.
 **Uploaded files MUST be normalized to a single consistent codec, sample rate,
 and channel count** — matching what the YouTube ingestion path produces (mono
 MP3, per its `-ac 1` mixdown) — regardless of the format they arrive in. Every
-file in the library is therefore byte-compatible with every other. This is a
-prerequisite for §8.5's playlist stream to concatenate tracks cheaply at the
-byte level; a library mixing formats would force transcoding instead, which is
-slower and heavier.
+file in the library is therefore frame-compatible with every other. This is a
+prerequisite for §8.5's playlist stream to concatenate tracks cheaply; a
+library mixing sample rates would force transcoding instead, which is slower
+and heavier. Sample rate is the constraint that matters most — a decoder is
+far likelier to break on a mid-stream rate change than a bitrate change.
+
+**Every ingest path MUST also record the item's extracted-audio byte length**
+(the size after stripping ID3 and VBR-header frames) and its frame-derived
+duration. §8.5 needs the former to compute `Content-Length` without reading
+every file in a playlist. Both come free from the same parse that validates
+the file, and both are stable for the life of the file.
 
 ### 11.2 YouTube / YouTube Music Ingestion
 
