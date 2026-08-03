@@ -753,6 +753,7 @@ match — values should not silently diverge between spec and code.
 | Skip-previous restart threshold | 3s | "Meant to restart this track" vs. "meant to go back" |
 | Card-scanned resolution timeout | 3s | Bounds the wait after publishing `card_scanned` before the "can't do anything right now" cue (§5). Long enough that a slow-but-working resolution isn't falsely flagged, short enough not to leave the user guessing |
 | `icy-metaint` (playlist stream) | 8192 bytes | Audio between ICY metadata blocks (§8.5). Also the worst-case lag on reporting a track change: ~510ms at 128kbps, ~275ms at 238kbps |
+| Podcast feed refresh interval | 6h | Frequent enough that a card scanned in the morning gets that morning's episode (§11.3), infrequent enough not to hammer feed hosts |
 | OTA HTTP timeout | 30s | Applies to the version-check and initial connect, not total download time |
 | OTA pre-update audio-stop wait | 3s | Bounded wait for playback to confirm `IDLE` before updating (§7); proceeds anyway on timeout |
 | Vol-up+down → restart | held ≥2s, release-triggered | Deliberate combo, distinguishable from factory reset |

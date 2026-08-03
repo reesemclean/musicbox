@@ -17,6 +17,11 @@ const config = defineConfig({
     // mqtt.js has Node-specific code paths that break Vite's SSR bundler
     external: ['mqtt'],
   },
+  nitro: {
+    // Runs at server start. Without it, startup — including the MQTT
+    // connection devices depend on — waits for the first HTTP request.
+    plugins: ['./src/nitro/startup.plugin.ts'],
+  },
   plugins: [
     devtools(),
     tailwindcss(),

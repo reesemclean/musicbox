@@ -141,7 +141,7 @@ No dependencies on each other or on later phases. Safe to do in any order.
   `soundmachine_config` so the device can store it locally. The existing
   `/api/soundmachine/config/$mac` route already models this payload shape.
 
-- [ ] **3.6 — Scheduled podcast feed refresh** (spec §11.3)
+- [x] **3.6 — Scheduled podcast feed refresh** (spec §11.3)
   `refreshAllFeeds()` exists but only runs from a UI button. Nothing in
   `startup.ts` schedules it, so subscriptions only update when someone clicks.
 
@@ -189,6 +189,25 @@ No dependencies on each other or on later phases. Safe to do in any order.
 
 - [ ] **4.5 — `mqtt_client.cpp` command/event set** (spec §6)
   Update to the new contract. Transport layer itself is sound.
+
+---
+
+## Maintenance
+
+- [ ] **M.1 — Upgrade TanStack Start**
+  Currently on `@tanstack/react-start` 1.157.16 (declared `^1.132.0`); latest is
+  1.168.34. Nitro is pinned to `nitro-nightly@latest`, which is worth resolving
+  to a stable release at the same time.
+
+  Motivation is more than currency: server startup is awkward on this version.
+  Initialization lives in a module only pulled in by server functions, so it is
+  lazy — nothing runs, including the MQTT connection, until the first HTTP
+  request. That is currently worked around with a Nitro plugin
+  (`src/nitro/startup.plugin.ts`). Newer versions offer a first-class server
+  entry/startup hook, which would let that plugin go away.
+
+  Do this on its own, not folded into feature work — a framework bump across 36
+  minor versions plus a Nitro channel change wants its own verification pass.
 
 ---
 

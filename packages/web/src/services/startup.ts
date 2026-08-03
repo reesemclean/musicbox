@@ -6,6 +6,7 @@ import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { seedSystemSounds, seedSoundMachineSounds } from './seedService.js'
 import { backfillMedia } from './mediaBackfill.js'
+import { startPodcastRefreshSchedule } from './podcastScheduler.js'
 import { mqttService } from './mqttService.js'
 
 let initialized = false
@@ -55,6 +56,8 @@ export async function ensureInitialized(): Promise<void> {
   backfillMedia().catch((err) => {
     console.error('[Backfill] Failed:', err)
   })
+
+  startPodcastRefreshSchedule()
 }
 
 // Run on module load (server-side only)
