@@ -119,7 +119,7 @@ No dependencies on each other or on later phases. Safe to do in any order.
   *already* inconsistent (song: stereo/238k, sound machine: stereo/192k, system
   sounds: mono/128k), so this needs a backfill pass too, not just new uploads.
 
-- [ ] **3.2 — Playlist continuous-stream endpoint** (spec §8.5)
+- [x] **3.2 — Playlist continuous-stream endpoint** (spec §8.5)
   New route at `GET /api/playlists/stream/:id` serving a whole playlist as one
   response with ICY metadata at track boundaries. The prototype's
   frame-extraction module was written to be lifted directly into this.
@@ -189,6 +189,32 @@ No dependencies on each other or on later phases. Safe to do in any order.
 
 - [ ] **4.5 — `mqtt_client.cpp` command/event set** (spec §6)
   Update to the new contract. Transport layer itself is sound.
+
+---
+
+## Transitional — remove once no longer needed
+
+- [ ] **T.1 — Media backfill startup pass** (`services/mediaBackfill.ts`)
+  Measures the audio profile and generates a canonical derivative for rows that
+  predate those requirements. **Not part of the long-term design** — every
+  ingest path now populates these fields itself, so this exists only to carry
+  libraries that were created before that was true.
+
+  *Removable once every deployed library has been through it* — currently the
+  production server and the local dev copy. Verify with:
+
+  ```sql
+  SELECT COUNT(*) FROM media
+  WHERE audio_bytes IS NULL OR sample_rate IS NULL OR channels IS NULL;
+  ```
+
+  Zero on every deployment means it can go.
+
+  **Worth keeping anyway?** Arguably. When there is nothing to do it costs a
+  single query returning no rows, and it doubles as a safety net if a future
+  ingest path forgets to populate a field, or if files are placed in `data/`
+  by hand. The decision is cheap either way — the reason to note it here is so
+  a future reader doesn't mistake it for load-bearing architecture.
 
 ---
 

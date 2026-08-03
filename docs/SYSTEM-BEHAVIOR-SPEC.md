@@ -817,27 +817,19 @@ that validates the file.
 **Deleting an item MUST delete every file it owns** — the original and its
 derivative — not just the one that was played.
 
-### 11.5 Bringing an Existing Library Forward
+### 11.5 Bulk Media Processing
 
-Rows that predate these requirements are reconciled by a startup pass that
-measures the audio profile and generates any missing derivative. It is a
-one-time migration in the same spirit as a schema migration: automatic,
-idempotent, and skipping anything already done.
+Any operation that transcodes or re-measures media in bulk — whether a
+one-time reconciliation or a future re-derivation after a format change —
+**MUST NOT block startup**. Transcoding costs roughly a second per track, so a
+large library takes minutes, while the container healthcheck fails well before
+that. A blocking pass would put a real library into a restart loop that redoes
+the same work on every attempt. Such work runs in the background once the
+server is already serving.
 
-Two properties are required of it:
-
-- **It MUST NOT modify originals.** It only adds derivatives alongside them,
-  so it is safe to run unattended on a real library.
-- **It MUST NOT block startup.** Transcoding costs roughly a second per
-  track, so a large library takes minutes; the container healthcheck fails
-  well before that, and a blocking pass would put a real library into a
-  restart loop that redoes the work on every attempt. It runs in the
-  background after the server is serving.
-
-It must be startup code rather than a maintenance script: the production image
-ships only the built server bundle, with no source tree and no TypeScript
-runner, so a script would be unrunnable in exactly the environment that needs
-it.
+> The specific pass that brings pre-existing rows forward is transitional, not
+> part of this design — see the implementation backlog. It is expected to
+> become a no-op once every library it runs against is current.
 
 ### 11.2 YouTube / YouTube Music Ingestion
 

@@ -8,14 +8,18 @@ import { ensureNormalized } from './audioNormalize.js'
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data')
 
 /**
- * Bring existing library rows up to what newer code expects: a measured audio
- * profile, and a canonical derivative where the original isn't canonical.
+ * TRANSITIONAL — not part of the long-term design. See backlog item T.1.
  *
- * This is a one-time pass in the same spirit as a database migration — it runs
- * automatically, is idempotent, and skips anything already done. It exists as
- * startup code rather than a CLI script because the production image ships
- * only the built server bundle: there is no `src/` and no `tsx` in the
- * container, so a script would be unrunnable exactly where it's needed.
+ * Brings library rows created before ingest populated an audio profile and a
+ * canonical derivative up to current expectations. Every ingest path now does
+ * this itself, so once each deployed library has been through this once, it is
+ * a permanent no-op and can be deleted.
+ *
+ * It runs like a database migration — automatic, idempotent, skipping anything
+ * already done — and lives in startup code rather than a CLI script because
+ * the production image ships only the built server bundle: there is no `src/`
+ * and no `tsx` in the container, so a script would be unrunnable in exactly
+ * the environment that needs it.
  *
  * Two properties make it safe to run unattended:
  *
