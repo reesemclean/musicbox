@@ -29,12 +29,6 @@ export interface CardScannedEvent {
   timestamp: number
 }
 
-export interface CardPlayedLocallyEvent {
-  type: 'card_played_locally'
-  uid: string
-  timestamp: number
-}
-
 export interface PlaybackStatusEvent {
   type: 'playback_status'
   status: 'playing' | 'paused' | 'stopped' | 'finished'
@@ -48,6 +42,11 @@ export interface DeviceStatusEvent {
   mac: string
 }
 
+/**
+ * Legacy: firmware predating locally-stored sound machine config asks the
+ * server on every long-press. Kept only for the cutover window — see the
+ * transition shim note on the handler.
+ */
 export interface SoundMachineRequestEvent {
   type: 'soundmachine_request'
 }
@@ -58,17 +57,23 @@ export interface DeviceLogsEvent {
   timestamp: number
 }
 
-export type DeviceEvent = CardScannedEvent | CardPlayedLocallyEvent | PlaybackStatusEvent | DeviceStatusEvent | SoundMachineRequestEvent | DeviceLogsEvent
+export type DeviceEvent =
+  | CardScannedEvent
+  | PlaybackStatusEvent
+  | DeviceStatusEvent
+  | SoundMachineRequestEvent
+  | DeviceLogsEvent
 
 // Commands to devices
+
+/**
+ * Play a URL. That URL is either a single media item or a whole playlist
+ * served as one continuous stream — the device treats both identically, as one
+ * connection. `mediaId` identifies the first track so the device has something
+ * to report before any ICY metadata arrives.
+ */
 export interface PlayCommand {
   command: 'play'
-  url: string
-  mediaId: number
-}
-
-export interface QueueCommand {
-  command: 'queue'
   url: string
   mediaId: number
 }
@@ -97,18 +102,38 @@ export interface OtaCommand {
   sha256: string
 }
 
-export interface SoundMachineCommand {
-  command: 'soundmachine'
+/**
+ * Push the device's sound machine configuration so it can store it locally and
+ * act on a long-press without asking. A null url means "nothing configured".
+ */
+export interface SoundMachineConfigCommand {
+  command: 'soundmachine_config'
   url: string | null
   name: string | null
   volume: number | null
 }
 
-export interface ClearCacheCommand {
-  command: 'clear_cache'
+export interface ErrorSoundCommand {
+  command: 'error_sound'
 }
 
-export type DeviceCommand = PlayCommand | QueueCommand | PauseCommand | ResumeCommand | StopCommand | VolumeCommand | OtaCommand | SoundMachineCommand | ClearCacheCommand
+/** Device configuration. `status: 'approved'` also unlocks NFC scanning. */
+export interface ConfigCommand {
+  command: 'config'
+  status?: 'approved'
+  maxVolume?: number
+}
+
+export type DeviceCommand =
+  | PlayCommand
+  | PauseCommand
+  | ResumeCommand
+  | StopCommand
+  | VolumeCommand
+  | OtaCommand
+  | SoundMachineConfigCommand
+  | ErrorSoundCommand
+  | ConfigCommand
 
 // Playback status store (in-memory, keyed by MAC with colons)
 export interface PlaybackStatus {
@@ -304,10 +329,6 @@ class MqttService extends EventEmitter {
     if (event.type === 'card_scanned') {
       this.emit('card:scanned', { mac, uid: event.uid, timestamp: event.timestamp })
       await this.handleCardScanned(macNoColons, event.uid)
-    } else if (event.type === 'card_played_locally') {
-      // Device handled playback from cache - just emit for UI, don't send commands
-      console.log(`[MQTT] Card played locally on device: ${event.uid}`)
-      this.emit('card:scanned', { mac, uid: event.uid, timestamp: event.timestamp, handledLocally: true })
     } else if (event.type === 'playback_status') {
       // Look up media title if we have a mediaId
       let mediaTitle: string | undefined
@@ -356,7 +377,7 @@ class MqttService extends EventEmitter {
       // Emit event so Control Plane can prompt for card registration
       this.emit('card:unknown', { mac: this.macWithColons(macNoColons), uid })
       // Tell device to play error sound
-      this.sendCommand(macNoColons, { command: 'error_sound' } as any)
+      this.sendCommand(macNoColons, { command: 'error_sound' })
       return
     }
 
@@ -384,36 +405,31 @@ class MqttService extends EventEmitter {
         }
       }
     } else if (card.playlistId) {
-      // Playlist mapping - get all tracks for gapless playback
-      const tracks = await db
-        .select({
-          mediaId: playlistMedia.mediaId,
-          position: playlistMedia.position,
-          title: media.title,
-        })
+      // A playlist is one continuous stream, not a queue of tracks: the device
+      // opens a single connection covering the whole listen, so there is no
+      // per-track reconnect and no gap between tracks. Which track is playing
+      // arrives in-band as ICY metadata.
+      const [firstTrack] = await db
+        .select({ mediaId: playlistMedia.mediaId, title: media.title })
         .from(playlistMedia)
         .innerJoin(media, eq(playlistMedia.mediaId, media.id))
         .where(eq(playlistMedia.playlistId, card.playlistId))
         .orderBy(playlistMedia.position)
+        .limit(1)
 
-      if (tracks.length > 0) {
-        // Apply volume first if set
+      if (firstTrack) {
         if (card.volume !== null) {
           this.setVolume(macForTopic, card.volume)
         }
 
-        // Play first track immediately
-        const firstTrack = tracks[0]
-        const firstUrl = `${this.getStreamBaseUrl()}/api/media/stream/${firstTrack.mediaId}`
-        console.log(`[MQTT] Playing playlist (${tracks.length} tracks), starting: ${firstTrack.title}`)
-        this.play(macForTopic, firstUrl, firstTrack.mediaId)
-
-        // Queue remaining tracks for gapless playback
-        for (let i = 1; i < tracks.length; i++) {
-          const track = tracks[i]
-          const url = `${this.getStreamBaseUrl()}/api/media/stream/${track.mediaId}`
-          this.queue(macForTopic, url, track.mediaId)
-        }
+        const url = `${this.getStreamBaseUrl()}/api/playlists/stream/${card.playlistId}`
+        console.log(`[MQTT] Playing playlist ${card.playlistId}, starting: ${firstTrack.title}`)
+        // mediaId is the first track, so the device can report something
+        // before the first metadata block arrives.
+        this.play(macForTopic, url, firstTrack.mediaId)
+      } else {
+        console.log(`[MQTT] Playlist ${card.playlistId} is empty`)
+        this.sendCommand(macForTopic, { command: 'error_sound' })
       }
     } else if (card.podcastFeedId) {
       // Podcast feed - play this feed's most recent fully-downloaded episode
@@ -429,7 +445,7 @@ class MqttService extends EventEmitter {
         }
       } else {
         console.log(`[MQTT] No downloaded episode available for feed ${card.podcastFeedId}`)
-        this.sendCommand(macForTopic, { command: 'error_sound' } as any)
+        this.sendCommand(macForTopic, { command: 'error_sound' })
       }
     } else {
       console.log(`[MQTT] Card ${uid} has no content mapped`)
@@ -445,47 +461,35 @@ class MqttService extends EventEmitter {
     return process.env.STREAM_BASE_URL || this.getBaseUrl()
   }
 
-  private async handleSoundMachineRequest(macNoColons: string, macWithColons: string): Promise<void> {
-    console.log(`[MQTT] Sound machine request from ${macWithColons}`)
+  /**
+   * TRANSITION SHIM — delete once every device runs firmware that stores its
+   * sound machine configuration locally (backlog 3.7).
+   *
+   * Older firmware asks the server on every long-press instead of using local
+   * state, and answers only to the legacy `soundmachine` command. Keeping this
+   * lets old and new firmware coexist against one server during the rollout,
+   * so devices can be updated one at a time rather than all at once.
+   */
+  private async handleSoundMachineRequest(
+    macNoColons: string,
+    macWithColons: string
+  ): Promise<void> {
+    console.log(`[MQTT] Legacy sound machine request from ${macWithColons}`)
 
-    // Get device's configured sound
     const [device] = await db
       .select()
       .from(devices)
       .where(eq(devices.mac, macWithColons))
       .limit(1)
 
-    if (!device || !device.soundMachineSound) {
-      console.log(`[MQTT] No sound machine configured for device ${macWithColons}`)
-      this.sendCommand(macNoColons, { command: 'soundmachine', url: null, name: null, volume: null })
-      return
-    }
+    const sound = await this.resolveSoundMachineSound(device?.soundMachineSound ?? null)
 
-    // soundMachineSound stores the media ID as string
-    const soundId = parseInt(device.soundMachineSound, 10)
-    if (isNaN(soundId)) {
-      console.log(`[MQTT] Invalid sound machine config for device ${macWithColons}`)
-      this.sendCommand(macNoColons, { command: 'soundmachine', url: null, name: null, volume: null })
-      return
-    }
-
-    // Look up the sound
-    const [sound] = await db
-      .select()
-      .from(media)
-      .where(eq(media.id, soundId))
-      .limit(1)
-
-    if (!sound) {
-      console.log(`[MQTT] Sound machine sound not found: ${soundId}`)
-      this.sendCommand(macNoColons, { command: 'soundmachine', url: null, name: null, volume: null })
-      return
-    }
-
-    const url = `${this.getStreamBaseUrl()}/api/media/stream/${sound.id}`
-    const volume = device.soundMachineVolume ?? null
-    console.log(`[MQTT] Sending sound machine config: ${sound.title} (volume: ${volume ?? 'default'})`)
-    this.sendCommand(macNoColons, { command: 'soundmachine', url, name: sound.title, volume })
+    this.publish(TOPICS.deviceCommands(macNoColons), {
+      command: 'soundmachine',
+      url: sound ? `${this.getStreamBaseUrl()}/api/media/stream/${sound.id}` : null,
+      name: sound?.title ?? null,
+      volume: device?.soundMachineVolume ?? null,
+    })
   }
 
   private async handleDeviceStatus(macNoColons: string, status: { online: boolean }): Promise<void> {
@@ -518,12 +522,15 @@ class MqttService extends EventEmitter {
     this.emit('device:logs', { mac, logs })
   }
 
+  /**
+   * Send an approved device its configuration.
+   *
+   * There is nothing else to push: cards are resolved per-scan against the
+   * database, so devices hold no card mapping to keep in sync.
+   */
   private async sendDeviceConfig(macWithColons: string): Promise<void> {
-    // Send initial config to approved device
-    // Topics use MAC without colons
     const macForTopic = macWithColons.replace(/:/g, '')
 
-    // Get device to include maxVolume
     const [device] = await db
       .select()
       .from(devices)
@@ -536,145 +543,51 @@ class MqttService extends EventEmitter {
       maxVolume: device?.maxVolume ?? 42,
     })
 
-    // Sync all cards to the device
-    this.syncCardsToDevice(macForTopic)
+    await this.pushSoundMachineConfig(macWithColons)
   }
 
-  // Sync all cards to a device (for caching)
-  async syncCardsToDevice(macNoColons: string): Promise<void> {
-    console.log(`[MQTT] Syncing cards to device ${macNoColons}`)
+  /**
+   * Push the device's sound machine configuration so it can act on a
+   * long-press using local state, with no round trip — and so the sound
+   * machine keeps working when the server is unreachable.
+   */
+  async pushSoundMachineConfig(macWithColons: string): Promise<void> {
+    const macForTopic = macWithColons.replace(/:/g, '')
 
-    // Get all cards with their media mappings
-    const allCards = await db.select().from(cards)
+    const [device] = await db
+      .select()
+      .from(devices)
+      .where(eq(devices.mac, macWithColons))
+      .limit(1)
 
-    const cardData: Array<{
-      uid: string
-      mediaIds: number[]
-      volume: number
-      type: 'song' | 'playlist' | 'podcast'
-    }> = []
+    if (!device) return
 
-    for (const card of allCards) {
-      let mediaIds: number[] = []
+    const sound = await this.resolveSoundMachineSound(device.soundMachineSound)
 
-      let cardType: 'song' | 'playlist' | 'podcast' = 'song'
-
-      if (card.mediaId) {
-        // Single media item
-        mediaIds = [card.mediaId]
-        cardType = 'song'
-      } else if (card.playlistId) {
-        // Get all tracks from playlist in order
-        const tracks = await db
-          .select({ mediaId: playlistMedia.mediaId })
-          .from(playlistMedia)
-          .where(eq(playlistMedia.playlistId, card.playlistId))
-          .orderBy(playlistMedia.position)
-
-        mediaIds = tracks.map(t => t.mediaId)
-        cardType = 'playlist'
-      } else if (card.podcastFeedId) {
-        // This feed's most recent fully-downloaded episode
-        const latestEpisode = await getLatestEpisode(card.podcastFeedId)
-
-        if (latestEpisode) {
-          mediaIds = [latestEpisode.id]
-        }
-        cardType = 'podcast'
-      }
-
-      if (mediaIds.length > 0) {
-        cardData.push({
-          uid: card.uid,
-          mediaIds,
-          volume: card.volume ?? -1,
-          type: cardType,
-        })
-      }
-    }
-
-    this.publish(TOPICS.deviceCommands(macNoColons), {
-      command: 'sync_cards',
-      cards: cardData,
+    this.sendCommand(macForTopic, {
+      command: 'soundmachine_config',
+      url: sound ? `${this.getStreamBaseUrl()}/api/media/stream/${sound.id}` : null,
+      name: sound?.title ?? null,
+      volume: device.soundMachineVolume ?? null,
     })
-
-    console.log(`[MQTT] Synced ${cardData.length} cards to device`)
   }
 
-  // Push a single card update to all online devices
-  async pushCardUpdate(uid: string): Promise<void> {
-    const [card] = await db.select().from(cards).where(eq(cards.uid, uid)).limit(1)
+  /** Resolve a device's configured sound machine media row, if any. */
+  private async resolveSoundMachineSound(
+    configured: string | null
+  ): Promise<{ id: number; title: string } | null> {
+    if (!configured) return null
 
-    if (!card) {
-      // Card was deleted, push delete to all devices
-      await this.pushCardDelete(uid)
-      return
-    }
+    const soundId = parseInt(configured, 10)
+    if (isNaN(soundId)) return null
 
-    let mediaIds: number[] = []
-    let cardType: 'song' | 'playlist' | 'podcast' = 'song'
+    const [sound] = await db
+      .select({ id: media.id, title: media.title })
+      .from(media)
+      .where(eq(media.id, soundId))
+      .limit(1)
 
-    if (card.mediaId) {
-      mediaIds = [card.mediaId]
-      cardType = 'song'
-    } else if (card.playlistId) {
-      const tracks = await db
-        .select({ mediaId: playlistMedia.mediaId })
-        .from(playlistMedia)
-        .where(eq(playlistMedia.playlistId, card.playlistId))
-        .orderBy(playlistMedia.position)
-
-      mediaIds = tracks.map(t => t.mediaId)
-      cardType = 'playlist'
-    } else if (card.podcastFeedId) {
-      const latestEpisode = await getLatestEpisode(card.podcastFeedId)
-
-      if (latestEpisode) {
-        mediaIds = [latestEpisode.id]
-      }
-      cardType = 'podcast'
-    }
-
-    // Get all approved devices
-    const approvedDevices = await db
-      .select()
-      .from(devices)
-      .where(eq(devices.status, 'approved'))
-
-    const updatePayload = {
-      command: 'card_update',
-      uid: card.uid,
-      mediaIds,
-      volume: card.volume ?? -1,
-      type: cardType,
-    }
-
-    for (const device of approvedDevices) {
-      const macForTopic = device.mac.replace(/:/g, '')
-      this.publish(TOPICS.deviceCommands(macForTopic), updatePayload)
-    }
-
-    console.log(`[MQTT] Pushed card update ${uid} to ${approvedDevices.length} devices`)
-  }
-
-  // Push a card deletion to all online devices
-  async pushCardDelete(uid: string): Promise<void> {
-    const approvedDevices = await db
-      .select()
-      .from(devices)
-      .where(eq(devices.status, 'approved'))
-
-    const deletePayload = {
-      command: 'card_delete',
-      uid,
-    }
-
-    for (const device of approvedDevices) {
-      const macForTopic = device.mac.replace(/:/g, '')
-      this.publish(TOPICS.deviceCommands(macForTopic), deletePayload)
-    }
-
-    console.log(`[MQTT] Pushed card delete ${uid} to ${approvedDevices.length} devices`)
+    return sound ?? null
   }
 
   // Public methods for sending commands
@@ -697,10 +610,6 @@ class MqttService extends EventEmitter {
     this.sendCommand(mac, { command: 'play', url, mediaId })
   }
 
-  queue(mac: string, url: string, mediaId: number): void {
-    this.sendCommand(mac, { command: 'queue', url, mediaId })
-  }
-
   pause(mac: string): void {
     this.sendCommand(mac, { command: 'pause' })
   }
@@ -719,10 +628,6 @@ class MqttService extends EventEmitter {
 
   triggerOta(mac: string, url: string, version: string, sha256: string): void {
     this.sendCommand(mac, { command: 'ota', url, version, sha256 })
-  }
-
-  clearCache(mac: string): void {
-    this.sendCommand(mac, { command: 'clear_cache' })
   }
 
   isConnected(): boolean {

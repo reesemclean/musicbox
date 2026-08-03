@@ -1,23 +1,10 @@
 import { createServerFn } from '@tanstack/react-start'
 import { eq, asc, and } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { playlists, playlistMedia, media, cards, type Playlist, type Media } from '../db/schema.js'
-import { mqttService } from '../services/mqttService.js'
+import { playlists, playlistMedia, media, type Playlist, type Media } from '../db/schema.js'
 
 export type PlaylistWithItems = Playlist & {
   items: (Media & { position: number })[]
-}
-
-// Helper to push cache updates for all cards linked to a playlist
-async function pushCardsForPlaylist(playlistId: number): Promise<void> {
-  const linkedCards = await db
-    .select({ uid: cards.uid })
-    .from(cards)
-    .where(eq(cards.playlistId, playlistId))
-
-  for (const card of linkedCards) {
-    mqttService.pushCardUpdate(card.uid)
-  }
 }
 
 export const getPlaylists = createServerFn({ method: 'GET' })
@@ -105,9 +92,6 @@ export const addMediaToPlaylist = createServerFn({ method: 'POST' })
       .values({ playlistId, mediaId, position: pos })
       .returning()
 
-    // Push cache updates to devices
-    pushCardsForPlaylist(playlistId)
-
     return added
   })
 
@@ -122,9 +106,6 @@ export const removeMediaFromPlaylist = createServerFn({ method: 'POST' })
           eq(playlistMedia.mediaId, data.mediaId)
         )
       )
-
-    // Push cache updates to devices
-    pushCardsForPlaylist(data.playlistId)
 
     return { success: true }
   })
@@ -146,9 +127,6 @@ export const reorderPlaylist = createServerFn({ method: 'POST' })
     if (newEntries.length > 0) {
       await db.insert(playlistMedia).values(newEntries)
     }
-
-    // Push cache updates to devices
-    pushCardsForPlaylist(playlistId)
 
     return { success: true }
   })

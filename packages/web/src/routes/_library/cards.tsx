@@ -53,7 +53,7 @@ function CardsPage() {
 
   // Handle card scans from MQTT - show toast for unknown cards
   useEffect(() => {
-    if (lastCardScanned && !lastCardScanned.handledLocally) {
+    if (lastCardScanned) {
       // Check if this card is registered
       const isRegistered = cards.some((c) => c.uid === lastCardScanned.uid)
       if (!isRegistered) {

@@ -207,7 +207,6 @@ modes at once or to leave a stale mode set after switching.
 | `pause` | Pause current audio. No-op if not `PLAYING`. |
 | `resume` | Resume paused audio. No-op if not `PAUSED`. |
 | `stop` | Stop audio entirely, return to `IDLE`. |
-| `skip_next` / `skip_prev` | Request a track change within the current playlist stream. See 3.6 — this is no longer a purely local operation. |
 | `volume(level)` | Set output volume (0–42, see 3.7). |
 | `soundmachine(url, name, volume)` | Enter soundmachine mode with the given track, played from local flash (see 3.8). |
 | `soundmachine_stop` | Exit soundmachine mode, return to `IDLE`. |
@@ -215,6 +214,11 @@ modes at once or to leave a stale mode set after switching.
 There is no `queue` command. With no local storage and no per-track device
 queue, "queueing" a playlist is Server's job — it hands the device one URL
 covering the whole listen (3.5).
+
+There is no skip *command* either. Skip is a device→server event (3.6, §6.2):
+the device reports that its button was pressed and Server answers with a fresh
+`play`. A skip initiated from the Control Plane needs no round trip at all —
+Server already knows the playlist and simply sends the `play` directly.
 
 ### 3.3 Command × State/Mode Matrix
 
@@ -348,6 +352,16 @@ track, so Server can apply the restart-vs-previous rule above. Server knows
 the playlist order and, from the last `playback_status`, which track is
 playing — but not how far into it, and the device is the only party that
 does.
+
+Fulfilling a skip requires two things Server would not otherwise need:
+
+- **A record of what it told each device to play.** `playback_status` reports
+  a `mediaId`, which identifies a track but not the playlist it came from —
+  the same track may appear in several. Server MUST therefore remember the
+  playlist context it issued with the last `play`.
+- **A playlist stream that can begin at an arbitrary track.** §8.5's endpoint
+  serves a playlist from the beginning; skipping means requesting the same
+  playlist starting at a different position.
 
 ### 3.7 Volume
 
@@ -536,7 +550,6 @@ Sequence:
 |---|---|---|
 | `play` | `url`, `mediaId` (or a playlist context id) | See 3.2/3.5 — single item or a continuous playlist stream, indistinguishable to the device |
 | `pause` / `resume` / `stop` | — | See 3.2 |
-| `skip` | `direction` | See 3.6 — Server responds with a fresh `play`, not a direct effect of this command itself |
 | `volume` | `level` | See 3.7 |
 | `ota` | `url`, `version`, `sha256` | See §7 |
 | `config` | `status?`, `maxVolume?` | `status:"approved"` marks the device approved and triggers the startup sound (first time only); `maxVolume` updates the cap live |

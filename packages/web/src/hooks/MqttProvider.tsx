@@ -14,11 +14,10 @@ export function MqttProvider({ children }: { children: React.ReactNode }) {
   const [lastCardScanned, setLastCardScanned] = useState<CardScannedEvent | null>(null)
 
   const handleEvent = useCallback((event: MqttEvent) => {
-    if (event.type === 'card_scanned' && !event.handledLocally) {
-      // Store for components that need to react to unknown card scans
+    if (event.type === 'card_scanned') {
+      // Store for components that need to react to card scans
       setLastCardScanned(event)
 
-      // Show toast for unknown cards (cards not in cache won't have handledLocally set)
       toast('Card scanned', {
         description: `Card ${event.uid} was scanned`,
         duration: 5000,

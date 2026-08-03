@@ -9,7 +9,6 @@ export interface CardScannedEvent {
   mac: string
   uid: string
   timestamp: number
-  handledLocally?: boolean
 }
 
 export interface PlaybackStatusEvent {

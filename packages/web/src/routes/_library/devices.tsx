@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 // Note: useEffect kept for DeviceRemoteControl component
-import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield, Trash2 } from 'lucide-react'
+import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield, Trash2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -17,7 +17,7 @@ import {
   stopDevice,
   setDeviceVolume,
   triggerDeviceUpdate,
-  clearDeviceCache,
+  resyncDevice,
 } from '@/server/devices'
 import { getFirmwareInfo } from '@/server/firmware'
 
@@ -532,14 +532,14 @@ function DeviceRemoteControl({ device }: { device: Device }) {
     volumeMutation.mutate(newVolume)
   }
 
-  const clearCacheMutation = useMutation({
+  const resyncMutation = useMutation({
     mutationFn: async () => {
-      await clearDeviceCache({ data: { id: device.id } })
+      await resyncDevice({ data: { id: device.id } })
     },
     onSuccess: () => {
-      toast.success('Cache cleared')
+      toast.success('Sound machine config re-sent')
     },
-    onError: () => toast.error('Failed to clear cache'),
+    onError: () => toast.error('Failed to re-sync device'),
   })
 
   // Track if update was triggered (persists across re-renders during OTA)
@@ -723,17 +723,18 @@ function DeviceRemoteControl({ device }: { device: Device }) {
           ) : null}
         </div>
 
-        {/* Clear Cache */}
+        {/* Re-sync device-local config. Devices hold no media or card cache
+            any more, so this exists only to re-push the sound machine sound. */}
         <div className="flex items-center gap-3">
-          <Trash2 className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm">SD Cache</span>
+          <RefreshCw className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm">Device config</span>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => clearCacheMutation.mutate()}
-            disabled={clearCacheMutation.isPending || updateTriggered}
+            onClick={() => resyncMutation.mutate()}
+            disabled={resyncMutation.isPending || updateTriggered}
           >
-            {clearCacheMutation.isPending ? 'Clearing...' : 'Clear'}
+            {resyncMutation.isPending ? 'Sending...' : 'Re-sync'}
           </Button>
         </div>
       </div>

@@ -57,27 +57,41 @@ export const updateDevice = createServerFn({ method: 'POST' })
 
     if (!updated) throw new Error('Device not found')
 
-    // If status changed to approved, notify the device via MQTT
+    const macForTopic = updated.mac.replace(/:/g, '')
+
+    // If status changed to approved, notify the device via MQTT. Nothing else
+    // needs pushing — cards are resolved per-scan against the database.
     if (updates.status === 'approved' && current.status !== 'approved') {
-      const macForTopic = updated.mac.replace(/:/g, '')
       mqttService.publish(TOPICS.deviceCommands(macForTopic), {
         command: 'config',
         status: 'approved',
         maxVolume: updated.maxVolume ?? 42,
       })
       console.log(`[Devices] Sent approval to device ${updated.mac}`)
-      // Sync cards after approval
-      mqttService.syncCardsToDevice(macForTopic)
+      await mqttService.pushSoundMachineConfig(updated.mac)
     }
 
     // If maxVolume changed, send config update to device
     if (updates.maxVolume !== undefined && current.maxVolume !== updates.maxVolume && updated.status === 'approved') {
-      const macForTopic = updated.mac.replace(/:/g, '')
       mqttService.publish(TOPICS.deviceCommands(macForTopic), {
         command: 'config',
         maxVolume: updated.maxVolume ?? 42,
       })
       console.log(`[Devices] Sent maxVolume update to device ${updated.mac}: ${updated.maxVolume ?? 42}`)
+    }
+
+    // The device stores its sound machine configuration locally so a
+    // long-press works without asking the server — and keeps working when the
+    // server is unreachable. That copy is only correct if changes are pushed.
+    const soundChanged =
+      (updates.soundMachineSound !== undefined &&
+        updates.soundMachineSound !== current.soundMachineSound) ||
+      (updates.soundMachineVolume !== undefined &&
+        updates.soundMachineVolume !== current.soundMachineVolume)
+
+    if (soundChanged && updated.status === 'approved') {
+      await mqttService.pushSoundMachineConfig(updated.mac)
+      console.log(`[Devices] Pushed sound machine config to ${updated.mac}`)
     }
 
     return updated
@@ -157,14 +171,19 @@ export const triggerDeviceUpdate = createServerFn({ method: 'POST' })
     return { success: true }
   })
 
-export const clearDeviceCache = createServerFn({ method: 'POST' })
+/**
+ * Re-push the device's sound machine configuration.
+ *
+ * Replaces the old "clear cache" action: devices no longer hold a media or
+ * card cache, so the only local state worth refreshing by hand is this.
+ */
+export const resyncDevice = createServerFn({ method: 'POST' })
   .inputValidator((data: { id: number }) => data)
   .handler(async ({ data }) => {
     const [device] = await db.select().from(devices).where(eq(devices.id, data.id)).limit(1)
     if (!device) throw new Error('Device not found')
     if (device.status !== 'approved') throw new Error('Device not approved')
 
-    const macForTopic = device.mac.replace(/:/g, '')
-    mqttService.clearCache(macForTopic)
+    await mqttService.pushSoundMachineConfig(device.mac)
     return { success: true }
   })

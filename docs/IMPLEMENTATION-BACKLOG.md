@@ -124,19 +124,19 @@ No dependencies on each other or on later phases. Safe to do in any order.
   response with ICY metadata at track boundaries. The prototype's
   frame-extraction module was written to be lifted directly into this.
 
-- [ ] **3.3 — MQTT command layer rework** (spec §6.1, §6.2)
+- [x] **3.3 — MQTT command layer rework** (spec §6.1, §6.2)
   Remove `queue`, `sync_cards`, `card_update`, `card_delete`, `clear_cache`. Add
   `skip` and `soundmachine_config`. Card resolution emits a single `play`
   carrying either a media or playlist stream URL. The DB resolution logic in
   `handleCardScanned` is correct and should be kept.
 
-- [ ] **3.4 — Delete card-sync machinery** (spec §5, §12)
+- [x] **3.4 — Delete card-sync machinery** (spec §5, §12)
   `syncCardsToDevice`, `pushCardUpdate`, `pushCardDelete`, and
   `pushCardsForPlaylist` (`server/playlists.ts`) exist solely to maintain a
   device-side card cache that no longer exists. Remove them and all call sites
   in `cards.ts`, `devices.ts`, `playlists.ts`.
 
-- [ ] **3.5 — Push sound-machine config on change** (spec §3.8)
+- [x] **3.5 — Push sound-machine config on change** (spec §3.8)
   When `soundMachineSound`/`soundMachineVolume` change in `updateDevice`, push
   `soundmachine_config` so the device can store it locally. The existing
   `/api/soundmachine/config/$mac` route already models this payload shape.

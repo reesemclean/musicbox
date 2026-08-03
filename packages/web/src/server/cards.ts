@@ -2,7 +2,6 @@ import { createServerFn } from '@tanstack/react-start'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { cards, media, playlists, podcastFeeds } from '../db/schema.js'
-import { mqttService } from '../services/mqttService.js'
 
 export const getCards = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -50,9 +49,6 @@ export const createCard = createServerFn({ method: 'POST' })
 
     const [created] = await db.insert(cards).values(values).returning()
 
-    // Push card to all devices
-    mqttService.pushCardUpdate(created.uid)
-
     return created
   })
 
@@ -99,9 +95,6 @@ export const updateCard = createServerFn({ method: 'POST' })
 
     if (!updated) throw new Error('Card not found')
 
-    // Push update to all devices
-    mqttService.pushCardUpdate(updated.uid)
-
     return updated
   })
 
@@ -110,9 +103,6 @@ export const deleteCard = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const [deleted] = await db.delete(cards).where(eq(cards.id, data.id)).returning()
     if (!deleted) throw new Error('Card not found')
-
-    // Push delete to all devices
-    mqttService.pushCardDelete(deleted.uid)
 
     return { success: true }
   })
