@@ -11,6 +11,17 @@ const SOUNDMACHINE_DATA_DIR = join(DATA_DIR, 'soundmachine')
 const SYSTEM_SOUNDS_SEED_DIR = join(process.cwd(), 'seed-data', 'system-sounds')
 const SYSTEM_SOUNDS_DATA_DIR = join(DATA_DIR, 'sounds')
 
+const MIME_BY_EXT: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
+}
+
+function mimeTypeFor(fileName: string): string {
+  return MIME_BY_EXT[extname(fileName).toLowerCase()] || 'audio/mpeg'
+}
+
 /**
  * Seeds sound machine files and database entries.
  * Copies files from seed-data/soundmachine to data/soundmachine if they don't exist,
@@ -73,6 +84,7 @@ export async function seedSoundMachineSounds(): Promise<void> {
       await db.insert(media).values({
         title: name,
         type: 'soundmachine',
+        mimeType: mimeTypeFor(file),
         filePath: relativePath,
         fileSize: stats.size,
         metadata: { system: true },

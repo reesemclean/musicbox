@@ -31,7 +31,13 @@ export const media = sqliteTable('media', {
   title: text('title').notNull(),
   duration: integer('duration'), // in seconds
   mimeType: text('mime_type'),
-  fileSize: integer('file_size'),
+  fileSize: integer('file_size'), // bytes on disk, including ID3/VBR headers
+  // Bytes of decodable audio frames only, excluding ID3 tags and the Xing/VBR
+  // header frame. The playlist stream concatenates exactly these bytes, so it
+  // sums this column to produce an exact Content-Length without having to read
+  // every file first. Null means "not yet measured" (pre-existing rows, or a
+  // file that failed to parse).
+  audioBytes: integer('audio_bytes'),
   filePath: text('file_path').notNull(),
   metadata: text('metadata', { mode: 'json' }).$type<MediaMetadata>(), // type-specific: artist, album, showName, etc.
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),

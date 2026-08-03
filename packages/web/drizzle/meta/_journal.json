@@ -8,6 +8,13 @@
       "when": 1770056328190,
       "tag": "0000_wealthy_arachne",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785722112511,
+      "tag": "0001_violet_bishop",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { parseBuffer } from 'music-metadata'
 import { db } from '../db/index.js'
 import { downloadQueue, media, playlists, playlistMedia } from '../db/schema.js'
+import { profileAudio } from '../lib/mp3.js'
 import { getAlbum } from './ytmusicService.js'
 
 const DATA_ROOT = process.env.DATA_DIR || path.join(process.cwd(), 'data')
@@ -169,6 +170,14 @@ async function processDownload(queueId: number) {
             console.warn('Failed to extract audio metadata')
           }
 
+          // Measure decodable audio so the playlist stream can compute an
+          // exact Content-Length without re-reading this file. Frame-derived
+          // duration is exact where music-metadata's is estimated for VBR.
+          const profile = profileAudio(fileData)
+          if (profile.durationSec > 0) {
+            duration = Math.round(profile.durationSec)
+          }
+
           // Create media entry
           const [newMedia] = await db.insert(media).values({
             type: 'song',
@@ -176,6 +185,7 @@ async function processDownload(queueId: number) {
             duration,
             mimeType: 'audio/mpeg',
             fileSize: fileStats.size,
+            audioBytes: profile.audioBytes || null,
             filePath: `songs/${uuid}.mp3`,
             metadata: {
               artist: artist || null,

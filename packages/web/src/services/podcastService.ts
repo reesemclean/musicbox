@@ -5,6 +5,7 @@ import Parser from 'rss-parser'
 import { eq, desc, inArray } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { podcastFeeds, media } from '../db/schema.js'
+import { profileAudio } from '../lib/mp3.js'
 
 const DATA_ROOT = process.env.DATA_DIR || path.join(process.cwd(), 'data')
 const parser = new Parser()
@@ -427,10 +428,20 @@ async function downloadEpisodeById(mediaId: number, episode: PodcastEpisode) {
       mimeType = 'audio/ogg'
     }
 
+    // Measure decodable audio, as for songs. Only meaningful for MP3 — other
+    // container formats yield no frames and leave audioBytes null, which is
+    // correct: they can't take part in byte-level stream concatenation.
+    let audioBytes: number | null = null
+    if (mimeType === 'audio/mpeg') {
+      const profile = profileAudio(await fs.readFile(outputPath))
+      audioBytes = profile.audioBytes || null
+    }
+
     // Update the existing media entry with file info
     await db.update(media).set({
       mimeType,
       fileSize: stats.size,
+      audioBytes,
       filePath: `podcasts/${uuid}.mp3`,
       metadata: {
         ...existingMeta,

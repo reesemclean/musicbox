@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { parseBuffer } from 'music-metadata'
 import { db } from '@/db/index.js'
 import { media } from '@/db/schema.js'
+import { profileAudio } from '@/lib/mp3'
 
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data')
 
@@ -53,6 +54,15 @@ export const Route = createFileRoute('/api/media/upload')({
           // Metadata extraction is optional
         }
 
+        // Measure decodable audio so the playlist stream can compute an exact
+        // Content-Length without reading this file again. Frame-derived
+        // duration is exact where music-metadata's is estimated for VBR, so
+        // prefer it when available.
+        const profile = profileAudio(buffer)
+        if (profile.durationSec > 0) {
+          duration = Math.round(profile.durationSec)
+        }
+
         // Create media entry
         const [newMedia] = await db.insert(media).values({
           type: 'song',
@@ -60,6 +70,7 @@ export const Route = createFileRoute('/api/media/upload')({
           duration,
           mimeType: file.type || 'audio/mpeg',
           fileSize: buffer.length,
+          audioBytes: profile.audioBytes || null,
           filePath: `songs/${fileName}`,
           metadata: {
             artist: artist || null,

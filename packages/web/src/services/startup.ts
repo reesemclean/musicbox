@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { seedSystemSounds, seedSoundMachineSounds } from './seedService.js'
+import { backfillAudioProfiles } from './audioProfileBackfill.js'
 import { mqttService } from './mqttService.js'
 
 let initialized = false
@@ -37,6 +38,9 @@ export async function ensureInitialized(): Promise<void> {
   runMigrations()
   await seedSystemSounds()
   await seedSoundMachineSounds()
+
+  // After seeding, so freshly-seeded sound machine files get measured too.
+  await backfillAudioProfiles()
 
   // Connect to MQTT broker for device communication
   try {
