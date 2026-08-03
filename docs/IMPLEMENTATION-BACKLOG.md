@@ -166,17 +166,17 @@ No dependencies on each other or on later phases. Safe to do in any order.
 
 ## Phase 4 — ESP32 firmware
 
-- [ ] **4.1 — Delete SD and card-cache modules** (spec §4, §5)
+- [x] **4.1 — Delete SD and card-cache modules** (spec §4, §5)
   `sd_cache.cpp/h` (contains the only `SD.begin()`) and `card_cache.cpp/h` (pure
   RAM, but the device no longer holds card mappings at all).
 
-- [ ] **4.2 — New local flash store** (spec §4, §3.8)
+- [x] **4.2 — New local flash store** (spec §4, §3.8)
   LittleFS for system sounds and the single sound-machine file; NVS for
   sound-machine config. Written fresh — `sd_cache`'s eviction and download-queue
   machinery doesn't map onto a scope this small. Follow `device_config.cpp`'s
   Preferences pattern for NVS.
 
-- [ ] **4.3 — Rewrite `audio_player`** (spec §3.1, §3.3, §3.4, §3.5)
+- [x] **4.3 — Rewrite `audio_player`** (spec §3.1, §3.3, §3.4, §3.5)
   Consolidates four spec divergences that share one root cause:
   - **Mode tracking is three independent booleans** (`playing_system_sound`,
     `soundmachine_mode`, implicit-normal) rather than one `mode` value. This is
@@ -194,13 +194,13 @@ No dependencies on each other or on later phases. Safe to do in any order.
     (`sound_machine_active`) — a single source of truth is required.
   - **No device-side queue.** Playlists arrive as one stream URL.
 
-- [ ] **4.4 — Rewrite `main.cpp` wiring** (spec §5, §3.8)
+- [x] **4.4 — Rewrite `main.cpp` wiring** (spec §5, §3.8)
   Read cue fires on UID capture *before* resolution; `onCardScanned` becomes
   publish-and-wait; `onPlayLongPress` reads local config instead of asking the
   server; new skip publishing; resolution-timeout cue. Rewrite together with 4.3
   — they are one contract.
 
-- [ ] **4.5 — `mqtt_client.cpp` command/event set** (spec §6)
+- [x] **4.5 — `mqtt_client.cpp` command/event set** (spec §6)
   Update to the new contract. Transport layer itself is sound.
 
 ---

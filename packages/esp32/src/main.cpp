@@ -8,8 +8,7 @@
 #include "mqtt_client.h"
 #include "nfc_reader.h"
 #include "audio_player.h"
-#include "card_cache.h"
-#include "sd_cache.h"
+#include "flash_store.h"
 #include "ota_updater.h"
 
 // Button pins
@@ -19,19 +18,27 @@
 #define BTN_NEXT   12
 #define BTN_PREV   10
 
-// Watchdog timeout (seconds)
 #define WDT_TIMEOUT 30
+
+// How long to wait for the server to say what a card maps to before telling
+// the user nothing is coming. The device holds no card mapping of its own, so
+// every scan needs this round trip.
+#define CARD_RESOLVE_TIMEOUT_MS 3000
+
+// Max time to wait for the audio task to acknowledge a stop before an OTA.
+#define OTA_AUDIO_STOP_TIMEOUT_MS 3000
 
 Button2 btnPlay, btnVolUp, btnVolDn, btnNext, btnPrev;
 
 // Device state
 static bool mqtt_broker_found = false;
 static bool device_approved = false;
-static bool device_ready = false;  // WiFi + MQTT + approved
-static bool previously_approved = false;  // Was approved in a previous session
+static bool device_ready = false;
+static bool previously_approved = false;
 
-// Sound machine state
-static bool sound_machine_active = false;
+// A card was read and we are waiting for the server to say what it means.
+static bool awaiting_card_resolve = false;
+static unsigned long card_read_at = 0;
 
 // Combo: hold vol up + vol down — restart on release after 2s, factory reset at 5s
 static unsigned long both_vol_pressed_start = 0;
@@ -65,30 +72,23 @@ static void log_restart_reason() {
     if (reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT || reason == ESP_RST_WDT) {
         LOG_W(MOD_SYS, "Device restarted due to watchdog timeout");
     }
-
     if (reason == ESP_RST_PANIC) {
         LOG_E(MOD_SYS, "Device restarted due to panic/exception");
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WiFi callbacks
+// WiFi
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onWifiConnected() {
     LOG_I(MOD_WIFI, "Connected");
-
-    // Enable remote logging
     logger_set_remote(true);
 
-    // Download system sounds if not already on SD
-    static bool sounds_downloaded = false;
-    if (!sounds_downloaded) {
-        sounds_downloaded = true;
-        audio_download_sounds();
-    }
+    // Fetch any system cues we don't have. The audio task performs the writes
+    // when nothing is playing.
+    flash_request_system_sounds();
 
-    // Discover and connect to MQTT broker
     if (!mqtt_broker_found) {
         mqtt_broker_found = mqtt_discover_broker();
     }
@@ -98,60 +98,29 @@ void onWifiConnected() {
 }
 
 void onWifiDisconnected() {
-    // Nothing special needed - wifi_manager handles reconnection
+    // wifi_manager handles reconnection
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MQTT command callbacks
+// MQTT commands
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onPlay(const char* url, int mediaId) {
+    if (!url) return;
     LOG_I(MOD_AUDIO, "Play mediaId=%d", mediaId);
-    if (sd_cache_has(mediaId)) {
-        String path = sd_cache_path(mediaId);
-        LOG_D(MOD_AUDIO, "Using SD cache: %s", path.c_str());
-        audio_play_sd_file(path.c_str(), mediaId);
-    } else {
-        audio_play_url(url, mediaId);
-        sd_cache_queue_download(mediaId, url);
-    }
+    // The answer we were waiting for, if we were.
+    awaiting_card_resolve = false;
+    audio_play_stream(url, mediaId);
 }
 
-void onQueueTrack(const char* url, int mediaId) {
-    LOG_D(MOD_AUDIO, "Queue mediaId=%d", mediaId);
-    if (sd_cache_has(mediaId)) {
-        String path = sd_cache_path(mediaId);
-        audio_queue_sd_file(path.c_str(), mediaId);
-    } else {
-        audio_queue_url(url, mediaId);
-        sd_cache_queue_download(mediaId, url);
-    }
-}
-
-void onPause() {
-    LOG_D(MOD_AUDIO, "Pause");
-    audio_pause();
-}
-
-void onResume() {
-    LOG_D(MOD_AUDIO, "Resume");
-    audio_resume();
-}
-
-void onStop() {
-    LOG_D(MOD_AUDIO, "Stop");
-    audio_stop();
-}
+void onPause()  { audio_pause(); }
+void onResume() { audio_resume(); }
+void onStop()   { audio_stop(); }
 
 void onVolume(int level) {
     LOG_D(MOD_AUDIO, "Volume=%d", level);
     audio_set_volume(level);
 }
-
-// Max time to wait for the audio task to acknowledge a stop before an OTA.
-// audio_stop() is asynchronous (queued to Core 0), so we poll rather than
-// guess at a fixed delay.
-#define OTA_AUDIO_STOP_TIMEOUT_MS 3000
 
 void onOta(const char* url, const char* version, const char* sha256) {
     LOG_I(MOD_OTA, "Update available: v%s", version);
@@ -167,13 +136,10 @@ void onOta(const char* url, const char* version, const char* sha256) {
         }
 
         if (audio_get_state() != AUDIO_IDLE) {
-            // Proceed anyway: the audio task may be stuck in a blocking read,
-            // and that is precisely when pushing new firmware matters most.
-            // Playback competing for WiFi only slows the download.
+            // Proceed anyway: a wedged audio task is precisely when pushing
+            // new firmware matters most.
             LOG_W(MOD_OTA, "Audio did not stop in %dms, updating anyway",
                   OTA_AUDIO_STOP_TIMEOUT_MS);
-        } else {
-            LOG_D(MOD_OTA, "Audio stopped in %lums", millis() - start);
         }
     }
 
@@ -185,153 +151,139 @@ void onApproved() {
     LOG_I(MOD_SYS, "Device approved by server");
     device_approved = true;
     nfc_set_enabled(true);
-
     config_set_approved(true);
 
     if (!device_ready) {
         device_ready = true;
-        audio_play_startup_sound();
+        audio_play_system_sound(SOUND_STARTUP);
     }
 }
 
 void onErrorSound() {
-    LOG_W(MOD_CARD, "Unknown card - playing error sound");
-    audio_play_error_sound();
+    awaiting_card_resolve = false;
+    audio_play_system_sound(SOUND_ERROR);
 }
 
-void onSoundMachine(const char* url, const char* name, int volume) {
-    if (url && name) {
-        LOG_I(MOD_AUDIO, "Sound machine: %s", name);
-        sound_machine_active = true;
-        if (volume >= 0) {
-            audio_set_volume(volume);
-        }
-        audio_play_soundmachine(url, name);
+void onSoundMachineConfig(const char* url, const char* name, int volume) {
+    if (url && url[0] != '\0') {
+        LOG_I(MOD_AUDIO, "Sound machine configured: %s", name ? name : "(unnamed)");
     } else {
-        LOG_W(MOD_AUDIO, "No sound machine configured");
+        LOG_I(MOD_AUDIO, "Sound machine configuration cleared");
     }
+    // Stored locally so a long-press never has to ask the server, and keeps
+    // working when the server is unreachable.
+    flash_set_soundmachine_config(url, name, volume);
 }
 
 void onPlaybackStatus(const char* status, int mediaId) {
     LOG_D(MOD_AUDIO, "Status: %s, mediaId=%d", status, mediaId);
-    if (mqtt_is_connected()) {
-        mqtt_publish_playback_status(status, mediaId, 0);
-    }
+    // Safe from the audio task: this queues, and the publish happens on the
+    // loop task. See the threading invariant in mqtt_client.
+    mqtt_publish_playback_status(status, mediaId, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Button handlers (Button2 requires this exact signature)
+// Buttons
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onPlayClick(Button2 &btn) {
-    if (sound_machine_active) {
+    // While the sound machine runs, the play button is its off switch. There
+    // is no physical pause for the loop — only stop.
+    if (audio_get_mode() == MODE_SOUNDMACHINE) {
         LOG_D(MOD_BTN, "Stopping sound machine");
-        sound_machine_active = false;
         audio_stop_soundmachine();
         return;
     }
 
     if (audio_get_state() == AUDIO_PLAYING) {
-        LOG_D(MOD_BTN, "Pause");
         audio_pause();
     } else if (audio_get_state() == AUDIO_PAUSED) {
-        LOG_D(MOD_BTN, "Resume");
         audio_resume();
     }
 }
 
 void onPlayLongPress(Button2 &btn) {
-    if (sound_machine_active) return;
+    if (audio_get_mode() == MODE_SOUNDMACHINE) return;
 
-    if (mqtt_is_connected()) {
-        LOG_D(MOD_BTN, "Requesting sound machine");
-        mqtt_publish_soundmachine_request();
-    } else {
-        LOG_W(MOD_BTN, "Cannot start sound machine - offline");
+    const char* path = flash_soundmachine_path();
+    if (!path) {
+        LOG_W(MOD_BTN, "No sound machine configured");
+        audio_play_system_sound(SOUND_ERROR);
+        return;
     }
+
+    // Entirely local — no server round trip, so this works offline.
+    LOG_D(MOD_BTN, "Starting sound machine");
+    audio_play_soundmachine(path, flash_soundmachine_volume());
 }
 
 void onVolUpClick(Button2 &btn) {
     int vol = audio_get_volume();
-    int maxVol = audio_get_max_volume();
-    if (vol < maxVol) {
-        audio_set_volume(vol + 1);
-    }
+    if (vol < audio_get_max_volume()) audio_set_volume(vol + 1);
 }
 
 void onVolDnClick(Button2 &btn) {
     int vol = audio_get_volume();
-    if (vol > 0) {
-        audio_set_volume(vol - 1);
+    if (vol > 0) audio_set_volume(vol - 1);
+}
+
+/**
+ * Skip is a request, not a local operation.
+ *
+ * The device holds no queue, so it reports the press and its position within
+ * the current track; the server decides what to play and sends it back.
+ */
+static void publish_skip(const char* direction) {
+    if (audio_get_mode() != MODE_NORMAL || audio_get_state() == AUDIO_IDLE) {
+        return;  // nothing to skip within
     }
+    if (!mqtt_is_connected()) {
+        LOG_W(MOD_BTN, "Cannot skip while offline");
+        return;
+    }
+    mqtt_publish_skip(direction, audio_get_elapsed_sec());
 }
 
 void onNextClick(Button2 &btn) {
     LOG_D(MOD_BTN, "Next");
-    audio_skip_next();
+    publish_skip("next");
 }
 
 void onPrevClick(Button2 &btn) {
     LOG_D(MOD_BTN, "Previous");
-    audio_skip_prev();
+    publish_skip("previous");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NFC callback
+// NFC
 // ─────────────────────────────────────────────────────────────────────────────
 
-void onCardScanned(const char* uid) {
-    CachedCard* cached = card_cache_lookup(uid);
-    if (cached && cached->trackCount > 0) {
-        LOG_I(MOD_CARD, "Card %s: %d tracks", uid, cached->trackCount);
+/**
+ * A uid has been captured. Nothing is known about it yet.
+ *
+ * The cue fires first and immediately: its job is to tell the user the card
+ * was read and can be taken away, which must not wait on the network. Only
+ * then do we ask the server what the card means.
+ */
+void onCardRead(const char* uid) {
+    LOG_I(MOD_CARD, "Card read: %s", uid);
 
-        if (cached->volume >= 0) {
-            audio_set_volume(cached->volume);
-        }
+    audio_play_system_sound(SOUND_READ_CUE);
 
-        int firstMediaId = cached->mediaIds[0];
-        char url[256];
-        snprintf(url, sizeof(url), "%s/api/media/stream/%d",
-                 config_stream_base_url(), firstMediaId);
-
-        if (sd_cache_has(firstMediaId)) {
-            String path = sd_cache_path(firstMediaId);
-            LOG_D(MOD_CARD, "Playing from SD: %d", firstMediaId);
-            audio_play_sd_file(path.c_str(), firstMediaId);
-        } else {
-            LOG_D(MOD_CARD, "Streaming: %d", firstMediaId);
-            audio_play_url(url, firstMediaId);
-            sd_cache_queue_download(firstMediaId, url);
-        }
-
-        for (int i = 1; i < cached->trackCount; i++) {
-            int mediaId = cached->mediaIds[i];
-            snprintf(url, sizeof(url), "%s/api/media/stream/%d",
-                     config_stream_base_url(), mediaId);
-
-            if (sd_cache_has(mediaId)) {
-                String path = sd_cache_path(mediaId);
-                audio_queue_sd_file(path.c_str(), mediaId);
-            } else {
-                audio_queue_url(url, mediaId);
-                sd_cache_queue_download(mediaId, url);
-            }
-        }
-
-        if (mqtt_is_connected()) {
-            mqtt_publish_card_played_locally(uid);
-        }
+    if (!mqtt_is_connected()) {
+        // No point waiting for an answer that cannot arrive.
+        LOG_W(MOD_CARD, "Offline — cannot resolve card");
+        audio_play_system_sound(SOUND_ERROR);
         return;
     }
 
-    LOG_I(MOD_CARD, "Card %s: not cached, asking server", uid);
-    if (mqtt_is_connected()) {
-        mqtt_publish_card_scanned(uid);
-    }
+    awaiting_card_resolve = true;
+    card_read_at = millis();
+    mqtt_publish_card_scanned(uid);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Setup & Loop
+// Setup & loop
 // ─────────────────────────────────────────────────────────────────────────────
 
 void setup() {
@@ -342,17 +294,14 @@ void setup() {
     logger_init();
     log_restart_reason();
 
-    // Load config from NVS
     config_init();
 
-    // If not provisioned, start captive portal (blocks until configured)
     if (!config_is_provisioned()) {
         LOG_I(MOD_SYS, "Not provisioned - starting captive portal");
-        provisioning_start();  // Restarts device on completion
-        return;  // Won't reach here
+        provisioning_start();  // restarts on completion
+        return;
     }
 
-    // Enable task watchdog (ESP-IDF 5.x API)
     esp_task_wdt_config_t wdt_config = {
         .timeout_ms = WDT_TIMEOUT * 1000,
         .idle_core_mask = 0,
@@ -362,16 +311,14 @@ void setup() {
     esp_task_wdt_add(NULL);
     LOG_I(MOD_SYS, "Watchdog enabled (%ds)", WDT_TIMEOUT);
 
-    // Check for previous approval (offline mode)
     previously_approved = config_get()->approved;
     if (previously_approved) {
-        LOG_I(MOD_SYS, "Previously approved - offline mode available");
+        LOG_I(MOD_SYS, "Previously approved");
     }
 
+    // Mounts the filesystem on the audio task, which then owns it.
     audio_init();
-    card_cache_init();
 
-    // Initialize buttons
     btnPlay.begin(BTN_PLAY, INPUT_PULLUP, true);
     btnVolUp.begin(BTN_VOL_UP, INPUT_PULLUP, true);
     btnVolDn.begin(BTN_VOL_DN, INPUT_PULLUP, true);
@@ -387,10 +334,11 @@ void setup() {
     btnPrev.setClickHandler(onPrevClick);
 
     nfc_init();
-    nfc_on_card_scanned(onCardScanned);
+    nfc_on_card_scanned(onCardRead);
 
+    // Reads still register offline — the cue fires and the sound machine
+    // works — even though resolving a card needs the server.
     if (previously_approved) {
-        LOG_I(MOD_SYS, "Enabling NFC for offline playback");
         nfc_set_enabled(true);
     }
 
@@ -399,7 +347,6 @@ void setup() {
 
     mqtt_init();
     mqtt_on_play(onPlay);
-    mqtt_on_queue(onQueueTrack);
     mqtt_on_pause(onPause);
     mqtt_on_resume(onResume);
     mqtt_on_stop(onStop);
@@ -407,7 +354,7 @@ void setup() {
     mqtt_on_ota(onOta);
     mqtt_on_approved(onApproved);
     mqtt_on_error_sound(onErrorSound);
-    mqtt_on_soundmachine(onSoundMachine);
+    mqtt_on_soundmachine_config(onSoundMachineConfig);
 
     wifi_init(onWifiConnected, onWifiDisconnected);
 
@@ -434,10 +381,9 @@ void loop() {
             both_vol_pressed_start = millis();
         } else if (millis() - both_vol_pressed_start >= FACTORY_RESET_HOLD_MS) {
             LOG_I(MOD_SYS, "Factory reset (vol up+down held 5s)");
-            config_factory_reset();  // Clears NVS and restarts
+            config_factory_reset();  // clears NVS and restarts
         }
     } else {
-        // Buttons released — check if held long enough for restart
         if (both_vol_pressed_start > 0) {
             unsigned long held = millis() - both_vol_pressed_start;
             if (held >= RESTART_HOLD_MS) {
@@ -451,6 +397,15 @@ void loop() {
 
     nfc_loop();
 
+    // A card was read but no answer arrived. Say so, rather than leaving the
+    // user with a cue and then silence. Informational only: a play that turns
+    // up late is still honoured.
+    if (awaiting_card_resolve && millis() - card_read_at > CARD_RESOLVE_TIMEOUT_MS) {
+        awaiting_card_resolve = false;
+        LOG_W(MOD_CARD, "No response for scanned card");
+        audio_play_system_sound(SOUND_ERROR);
+    }
+
     // Send buffered logs to server
     static unsigned long last_log_send = 0;
     if (mqtt_is_connected() && logger_has_pending() && millis() - last_log_send > 5000) {
@@ -462,7 +417,7 @@ void loop() {
         }
     }
 
-    // Periodic status (every 30s to reduce noise)
+    // Periodic status
     static unsigned long last_status = 0;
     if (millis() - last_status > 30000) {
         last_status = millis();
@@ -472,14 +427,14 @@ void loop() {
             mode = previously_approved ? "offline" : "disconnected";
         }
 
-        LOG_I(MOD_SYS, "%s | wifi=%d mqtt=%d nfc=%d sd=%d(%d) audio=%d up=%lus",
+        LOG_I(MOD_SYS, "%s | wifi=%d mqtt=%d nfc=%d fs=%d audio=%d/%d up=%lus",
             mode,
             wifi_is_connected() ? 1 : 0,
             mqtt_is_connected() ? 1 : 0,
             nfc_is_ready() ? 1 : 0,
-            sd_cache_available() ? 1 : 0,
-            sd_cache_file_count(),
-            audio_get_state(),
+            flash_available() ? 1 : 0,
+            (int)audio_get_state(),
+            (int)audio_get_mode(),
             millis() / 1000);
     }
 

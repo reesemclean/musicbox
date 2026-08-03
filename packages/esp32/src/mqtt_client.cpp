@@ -1,7 +1,5 @@
 #include "mqtt_client.h"
 #include "device_config.h"
-#include "card_cache.h"
-#include "sd_cache.h"
 #include "audio_player.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -56,7 +54,6 @@ static const unsigned long reconnectInterval = 5000;
 
 // Callbacks
 static PlayCallback onPlayCb = nullptr;
-static QueueCallback onQueueCb = nullptr;
 static PauseCallback onPauseCb = nullptr;
 static ResumeCallback onResumeCb = nullptr;
 static StopCallback onStopCb = nullptr;
@@ -64,7 +61,7 @@ static VolumeCallback onVolumeCb = nullptr;
 static OtaCallback onOtaCb = nullptr;
 static ApprovedCallback onApprovedCb = nullptr;
 static ErrorSoundCallback onErrorSoundCb = nullptr;
-static SoundMachineCallback onSoundMachineCb = nullptr;
+static SoundMachineConfigCallback onSoundMachineConfigCb = nullptr;
 
 // Forward declarations
 static void onMqttMessage(char* topic, byte* payload, unsigned int length);
@@ -279,11 +276,6 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         int mediaId = doc["mediaId"] | 0;
         onPlayCb(url, mediaId);
     }
-    else if (strcmp(command, "queue") == 0 && onQueueCb) {
-        const char* url = doc["url"];
-        int mediaId = doc["mediaId"] | 0;
-        onQueueCb(url, mediaId);
-    }
     else if (strcmp(command, "pause") == 0 && onPauseCb) {
         onPauseCb();
     }
@@ -315,74 +307,15 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
             Serial.printf("[MQTT] Max volume set to: %d\n", maxVol);
         }
     }
-    else if (strcmp(command, "sync_cards") == 0) {
-        // Full card cache sync
-        card_cache_clear();
-        JsonArray cards = doc["cards"];
-        for (JsonObject card : cards) {
-            const char* uid = card["uid"];
-            int volume = card["volume"] | -1;
-            const char* typeStr = card["type"] | "song";
-            CardType type = CARD_TYPE_SONG;
-            if (strcmp(typeStr, "podcast") == 0) {
-                type = CARD_TYPE_PODCAST;
-            } else if (strcmp(typeStr, "playlist") == 0) {
-                type = CARD_TYPE_PLAYLIST;
-            }
-            JsonArray mediaIds = card["mediaIds"];
-            int ids[MAX_TRACKS_PER_CARD];
-            int count = 0;
-            for (int id : mediaIds) {
-                if (count < MAX_TRACKS_PER_CARD) {
-                    ids[count++] = id;
-                }
-            }
-            card_cache_set(uid, ids, count, volume, type);
-        }
-        Serial.printf("[MQTT] Synced %d cards\n", card_cache_count());
-        sd_cache_sync_with_cards();  // Eager download & eviction
-    }
-    else if (strcmp(command, "card_update") == 0) {
-        // Single card update
-        const char* uid = doc["uid"];
-        int volume = doc["volume"] | -1;
-        const char* typeStr = doc["type"] | "song";
-        CardType type = CARD_TYPE_SONG;
-        if (strcmp(typeStr, "podcast") == 0) {
-            type = CARD_TYPE_PODCAST;
-        } else if (strcmp(typeStr, "playlist") == 0) {
-            type = CARD_TYPE_PLAYLIST;
-        }
-        JsonArray mediaIds = doc["mediaIds"];
-        int ids[MAX_TRACKS_PER_CARD];
-        int count = 0;
-        for (int id : mediaIds) {
-            if (count < MAX_TRACKS_PER_CARD) {
-                ids[count++] = id;
-            }
-        }
-        card_cache_set(uid, ids, count, volume, type);
-        sd_cache_sync_with_cards();  // Eager download & eviction
-    }
-    else if (strcmp(command, "card_delete") == 0) {
-        const char* uid = doc["uid"];
-        card_cache_remove(uid);
-        sd_cache_sync_with_cards();  // Evict orphaned files
-    }
-    else if (strcmp(command, "clear_cache") == 0) {
-        Serial.println("[MQTT] Clear cache command received");
-        card_cache_clear();
-        sd_cache_clear();
-        Serial.println("[MQTT] Cache cleared");
-    }
     else if (strcmp(command, "error_sound") == 0 && onErrorSoundCb) {
         onErrorSoundCb();
     }
-    else if (strcmp(command, "soundmachine") == 0 && onSoundMachineCb) {
-        const char* url = doc["url"];
-        const char* name = doc["name"];
-        int volume = doc["volume"] | -1;  // -1 means use current volume
-        onSoundMachineCb(url, name, volume);
+    else if (strcmp(command, "soundmachine_config") == 0 && onSoundMachineConfigCb) {
+        // A null url clears the configuration.
+        const char* url = doc["url"].is<const char*>() ? doc["url"] : nullptr;
+        const char* name = doc["name"].is<const char*>() ? doc["name"] : nullptr;
+        int volume = doc["volume"] | -1;  // -1 means leave the current volume
+        onSoundMachineConfigCb(url, name, volume);
     }
 }
 
@@ -401,23 +334,6 @@ void mqtt_publish_card_scanned(const char* uid) {
     Serial.printf("[MQTT] Published card scan: %s\n", uid);
 }
 
-void mqtt_publish_card_played_locally(const char* uid) {
-    if (!mqttClient.connected()) return;
-
-    JsonDocument doc;
-    doc["type"] = "card_played_locally";
-    doc["uid"] = uid;
-    doc["timestamp"] = millis();
-
-    String payload;
-    serializeJson(doc, payload);
-
-    mqttClient.publish(topicEvents.c_str(), payload.c_str());
-    Serial.printf("[MQTT] Published card played locally: %s\n", uid);
-}
-
-// Safe to call from any core — enqueues for mqtt_loop() to publish on Core 1.
-// Does NOT touch mqttClient; see the threading invariant at the top of this file.
 void mqtt_publish_playback_status(const char* status, int mediaId, int position) {
     if (statusQueue == NULL || status == NULL) return;
 
@@ -435,18 +351,20 @@ void mqtt_publish_playback_status(const char* status, int mediaId, int position)
     }
 }
 
-void mqtt_publish_soundmachine_request() {
+void mqtt_publish_skip(const char* direction, uint32_t elapsedSec) {
     if (!mqttClient.connected()) return;
 
     JsonDocument doc;
-    doc["type"] = "soundmachine_request";
-    doc["timestamp"] = millis();
+    doc["type"] = "skip";
+    doc["direction"] = direction;
+    // The server needs this to tell "go back a track" from "restart this one".
+    doc["elapsed"] = elapsedSec;
 
     String payload;
     serializeJson(doc, payload);
 
     mqttClient.publish(topicEvents.c_str(), payload.c_str());
-    Serial.println("[MQTT] Published sound machine request");
+    Serial.printf("[MQTT] Published skip %s (elapsed %us)\n", direction, (unsigned)elapsedSec);
 }
 
 void mqtt_publish_logs(const char* logs) {
@@ -465,7 +383,6 @@ void mqtt_publish_logs(const char* logs) {
 
 // Callback registration
 void mqtt_on_play(PlayCallback callback) { onPlayCb = callback; }
-void mqtt_on_queue(QueueCallback callback) { onQueueCb = callback; }
 void mqtt_on_pause(PauseCallback callback) { onPauseCb = callback; }
 void mqtt_on_resume(ResumeCallback callback) { onResumeCb = callback; }
 void mqtt_on_stop(StopCallback callback) { onStopCb = callback; }
@@ -473,4 +390,4 @@ void mqtt_on_volume(VolumeCallback callback) { onVolumeCb = callback; }
 void mqtt_on_ota(OtaCallback callback) { onOtaCb = callback; }
 void mqtt_on_approved(ApprovedCallback callback) { onApprovedCb = callback; }
 void mqtt_on_error_sound(ErrorSoundCallback callback) { onErrorSoundCb = callback; }
-void mqtt_on_soundmachine(SoundMachineCallback callback) { onSoundMachineCb = callback; }
+void mqtt_on_soundmachine_config(SoundMachineConfigCallback callback) { onSoundMachineConfigCb = callback; }
