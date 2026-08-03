@@ -149,6 +149,19 @@ No dependencies on each other or on later phases. Safe to do in any order.
   Keep the `soundmachine_request` handler until all devices run new firmware, so
   an un-updated device's long-press still works during cutover. Delete after.
 
+- [x] **3.8 — Skip support** (spec §3.6)
+  Emerged from 3.3: skip needed more than a command rename. The device holds no
+  queue, so it reports a press and the server decides. That required two things
+  that didn't exist — per-device playlist session tracking (a reported `mediaId`
+  doesn't identify which playlist it came from), and `?from=<index>` on the
+  playlist stream so the same playlist can start at a different track.
+
+  **Server side complete.** The device half — publishing the event with its
+  elapsed position, from `getAudioCurrentTime()` — lands with the firmware
+  rewrite in 4.4. Until then the physical next/previous buttons do nothing for
+  playlist cards, which is a regression against the old local-queue behaviour
+  and should not outlive Phase 4.
+
 ---
 
 ## Phase 4 — ESP32 firmware

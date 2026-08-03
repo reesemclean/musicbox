@@ -50,6 +50,15 @@ async function handlePlaylistStream(
     return new Response('Invalid playlist ID', { status: 400 })
   }
 
+  // ?from=<index> starts the stream partway in, which is how a skip is served:
+  // the same playlist, beginning at a different track. Index into the ordered
+  // tracks rather than the position column, which may have gaps.
+  const fromParam = new URL(request.url).searchParams.get('from')
+  const from = fromParam === null ? 0 : parseInt(fromParam, 10)
+  if (isNaN(from) || from < 0) {
+    return new Response('Invalid from index', { status: 400 })
+  }
+
   const rows = await db
     .select({
       mediaId: media.id,
@@ -69,16 +78,26 @@ async function handlePlaylistStream(
     return new Response('Playlist is empty or does not exist', { status: 404 })
   }
 
+  if (from >= rows.length) {
+    return new Response(
+      `from index ${from} is past the end of a ${rows.length}-track playlist`,
+      { status: 416 }
+    )
+  }
+
+  // Everything past this point concerns only the tracks actually being served.
+  const served = rows.slice(from)
+
   // Every track needs a measured length: the whole point of planning up front
   // is an exact Content-Length without opening any files.
-  const unmeasured = rows.find((r) => !r.audioBytes)
+  const unmeasured = served.find((r) => !r.audioBytes)
   if (unmeasured) {
     return new Response(`Track ${unmeasured.mediaId} has no measured audio length`, {
       status: 409,
     })
   }
 
-  const incompatible = findIncompatibleTrack(rows)
+  const incompatible = findIncompatibleTrack(served)
   if (incompatible) {
     // Concatenating these would hand the decoder a mid-stream format change.
     // Fail loudly rather than emit a stream that breaks partway through.
@@ -88,7 +107,7 @@ async function handlePlaylistStream(
     )
   }
 
-  const tracks: PlannedTrack[] = rows.map((r) => ({
+  const tracks: PlannedTrack[] = served.map((r) => ({
     mediaId: r.mediaId,
     title: r.title,
     audioBytes: r.audioBytes!,

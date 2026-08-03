@@ -358,10 +358,24 @@ Fulfilling a skip requires two things Server would not otherwise need:
 - **A record of what it told each device to play.** `playback_status` reports
   a `mediaId`, which identifies a track but not the playlist it came from —
   the same track may appear in several. Server MUST therefore remember the
-  playlist context it issued with the last `play`.
+  playlist context it issued with the last `play`. This may be held in memory:
+  losing it on restart costs nothing permanent, since the next card scan
+  re-establishes it, and persisting it would mean a write on every play.
 - **A playlist stream that can begin at an arbitrary track.** §8.5's endpoint
   serves a playlist from the beginning; skipping means requesting the same
   playlist starting at a different position.
+
+Defined outcomes:
+
+| Situation | Result |
+|---|---|
+| `next`, more tracks remain | Play from the next track |
+| `next`, on the last track | Stop. The playlist does not wrap |
+| `previous`, past the restart threshold | Replay the current track |
+| `previous`, within the threshold | Play from the previous track |
+| `previous`, on the first track | Replay it — there is nowhere further back |
+| Reported track isn't in the playlist | Play from the start. The two have drifted; guessing is worse than restarting |
+| No playlist context (single item playing, or Server restarted) | Do nothing. There is nothing to skip within, and a card scan restores context |
 
 ### 3.7 Volume
 
@@ -567,6 +581,7 @@ concern (§12).
 | `type` | Fields | Server behavior |
 |---|---|---|
 | `card_scanned` | `uid` | Resolve card, push a `play` command (or `error_sound` if unresolvable). Always a request, always waited on by the device. |
+| `skip` | `direction` (`next`/`previous`), `elapsed` (seconds into the current track) | Compute the target track and push a fresh `play` starting there, or `stop` at the end of a playlist. See 3.6 |
 | `playback_status` | `status`, `mediaId?` | Update Server's mirrored status (see §8), notify UI. For a playlist stream, re-emitted at each track boundary via the device's ICY-metadata callback (3.5), not just on play/pause/stop transitions. |
 | `device_logs` | `logs` (batched) | Surface to operator tooling |
 
