@@ -38,6 +38,12 @@ export const media = sqliteTable('media', {
   // every file first. Null means "not yet measured" (pre-existing rows, or a
   // file that failed to parse).
   audioBytes: integer('audio_bytes'),
+  // Encoding parameters, so the playlist stream can confirm a playlist's
+  // tracks are frame-compatible without opening any of them. Sample rate is
+  // the one that must match across a stream; a decoder is far likelier to
+  // break on a mid-stream rate change than a bitrate change.
+  sampleRate: integer('sample_rate'),
+  channels: integer('channels'),
   filePath: text('file_path').notNull(),
   metadata: text('metadata', { mode: 'json' }).$type<MediaMetadata>(), // type-specific: artist, album, showName, etc.
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),

@@ -432,9 +432,13 @@ async function downloadEpisodeById(mediaId: number, episode: PodcastEpisode) {
     // container formats yield no frames and leave audioBytes null, which is
     // correct: they can't take part in byte-level stream concatenation.
     let audioBytes: number | null = null
+    let sampleRate: number | null = null
+    let channels: number | null = null
     if (mimeType === 'audio/mpeg') {
       const profile = profileAudio(await fs.readFile(outputPath))
       audioBytes = profile.audioBytes || null
+      sampleRate = profile.sampleRate || null
+      channels = profile.channels || null
     }
 
     // Update the existing media entry with file info
@@ -442,6 +446,8 @@ async function downloadEpisodeById(mediaId: number, episode: PodcastEpisode) {
       mimeType,
       fileSize: stats.size,
       audioBytes,
+      sampleRate,
+      channels,
       filePath: `podcasts/${uuid}.mp3`,
       metadata: {
         ...existingMeta,

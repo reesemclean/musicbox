@@ -6,6 +6,7 @@ import { parseBuffer } from 'music-metadata'
 import { db } from '../db/index.js'
 import { downloadQueue, media, playlists, playlistMedia } from '../db/schema.js'
 import { profileAudio } from '../lib/mp3.js'
+import { CANONICAL_CHANNELS, CANONICAL_SAMPLE_RATE } from './audioNormalize.js'
 import { getAlbum } from './ytmusicService.js'
 
 const DATA_ROOT = process.env.DATA_DIR || path.join(process.cwd(), 'data')
@@ -131,7 +132,11 @@ async function processDownload(queueId: number) {
       '--extract-audio',
       '--audio-format', 'mp3',
       '--audio-quality', '0',
-      '--postprocessor-args', 'ffmpeg:-ac 1',  // mix to mono for single-speaker playback
+      // Force the canonical encoding. Sample rate matters as much as channel
+      // count: the playlist stream concatenates frames from many tracks, and
+      // a mid-stream rate change is what breaks decoders.
+      '--postprocessor-args',
+      `ffmpeg:-ac ${CANONICAL_CHANNELS} -ar ${CANONICAL_SAMPLE_RATE}`,
       '--extractor-args', 'youtube:player_client=android',
       '--no-playlist',
       '--output', outputPath.replace('.mp3', '.%(ext)s'),
@@ -186,6 +191,8 @@ async function processDownload(queueId: number) {
             mimeType: 'audio/mpeg',
             fileSize: fileStats.size,
             audioBytes: profile.audioBytes || null,
+            sampleRate: profile.sampleRate || null,
+            channels: profile.channels || null,
             filePath: `songs/${uuid}.mp3`,
             metadata: {
               artist: artist || null,

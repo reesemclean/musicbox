@@ -55,8 +55,15 @@ export async function backfillAudioProfiles(): Promise<void> {
 
       // Fill duration too if it was never captured — we already have an exact
       // frame-derived value here, so there is no reason to leave it null.
-      const update: { audioBytes: number; duration?: number } = {
+      const update: {
+        audioBytes: number
+        sampleRate: number
+        channels: number
+        duration?: number
+      } = {
         audioBytes: profile.audioBytes,
+        sampleRate: profile.sampleRate,
+        channels: profile.channels,
       }
       if (item.duration == null && profile.durationSec > 0) {
         update.duration = Math.round(profile.durationSec)

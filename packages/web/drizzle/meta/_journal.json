@@ -15,6 +15,13 @@
       "when": 1785722112511,
       "tag": "0001_violet_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785722525436,
+      "tag": "0002_lying_cyclops",
+      "breakpoints": true
     }
   ]
 }
