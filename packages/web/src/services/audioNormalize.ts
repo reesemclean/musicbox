@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
-import type { AudioProfile } from '../lib/mp3.js'
+import { join, dirname, basename, extname } from 'node:path'
+import { profileAudio, type AudioProfile } from '../lib/mp3.js'
+import { NORMALIZED_DIR } from '../lib/media.js'
 
 /**
  * The one encoding every library item is stored in.
@@ -73,5 +75,66 @@ export async function transcodeToCanonical(
   const stat = await fs.stat(destPath)
   if (stat.size === 0) {
     throw new Error('ffmpeg produced an empty file')
+  }
+}
+
+export interface NormalizeResult {
+  /** Path relative to DATA_DIR of the file that should be played. */
+  playablePath: string
+  /** Relative path of the derivative, or null if the original was canonical. */
+  normalizedPath: string | null
+  /** Profile of the playable file — what the playlist stream concatenates. */
+  profile: AudioProfile
+}
+
+/**
+ * Ensure a canonical version of `relativePath` exists, without modifying it.
+ *
+ * If the original is already canonical it is used as-is and no derivative is
+ * written — re-encoding a conforming file would lose quality for nothing. The
+ * original is never rewritten either way; derivatives live under
+ * `NORMALIZED_DIR` keyed by the original's filename.
+ */
+export async function ensureNormalized(
+  dataDir: string,
+  relativePath: string
+): Promise<NormalizeResult> {
+  const absoluteOriginal = join(dataDir, relativePath)
+  const originalProfile = profileAudio(await fs.readFile(absoluteOriginal))
+
+  if (isCanonical(originalProfile)) {
+    return {
+      playablePath: relativePath,
+      normalizedPath: null,
+      profile: originalProfile,
+    }
+  }
+
+  const stem = basename(relativePath, extname(relativePath))
+  const relativeNormalized = `${NORMALIZED_DIR}/${stem}.mp3`
+  const absoluteNormalized = join(dataDir, relativeNormalized)
+
+  await fs.mkdir(dirname(absoluteNormalized), { recursive: true })
+
+  // Write beside the target and rename, so an interrupted run never leaves a
+  // half-written derivative that looks complete.
+  const tempPath = `${absoluteNormalized}.tmp`
+  try {
+    await transcodeToCanonical(absoluteOriginal, tempPath)
+    await fs.rename(tempPath, absoluteNormalized)
+  } catch (err) {
+    await fs.unlink(tempPath).catch(() => {})
+    throw err
+  }
+
+  const profile = profileAudio(await fs.readFile(absoluteNormalized))
+  if (!isCanonical(profile)) {
+    throw new Error('transcode output is still not canonical')
+  }
+
+  return {
+    playablePath: relativeNormalized,
+    normalizedPath: relativeNormalized,
+    profile,
   }
 }

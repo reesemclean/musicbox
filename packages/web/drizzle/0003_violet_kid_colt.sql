@@ -1,0 +1,1 @@
+ALTER TABLE `media` ADD `normalized_path` text;

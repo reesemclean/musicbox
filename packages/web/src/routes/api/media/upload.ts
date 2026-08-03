@@ -4,12 +4,7 @@ import { join } from 'node:path'
 import { parseBuffer } from 'music-metadata'
 import { db } from '@/db/index.js'
 import { media } from '@/db/schema.js'
-import { profileAudio } from '@/lib/mp3'
-import {
-  CANONICAL_MIME,
-  isCanonical,
-  transcodeToCanonical,
-} from '@/services/audioNormalize.js'
+import { CANONICAL_MIME, ensureNormalized } from '@/services/audioNormalize.js'
 
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data')
 
@@ -34,9 +29,11 @@ export const Route = createFileRoute('/api/media/upload')({
         await fs.mkdir(songsDir, { recursive: true })
 
         const uuid = crypto.randomUUID()
-        // Everything is stored as MP3 regardless of what was uploaded, so the
-        // whole library stays frame-compatible for the playlist stream.
-        const fileName = `${uuid}.mp3`
+        // Keep the upload in the format it arrived in — it is the archival
+        // copy. A canonical derivative is generated separately if needed.
+        const ext = file.name.includes('.') ? file.name.split('.').pop() : 'mp3'
+        const fileName = `${uuid}.${ext}`
+        const relativePath = `songs/${fileName}`
         const filePath = join(songsDir, fileName)
         const uploadedBytes = Buffer.from(await file.arrayBuffer())
 
@@ -54,18 +51,13 @@ export const Route = createFileRoute('/api/media/upload')({
           // Metadata extraction is optional; the filename is a fine fallback.
         }
 
-        // Keep a conforming upload byte-for-byte; re-encoding it would lose
-        // quality for nothing. Anything else goes through ffmpeg.
-        const uploadedProfile = profileAudio(uploadedBytes)
-        const tempPath = join(songsDir, `tmp_${uuid}`)
+        await fs.writeFile(filePath, uploadedBytes)
 
+        // Derive a canonical version if the upload isn't already one. The
+        // original stays untouched either way.
+        let result
         try {
-          if (isCanonical(uploadedProfile)) {
-            await fs.writeFile(filePath, uploadedBytes)
-          } else {
-            await fs.writeFile(tempPath, uploadedBytes)
-            await transcodeToCanonical(tempPath, filePath)
-          }
+          result = await ensureNormalized(DATA_DIR, relativePath)
         } catch (err) {
           await fs.unlink(filePath).catch(() => {})
           return Response.json(
@@ -74,15 +66,9 @@ export const Route = createFileRoute('/api/media/upload')({
             },
             { status: 422 }
           )
-        } finally {
-          await fs.unlink(tempPath).catch(() => {})
         }
 
-        // Profile what was actually stored, not what was uploaded.
-        const stored = await fs.readFile(filePath)
-        const profile = profileAudio(stored)
-
-        if (profile.frameCount === 0) {
+        if (result.profile.frameCount === 0) {
           await fs.unlink(filePath).catch(() => {})
           return Response.json(
             { error: 'No decodable audio found in file' },
@@ -93,13 +79,14 @@ export const Route = createFileRoute('/api/media/upload')({
         const [newMedia] = await db.insert(media).values({
           type: 'song',
           title,
-          duration: Math.round(profile.durationSec),
+          duration: Math.round(result.profile.durationSec),
           mimeType: CANONICAL_MIME,
-          fileSize: stored.length,
-          audioBytes: profile.audioBytes,
-          sampleRate: profile.sampleRate,
-          channels: profile.channels,
-          filePath: `songs/${fileName}`,
+          fileSize: uploadedBytes.length,
+          audioBytes: result.profile.audioBytes,
+          sampleRate: result.profile.sampleRate,
+          channels: result.profile.channels,
+          filePath: relativePath,
+          normalizedPath: result.normalizedPath,
           metadata: {
             artist: artist || null,
             album: album || null,

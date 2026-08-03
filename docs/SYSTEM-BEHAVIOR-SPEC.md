@@ -783,20 +783,61 @@ best-effort extracts duration/artist/album via ID3/metadata parsing.
 Metadata extraction failure MUST NOT block the upload — the item is still
 created, falling back to the filename (extension stripped) as the title.
 
-**Uploaded files MUST be normalized to a single consistent codec, sample rate,
-and channel count** — matching what the YouTube ingestion path produces (mono
-MP3, per its `-ac 1` mixdown) — regardless of the format they arrive in. Every
-file in the library is therefore frame-compatible with every other. This is a
-prerequisite for §8.5's playlist stream to concatenate tracks cheaply; a
-library mixing sample rates would force transcoding instead, which is slower
-and heavier. Sample rate is the constraint that matters most — a decoder is
-far likelier to break on a mid-stream rate change than a bitrate change.
+**Originals and canonical derivatives are stored separately.** Every item keeps
+two things:
 
-**Every ingest path MUST also record the item's extracted-audio byte length**
-(the size after stripping ID3 and VBR-header frames) and its frame-derived
-duration. §8.5 needs the former to compute `Content-Length` without reading
-every file in a playlist. Both come free from the same parse that validates
-the file, and both are stable for the life of the file.
+- **The original**, exactly as ingested, at whatever quality it arrived in.
+  This is the archival copy and MUST NOT be rewritten — not by ingest, not by
+  any later migration. It exists so the library never loses fidelity it once
+  had, and so derivatives can be regenerated if the canonical format changes.
+- **A canonical derivative**, generated only when the original isn't already
+  canonical. When the original conforms, no derivative is written and it is
+  served directly — re-encoding a conforming file would lose quality for
+  nothing.
+
+Playback and streaming always use the derivative when one exists. The stored
+audio profile (below) always describes the *played* file, since that is what
+the playlist stream concatenates.
+
+The canonical encoding is one consistent codec, sample rate, and channel
+count across the whole library, so any two tracks are frame-compatible. This
+is a prerequisite for §8.5's playlist stream; a library mixing sample rates
+would force transcoding at request time instead. **Sample rate is the
+constraint that matters most** — a decoder is far likelier to break on a
+mid-stream rate change than a bitrate change. Mono is chosen because the
+device mixes to mono for its single speaker regardless, so stereo would double
+the bytes streamed for audio discarded on arrival.
+
+**Every ingest path MUST also record the played file's extracted-audio byte
+length** (the size after stripping ID3 and VBR-header frames) and its
+frame-derived duration. §8.5 needs the former to compute `Content-Length`
+without reading every file in a playlist. Both come free from the same parse
+that validates the file.
+
+**Deleting an item MUST delete every file it owns** — the original and its
+derivative — not just the one that was played.
+
+### 11.5 Bringing an Existing Library Forward
+
+Rows that predate these requirements are reconciled by a startup pass that
+measures the audio profile and generates any missing derivative. It is a
+one-time migration in the same spirit as a schema migration: automatic,
+idempotent, and skipping anything already done.
+
+Two properties are required of it:
+
+- **It MUST NOT modify originals.** It only adds derivatives alongside them,
+  so it is safe to run unattended on a real library.
+- **It MUST NOT block startup.** Transcoding costs roughly a second per
+  track, so a large library takes minutes; the container healthcheck fails
+  well before that, and a blocking pass would put a real library into a
+  restart loop that redoes the work on every attempt. It runs in the
+  background after the server is serving.
+
+It must be startup code rather than a maintenance script: the production image
+ships only the built server bundle, with no source tree and no TypeScript
+runner, so a script would be unrunnable in exactly the environment that needs
+it.
 
 ### 11.2 YouTube / YouTube Music Ingestion
 

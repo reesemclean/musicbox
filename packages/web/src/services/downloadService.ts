@@ -2,11 +2,9 @@ import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
-import { parseBuffer } from 'music-metadata'
 import { db } from '../db/index.js'
 import { downloadQueue, media, playlists, playlistMedia } from '../db/schema.js'
-import { profileAudio } from '../lib/mp3.js'
-import { CANONICAL_CHANNELS, CANONICAL_SAMPLE_RATE } from './audioNormalize.js'
+import { ensureNormalized } from './audioNormalize.js'
 import { getAlbum } from './ytmusicService.js'
 
 const DATA_ROOT = process.env.DATA_DIR || path.join(process.cwd(), 'data')
@@ -132,11 +130,8 @@ async function processDownload(queueId: number) {
       '--extract-audio',
       '--audio-format', 'mp3',
       '--audio-quality', '0',
-      // Force the canonical encoding. Sample rate matters as much as channel
-      // count: the playlist stream concatenates frames from many tracks, and
-      // a mid-stream rate change is what breaks decoders.
-      '--postprocessor-args',
-      `ffmpeg:-ac ${CANONICAL_CHANNELS} -ar ${CANONICAL_SAMPLE_RATE}`,
+      // Downloaded at full quality and kept as the archival original; the
+      // canonical mono version is derived separately so both exist.
       '--extractor-args', 'youtube:player_client=android',
       '--no-playlist',
       '--output', outputPath.replace('.mp3', '.%(ext)s'),
@@ -163,37 +158,26 @@ async function processDownload(queueId: number) {
     ytdlp.on('close', async (code) => {
       if (code === 0) {
         try {
-          // Read file and extract metadata
-          const fileData = await fs.readFile(outputPath)
           const fileStats = await fs.stat(outputPath)
+          const relativePath = `songs/${uuid}.mp3`
 
-          let duration: number | undefined
-          try {
-            const metadata = await parseBuffer(fileData, { mimeType: 'audio/mpeg' })
-            duration = metadata.format.duration ? Math.round(metadata.format.duration) : undefined
-          } catch {
-            console.warn('Failed to extract audio metadata')
-          }
-
-          // Measure decodable audio so the playlist stream can compute an
-          // exact Content-Length without re-reading this file. Frame-derived
-          // duration is exact where music-metadata's is estimated for VBR.
-          const profile = profileAudio(fileData)
-          if (profile.durationSec > 0) {
-            duration = Math.round(profile.durationSec)
-          }
+          // Derive the canonical version. yt-dlp's output is kept as the
+          // archival original at whatever quality it downloaded.
+          const result = await ensureNormalized(DATA_ROOT, relativePath)
+          const profile = result.profile
 
           // Create media entry
           const [newMedia] = await db.insert(media).values({
             type: 'song',
             title: title,
-            duration,
+            duration: profile.durationSec > 0 ? Math.round(profile.durationSec) : undefined,
             mimeType: 'audio/mpeg',
             fileSize: fileStats.size,
             audioBytes: profile.audioBytes || null,
             sampleRate: profile.sampleRate || null,
             channels: profile.channels || null,
-            filePath: `songs/${uuid}.mp3`,
+            filePath: relativePath,
+            normalizedPath: result.normalizedPath,
             metadata: {
               artist: artist || null,
               album: album || null,

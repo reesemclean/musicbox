@@ -44,7 +44,13 @@ export const media = sqliteTable('media', {
   // break on a mid-stream rate change than a bitrate change.
   sampleRate: integer('sample_rate'),
   channels: integer('channels'),
+  // The file as ingested. Never rewritten — it is the archival copy, kept at
+  // whatever quality it arrived in.
   filePath: text('file_path').notNull(),
+  // Canonical-format derivative, generated when filePath isn't already
+  // canonical. Null means filePath itself is canonical and is served directly.
+  // Playback always uses this when present; see playablePath() in lib/media.ts.
+  normalizedPath: text('normalized_path'),
   metadata: text('metadata', { mode: 'json' }).$type<MediaMetadata>(), // type-specific: artist, album, showName, etc.
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })

@@ -5,7 +5,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { seedSystemSounds, seedSoundMachineSounds } from './seedService.js'
-import { backfillAudioProfiles } from './audioProfileBackfill.js'
+import { backfillMedia } from './mediaBackfill.js'
 import { mqttService } from './mqttService.js'
 
 let initialized = false
@@ -39,9 +39,6 @@ export async function ensureInitialized(): Promise<void> {
   await seedSystemSounds()
   await seedSoundMachineSounds()
 
-  // After seeding, so freshly-seeded sound machine files get measured too.
-  await backfillAudioProfiles()
-
   // Connect to MQTT broker for device communication
   try {
     await mqttService.connect()
@@ -50,6 +47,14 @@ export async function ensureInitialized(): Promise<void> {
   }
 
   console.log('[Startup] Initialization complete')
+
+  // Deliberately not awaited. Transcoding a large library takes minutes, and
+  // the container healthcheck fails after ~100s — blocking here would put a
+  // real library into a restart loop. Runs after seeding so freshly-seeded
+  // sound machine files are picked up in the same pass.
+  backfillMedia().catch((err) => {
+    console.error('[Backfill] Failed:', err)
+  })
 }
 
 // Run on module load (server-side only)

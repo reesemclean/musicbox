@@ -9,7 +9,6 @@
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "db:migrate": "tsx src/db/migrate.ts",
-    "media:normalize": "tsx src/db/normalize-media.ts",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio"

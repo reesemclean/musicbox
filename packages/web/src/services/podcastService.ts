@@ -6,6 +6,8 @@ import { eq, desc, inArray } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { podcastFeeds, media } from '../db/schema.js'
 import { profileAudio } from '../lib/mp3.js'
+import { ownedPaths } from '../lib/media.js'
+import { ensureNormalized } from './audioNormalize.js'
 
 const DATA_ROOT = process.env.DATA_DIR || path.join(process.cwd(), 'data')
 const parser = new Parser()
@@ -195,11 +197,12 @@ export async function deletePodcastFeed(feedId: number) {
       .limit(1)
 
     if (episode) {
-      const filePath = path.join(DATA_ROOT, episode.filePath)
-      try {
-        await fs.unlink(filePath)
-      } catch {
-        // File may not exist, continue
+      for (const relative of ownedPaths(episode)) {
+        try {
+          await fs.unlink(path.join(DATA_ROOT, relative))
+        } catch {
+          // File may not exist, continue
+        }
       }
     }
   }
@@ -431,24 +434,32 @@ async function downloadEpisodeById(mediaId: number, episode: PodcastEpisode) {
     // Measure decodable audio, as for songs. Only meaningful for MP3 — other
     // container formats yield no frames and leave audioBytes null, which is
     // correct: they can't take part in byte-level stream concatenation.
-    let audioBytes: number | null = null
-    let sampleRate: number | null = null
-    let channels: number | null = null
-    if (mimeType === 'audio/mpeg') {
-      const profile = profileAudio(await fs.readFile(outputPath))
-      audioBytes = profile.audioBytes || null
-      sampleRate = profile.sampleRate || null
-      channels = profile.channels || null
+    const relativePath = `podcasts/${uuid}.mp3`
+
+    // Derive a canonical version, keeping the downloaded episode as-is. A
+    // failure here shouldn't lose the episode — it still plays via the
+    // single-item stream, it just can't join a concatenated one.
+    let normalizedPath: string | null = null
+    let profile = profileAudio(await fs.readFile(outputPath))
+    try {
+      const result = await ensureNormalized(DATA_ROOT, relativePath)
+      normalizedPath = result.normalizedPath
+      profile = result.profile
+    } catch (err) {
+      console.warn(
+        `[Podcasts] Could not normalize "${episode.title}": ${err instanceof Error ? err.message : err}`
+      )
     }
 
     // Update the existing media entry with file info
     await db.update(media).set({
       mimeType,
       fileSize: stats.size,
-      audioBytes,
-      sampleRate,
-      channels,
-      filePath: `podcasts/${uuid}.mp3`,
+      audioBytes: profile.audioBytes || null,
+      sampleRate: profile.sampleRate || null,
+      channels: profile.channels || null,
+      filePath: relativePath,
+      normalizedPath,
       metadata: {
         ...existingMeta,
         downloadStatus: 'complete',
@@ -509,12 +520,13 @@ async function cleanupOldEpisodes(feedId: number) {
   const episodesToDelete = feedEpisodes.slice(feed.retentionCount)
 
   for (const episode of episodesToDelete) {
-    // Delete file
-    const filePath = path.join(DATA_ROOT, episode.filePath)
-    try {
-      await fs.unlink(filePath)
-    } catch {
-      // File may not exist
+    // Delete the original and any canonical derivative
+    for (const relative of ownedPaths(episode)) {
+      try {
+        await fs.unlink(path.join(DATA_ROOT, relative))
+      } catch {
+        // File may not exist
+      }
     }
 
     // Delete media entry

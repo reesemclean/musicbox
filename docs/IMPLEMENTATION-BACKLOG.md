@@ -104,7 +104,7 @@ No dependencies on each other or on later phases. Safe to do in any order.
 
 ## Phase 3 — Server
 
-- [ ] **3.0 — Record extracted-audio length at ingest** (spec §8.5, §11.1)
+- [x] **3.0 — Record extracted-audio length at ingest** (spec §8.5, §11.1)
   New prerequisite from Phase 2. §8.5 must send an exact `Content-Length`, which
   depends on every track's post-strip audio length; without this cached, the
   endpoint would read the whole playlist before sending byte one. Add the column
@@ -112,7 +112,7 @@ No dependencies on each other or on later phases. Safe to do in any order.
   backfill existing rows. Parsing costs ~4ms for a 6.4MB file, so backfill is
   cheap.
 
-- [ ] **3.1 — Normalize uploaded media format** (spec §11.1)
+- [x] **3.1 — Normalize media format at ingest** (spec §11.1)
   `api/media/upload.ts` accepts m4a/flac/wav/ogg/webm and stores them unchanged.
   The playlist stream requires format consistency — normalize to the same mono
   MP3 the yt-dlp path produces. Sample rate matters most. Note the library is

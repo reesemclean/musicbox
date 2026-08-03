@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/db/index.js'
 import { media } from '@/db/schema.js'
 import { parseRange } from '@/lib/httpRange'
+import { playablePath } from '@/lib/media'
 
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data')
 
@@ -35,7 +36,9 @@ export const Route = createFileRoute('/api/media/stream/$id')({
           return new Response('Media file not yet available', { status: 404 })
         }
 
-        const fullPath = join(DATA_DIR, item.filePath)
+        // Serve the canonical derivative when one exists — that's what devices
+        // expect, and its size matches the stored audioBytes.
+        const fullPath = join(DATA_DIR, playablePath(item))
 
         if (!existsSync(fullPath)) {
           return new Response('File not found on disk', { status: 404 })

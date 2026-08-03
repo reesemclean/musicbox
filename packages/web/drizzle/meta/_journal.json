@@ -22,6 +22,13 @@
       "when": 1785722525436,
       "tag": "0002_lying_cyclops",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785724935816,
+      "tag": "0003_violet_kid_colt",
+      "breakpoints": true
     }
   ]
 }
