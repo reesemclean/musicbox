@@ -394,9 +394,14 @@ being the explicit, configured `maxVolume`.
   the loop," whereas the remote API has both commands available.
 - Looping MUST use the same two-signal track-end detection as every other
   mode (3.4). Playing from local flash makes the EOF callback far more
-  reliable than the current live-HTTP-loop implementation, but the liveness
-  check stays as the safety net regardless, per 3.4's single consistent
-  rule.
+  reliable than a live HTTP loop, but the liveness check stays as the safety
+  net regardless, per 3.4's single consistent rule.
+- **Looping is not gapless.** The decoder library has no native file-loop, so
+  each iteration re-opens the file, costing a short audible gap. This is
+  accepted rather than engineered around; what matters is that the gap is
+  *rare*, which §4.1's encoding budget is chosen to achieve (~7 minutes
+  between loops). Shortening the loop to save flash would be the wrong
+  trade — it multiplies the gaps.
 - If no sound machine sound is configured for the device (no local
   config), a long-press MUST produce a distinct, clearly-not-an-error cue
   rather than silently doing nothing — there's no server round-trip left to
@@ -432,6 +437,43 @@ Consequences of this being so much smaller in scope than the old SD cache:
   playback did — `LittleFS` implements the same filesystem interface `SD`
   did, so this reuses existing, already-understood playback code, just
   pointed at a different filesystem object.
+
+### 4.1 Flash Budget
+
+The filesystem partition is **3.38 MB** (`spiffs, 0x360000` in the 16MB
+partition table). This is a hard ceiling: the partition table lives at a fixed
+offset and **cannot be changed over OTA**, so enlarging it would require
+physically re-flashing every device over USB.
+
+Everything on the device shares that ceiling: the system sounds (tens of KB)
+plus exactly one sound-machine file. **Sound-machine audio MUST therefore be
+encoded to fit inside it with headroom** — target ≤ 2.6 MB, leaving ~25% free
+for the filesystem's own overhead and the system sounds.
+
+That budget interacts with 3.8's looping requirement: the decoder library has
+no native file-loop, so each loop iteration costs a file re-open and a small
+audible gap. Gap *frequency* is what the encoding controls, and longer is
+better. Since these sounds are stationary noise — rain, waterfall, white noise
+— they tolerate a much lower bitrate than music without perceptible loss, so
+the length is bought there rather than by shortening the loop. **48 kbps mono
+at 44.1 kHz gives roughly 7 minutes inside the budget**; music-grade 128 kbps
+would allow only ~3.5 minutes for the same bytes.
+
+Loops SHOULD be prepared with an equal-power crossfade between their tail and
+head, so the audio either side of the loop point is continuous and the only
+discontinuity is the re-open gap itself.
+
+### 4.2 Writing to Flash
+
+Downloads write into the same flash the firmware executes from. Erasing or
+writing internal SPI flash momentarily disables the flash cache, which stalls
+code running from flash and **can glitch audio that is playing**.
+
+Downloads of the sound-machine file therefore MUST NOT overlap playback — they
+happen on config change while the device is otherwise idle (§3.8). This is the
+flash analogue of the SD-blocking problem §4's design removes, and it is the
+one reason writes need sequencing at all; wear is not a concern, since writes
+happen only when an operator changes the configured sound, not continuously.
 
 ---
 
