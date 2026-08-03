@@ -11,6 +11,10 @@
 #define I2S_LRC  5
 #define I2S_DOUT 6
 
+// Volume scale: 0..VOLUME_MAX. Single authority for the range — the audio
+// library's step count, every clamp, and the server/UI/schema all use it.
+#define VOLUME_MAX 42
+
 // FreeRTOS task for audio processing on Core 0
 static TaskHandle_t audioTaskHandle = NULL;
 
@@ -86,7 +90,7 @@ static volatile AudioState state = AUDIO_IDLE;
 static volatile int current_media_id = -1;
 static bool current_is_sd_file = false;
 static int current_volume = 10;
-static int max_volume = 42;  // Default: no limit
+static int max_volume = VOLUME_MAX;  // Default: no limit
 static bool playing_system_sound = false;
 
 // Sound machine mode (looping playback)
@@ -457,7 +461,7 @@ static void handle_stop() {
 
 static void handle_set_volume(int level) {
     if (level < 0) level = 0;
-    if (level > 21) level = 21;
+    if (level > VOLUME_MAX) level = VOLUME_MAX;
     // Enforce max volume limit
     if (level > max_volume) {
         level = max_volume;
@@ -797,7 +801,7 @@ bool audio_init() {
     // Initialize I2S audio
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     audio.forceMono(true);  // Mix L+R for single speaker setup
-    audio.setVolumeSteps(42);
+    audio.setVolumeSteps(VOLUME_MAX);
     audio.setVolume(current_volume);
     audio.setConnectionTimeout(2000, 2700);
 
@@ -941,7 +945,7 @@ int audio_get_volume() {
 
 void audio_set_max_volume(int level) {
     if (level < 0) level = 0;
-    if (level > 21) level = 21;
+    if (level > VOLUME_MAX) level = VOLUME_MAX;
     max_volume = level;
     Serial.printf("[Audio] Max volume set to: %d\n", max_volume);
     // If current volume exceeds new max, reduce it

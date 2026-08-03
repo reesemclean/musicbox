@@ -71,7 +71,7 @@ export const cards = sqliteTable('cards', {
   podcastFeedId: integer('podcast_feed_id').references(() => podcastFeeds.id, { onDelete: 'cascade' }),
 
   // Playback settings
-  volume: integer('volume'), // 0-21, null = use current volume
+  volume: integer('volume'), // 0-42, null = use current volume
 
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
@@ -86,7 +86,7 @@ export const devices = sqliteTable('devices', {
   lastSeen: integer('last_seen', { mode: 'timestamp' }),
   lastIp: text('last_ip'),
   soundMachineSound: text('sound_machine_sound'),
-  soundMachineVolume: integer('sound_machine_volume'), // 0-21, null = use current volume
+  soundMachineVolume: integer('sound_machine_volume'), // 0-42, null = use current volume
   maxVolume: integer('max_volume'), // 0-42, null = no limit (default 42)
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })

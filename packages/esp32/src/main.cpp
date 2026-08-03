@@ -148,13 +148,33 @@ void onVolume(int level) {
     audio_set_volume(level);
 }
 
+// Max time to wait for the audio task to acknowledge a stop before an OTA.
+// audio_stop() is asynchronous (queued to Core 0), so we poll rather than
+// guess at a fixed delay.
+#define OTA_AUDIO_STOP_TIMEOUT_MS 3000
+
 void onOta(const char* url, const char* version, const char* sha256) {
     LOG_I(MOD_OTA, "Update available: v%s", version);
 
     if (audio_get_state() != AUDIO_IDLE) {
         LOG_I(MOD_OTA, "Stopping audio for update");
         audio_stop();
-        delay(500);
+
+        unsigned long start = millis();
+        while (audio_get_state() != AUDIO_IDLE &&
+               millis() - start < OTA_AUDIO_STOP_TIMEOUT_MS) {
+            delay(10);
+        }
+
+        if (audio_get_state() != AUDIO_IDLE) {
+            // Proceed anyway: the audio task may be stuck in a blocking read,
+            // and that is precisely when pushing new firmware matters most.
+            // Playback competing for WiFi only slows the download.
+            LOG_W(MOD_OTA, "Audio did not stop in %dms, updating anyway",
+                  OTA_AUDIO_STOP_TIMEOUT_MS);
+        } else {
+            LOG_D(MOD_OTA, "Audio stopped in %lums", millis() - start);
+        }
     }
 
     nfc_set_enabled(false);

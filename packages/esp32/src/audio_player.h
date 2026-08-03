@@ -42,7 +42,7 @@ void audio_stop();
 void audio_skip_next();
 void audio_skip_prev();
 
-// Volume (0-42)
+// Volume (0-42, see VOLUME_MAX in audio_player.cpp)
 void audio_set_volume(int level);
 int audio_get_volume();
 void audio_set_max_volume(int level);  // Limit volume to this level (0-42)

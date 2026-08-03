@@ -1,9 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createReadStream, existsSync, statSync } from 'node:fs'
+import { Readable } from 'node:stream'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { db } from '@/db/index.js'
 import { media } from '@/db/schema.js'
+import { parseRange } from '@/lib/httpRange'
 
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data')
 
@@ -23,6 +25,16 @@ export const Route = createFileRoute('/api/media/stream/$id')({
           return new Response('Media not found', { status: 404 })
         }
 
+        // An empty filePath means the row exists but its audio was never
+        // fetched (e.g. a podcast episode still downloading). Without this
+        // check, join(DATA_DIR, '') resolves to DATA_DIR itself — a directory
+        // that passes existsSync/statSync, sends headers with the directory's
+        // size, then throws EISDIR mid-response, leaving the client with a
+        // truncated stream that never terminates cleanly.
+        if (!item.filePath) {
+          return new Response('Media file not yet available', { status: 404 })
+        }
+
         const fullPath = join(DATA_DIR, item.filePath)
 
         if (!existsSync(fullPath)) {
@@ -30,37 +42,45 @@ export const Route = createFileRoute('/api/media/stream/$id')({
         }
 
         const stat = statSync(fullPath)
+        if (!stat.isFile()) {
+          return new Response('Media path is not a file', { status: 404 })
+        }
+
+        const contentType = item.mimeType || 'audio/mpeg'
         const range = request.headers.get('range')
 
         // Support range requests for seeking
         if (range) {
-          const parts = range.replace(/bytes=/, '').split('-')
-          const start = parseInt(parts[0], 10)
-          const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1
-          const chunkSize = end - start + 1
+          const parsed = parseRange(range, stat.size)
 
+          if (!parsed) {
+            return new Response('Invalid range', {
+              status: 416,
+              headers: { 'Content-Range': `bytes */${stat.size}` },
+            })
+          }
+
+          const { start, end } = parsed
           const stream = createReadStream(fullPath, { start, end })
-          const webStream = nodeStreamToWebStream(stream)
 
-          return new Response(webStream, {
+          return new Response(nodeStreamToWebStream(stream), {
             status: 206,
             headers: {
               'Content-Range': `bytes ${start}-${end}/${stat.size}`,
               'Accept-Ranges': 'bytes',
-              'Content-Length': chunkSize.toString(),
-              'Content-Type': item.mimeType || 'audio/mpeg',
+              'Content-Length': (end - start + 1).toString(),
+              'Content-Type': contentType,
             },
           })
         }
 
         // Full file response
         const stream = createReadStream(fullPath)
-        const webStream = nodeStreamToWebStream(stream)
 
-        return new Response(webStream, {
+        return new Response(nodeStreamToWebStream(stream), {
           headers: {
             'Content-Length': stat.size.toString(),
-            'Content-Type': item.mimeType || 'audio/mpeg',
+            'Content-Type': contentType,
             'Accept-Ranges': 'bytes',
           },
         })
@@ -69,23 +89,15 @@ export const Route = createFileRoute('/api/media/stream/$id')({
   },
 })
 
-function nodeStreamToWebStream(nodeStream: NodeJS.ReadableStream): ReadableStream {
-  return new ReadableStream({
-    start(controller) {
-      nodeStream.on('data', (chunk) => {
-        controller.enqueue(chunk)
-      })
-      nodeStream.on('end', () => {
-        controller.close()
-      })
-      nodeStream.on('error', (err) => {
-        controller.error(err)
-      })
-    },
-    cancel() {
-      if ('destroy' in nodeStream && typeof nodeStream.destroy === 'function') {
-        nodeStream.destroy()
-      }
-    },
-  })
+/**
+ * Bridge a Node read stream to a web ReadableStream.
+ *
+ * Readable.toWeb propagates backpressure: it only pulls from the file when the
+ * consumer is ready, so a slow client (an ESP32 on weak WiFi) throttles the
+ * disk read rather than causing the whole file to be buffered in server memory.
+ * It also handles stream teardown and error propagation, which is easy to get
+ * subtly wrong by hand.
+ */
+function nodeStreamToWebStream(nodeStream: Readable): ReadableStream {
+  return Readable.toWeb(nodeStream) as ReadableStream
 }

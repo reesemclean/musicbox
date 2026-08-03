@@ -1,8 +1,9 @@
 import mqtt, { MqttClient } from 'mqtt'
 import { EventEmitter } from 'node:events'
-import { eq, desc } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { devices, cards, media, playlistMedia } from '../db/schema.js'
+import { getLatestEpisode } from './podcastService.js'
 
 // MQTT Topics
 export const TOPICS = {
@@ -415,15 +416,9 @@ class MqttService extends EventEmitter {
         }
       }
     } else if (card.podcastFeedId) {
-      // Podcast feed - play most recent episode
-      const [latestEpisode] = await db
-        .select()
-        .from(media)
-        .where(eq(media.type, 'podcast'))
-        .orderBy(desc(media.createdAt))
-        .limit(1)
+      // Podcast feed - play this feed's most recent fully-downloaded episode
+      const latestEpisode = await getLatestEpisode(card.podcastFeedId)
 
-      // TODO: Filter by feedId when we have proper podcast episode → feed linking
       if (latestEpisode) {
         const url = `${this.getStreamBaseUrl()}/api/media/stream/${latestEpisode.id}`
         console.log(`[MQTT] Playing podcast episode: ${latestEpisode.title}`)
@@ -432,6 +427,9 @@ class MqttService extends EventEmitter {
         if (card.volume !== null) {
           this.setVolume(macForTopic, card.volume)
         }
+      } else {
+        console.log(`[MQTT] No downloaded episode available for feed ${card.podcastFeedId}`)
+        this.sendCommand(macForTopic, { command: 'error_sound' } as any)
       }
     } else {
       console.log(`[MQTT] Card ${uid} has no content mapped`)
@@ -494,13 +492,13 @@ class MqttService extends EventEmitter {
     const mac = this.macWithColons(macNoColons)
     console.log(`[MQTT] Device ${mac} is ${status.online ? 'online' : 'offline'}`)
 
-    if (!status.online) {
-      // Device went offline (LWT message)
-      await db
-        .update(devices)
-        .set({ lastSeen: new Date() })
-        .where(eq(devices.mac, mac))
-    }
+    // Any status message is proof of life — including online:true. Without
+    // this, a device that reconnects but hasn't yet sent a playback event
+    // still reads as stale and the UI disables its controls.
+    await db
+      .update(devices)
+      .set({ lastSeen: new Date() })
+      .where(eq(devices.mac, mac))
 
     this.emit('device:status', { mac, online: status.online })
   }
@@ -576,14 +574,8 @@ class MqttService extends EventEmitter {
         mediaIds = tracks.map(t => t.mediaId)
         cardType = 'playlist'
       } else if (card.podcastFeedId) {
-        // Get most recent episode from this feed
-        // TODO: Proper podcast episode linking
-        const [latestEpisode] = await db
-          .select({ id: media.id })
-          .from(media)
-          .where(eq(media.type, 'podcast'))
-          .orderBy(desc(media.createdAt))
-          .limit(1)
+        // This feed's most recent fully-downloaded episode
+        const latestEpisode = await getLatestEpisode(card.podcastFeedId)
 
         if (latestEpisode) {
           mediaIds = [latestEpisode.id]
@@ -635,12 +627,7 @@ class MqttService extends EventEmitter {
       mediaIds = tracks.map(t => t.mediaId)
       cardType = 'playlist'
     } else if (card.podcastFeedId) {
-      const [latestEpisode] = await db
-        .select({ id: media.id })
-        .from(media)
-        .where(eq(media.type, 'podcast'))
-        .orderBy(desc(media.createdAt))
-        .limit(1)
+      const latestEpisode = await getLatestEpisode(card.podcastFeedId)
 
       if (latestEpisode) {
         mediaIds = [latestEpisode.id]

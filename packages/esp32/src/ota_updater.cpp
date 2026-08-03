@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Update.h>
+#include <esp_task_wdt.h>
 #include <mbedtls/sha256.h>
 
 // Current firmware version (set during build)
@@ -205,6 +206,11 @@ bool ota_start_update(const char* url, const char* version, const char* sha256) 
     int lastProgress = 0;
 
     while (http.connected() && written < contentLength) {
+        // This loop owns the CPU until the whole image is flashed, which can
+        // exceed the task watchdog timeout on a slow link or a large image.
+        // delay() yields to other tasks but does not feed this task's watchdog.
+        esp_task_wdt_reset();
+
         size_t available = stream->available();
         if (available > 0) {
             size_t toRead = min(available, sizeof(buffer));

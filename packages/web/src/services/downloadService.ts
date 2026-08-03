@@ -10,6 +10,30 @@ import { getAlbum } from './ytmusicService.js'
 const DATA_ROOT = process.env.DATA_DIR || path.join(process.cwd(), 'data')
 
 /**
+ * Remove any leftover files for a failed download.
+ *
+ * yt-dlp is given `<uuid>.%(ext)s`, so before the mp3 postprocessor runs it may
+ * have written `<uuid>.webm`, `<uuid>.m4a`, `<uuid>.part`, etc. Deleting only
+ * the final `.mp3` path would leave those behind, and since every retry uses a
+ * fresh uuid they would accumulate indefinitely.
+ */
+async function discardPartialFile(outputPath: string): Promise<void> {
+  const dir = path.dirname(outputPath)
+  const prefix = path.basename(outputPath, path.extname(outputPath))
+
+  try {
+    const entries = await fs.readdir(dir)
+    await Promise.all(
+      entries
+        .filter((name) => name.startsWith(prefix))
+        .map((name) => fs.unlink(path.join(dir, name)).catch(() => {}))
+    )
+  } catch {
+    // Directory may not exist if the download never got that far.
+  }
+}
+
+/**
  * Queue a song for download from YouTube Music
  */
 export async function queueDownload(
@@ -20,7 +44,7 @@ export async function queueDownload(
   thumbnailUrl?: string,
   playlistId?: number,
   trackPosition?: number
-): Promise<{ id: number; videoId: string }> {
+): Promise<{ id: number; videoId: string; alreadyDownloaded?: boolean }> {
   // Check if already in queue
   const existing = await db
     .select()
@@ -30,6 +54,22 @@ export async function queueDownload(
 
   if (existing.length > 0) {
     return { id: existing[0].id, videoId }
+  }
+
+  // Check if already downloaded. Successful downloads delete their queue row,
+  // so the check above can't see them — without this, re-requesting a track
+  // already in the library silently creates a duplicate media entry.
+  // Linear scan by design: youtubeVideoId lives inside a JSON column with no
+  // index, and a home library is small enough that this is cheaper than
+  // maintaining one.
+  const songs = await db
+    .select({ id: media.id, metadata: media.metadata })
+    .from(media)
+    .where(eq(media.type, 'song'))
+
+  const downloaded = songs.find((s) => s.metadata?.youtubeVideoId === videoId)
+  if (downloaded) {
+    return { id: downloaded.id, videoId, alreadyDownloaded: true }
   }
 
   // Add to queue
@@ -157,6 +197,7 @@ async function processDownload(queueId: number) {
           await db.delete(downloadQueue).where(eq(downloadQueue.id, queueId))
         } catch (error) {
           console.error('Failed to save song:', error)
+          await discardPartialFile(outputPath)
           await db
             .update(downloadQueue)
             .set({
@@ -166,6 +207,7 @@ async function processDownload(queueId: number) {
             .where(eq(downloadQueue.id, queueId))
         }
       } else {
+        await discardPartialFile(outputPath)
         await db
           .update(downloadQueue)
           .set({
@@ -177,6 +219,7 @@ async function processDownload(queueId: number) {
     })
 
     ytdlp.on('error', async (error) => {
+      await discardPartialFile(outputPath)
       await db
         .update(downloadQueue)
         .set({
@@ -186,6 +229,7 @@ async function processDownload(queueId: number) {
         .where(eq(downloadQueue.id, queueId))
     })
   } catch (error) {
+    await discardPartialFile(outputPath)
     await db
       .update(downloadQueue)
       .set({

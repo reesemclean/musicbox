@@ -506,7 +506,12 @@ async function cleanupOldEpisodes(feedId: number) {
 }
 
 /**
- * Get the latest episode for a feed (used when playing via card)
+ * Get the latest playable episode for a feed (used when playing via card).
+ *
+ * Only returns episodes whose audio has finished downloading — an episode row
+ * exists from the moment it's seen in the RSS feed, with an empty filePath,
+ * so selecting one that is still pending/downloading/failed would hand the
+ * device a URL with no file behind it.
  */
 export async function getLatestEpisode(feedId: number) {
   const allPodcasts = await db
@@ -517,7 +522,18 @@ export async function getLatestEpisode(feedId: number) {
   const feedEpisodes = allPodcasts
     .filter((ep) => {
       const metadata = parseMetadata(ep.metadata)
-      return metadata.feedId === feedId
+      if (metadata.feedId !== feedId) return false
+
+      // A non-empty filePath is the real gate — an episode without a file
+      // cannot play whatever its status claims. The status check only rules
+      // out states we know are unplayable, so an episode whose metadata
+      // predates downloadStatus (or lost it) still plays if its file exists.
+      if (!ep.filePath) return false
+      return (
+        metadata.downloadStatus !== 'pending' &&
+        metadata.downloadStatus !== 'downloading' &&
+        metadata.downloadStatus !== 'failed'
+      )
     })
     .sort((a, b) => {
       const metaA = parseMetadata(a.metadata)

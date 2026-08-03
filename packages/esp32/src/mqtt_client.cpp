@@ -9,9 +9,34 @@
 #include <ArduinoJson.h>
 #include <esp_mac.h>
 
+// ─────────────────────────────────────────────────────────────────────────────
+// THREADING INVARIANT
+//
+// PubSubClient and its WiFiClient are NOT thread-safe. Every call into
+// mqttClient (publish, subscribe, loop) must happen on the task that runs
+// mqtt_loop() — i.e. the Arduino loop task on Core 1.
+//
+// Anything originating on the audio task (Core 0) must hand off via a queue
+// drained in mqtt_loop(), the same way wifi_manager defers its event
+// callbacks. mqtt_publish_playback_status() is the one such path today; if
+// you add another publisher reachable from Core 0, route it through a queue
+// too rather than calling mqttClient directly.
+// ─────────────────────────────────────────────────────────────────────────────
+
 // WiFi client for MQTT
 static WiFiClient wifiClient;
 static PubSubClient mqttClient(wifiClient);
+
+// Playback status published from the audio task (Core 0) — queued here and
+// actually sent from mqtt_loop() on Core 1.
+struct PlaybackStatusMsg {
+    char status[16];
+    int mediaId;
+    int position;
+};
+
+#define STATUS_QUEUE_SIZE 8
+static QueueHandle_t statusQueue = NULL;
 
 // Broker info
 static String brokerHost = "";
@@ -72,6 +97,35 @@ void mqtt_init() {
     // Setup message callback
     mqttClient.setCallback(onMqttMessage);
     mqttClient.setBufferSize(1024);  // Increase buffer for larger messages
+
+    statusQueue = xQueueCreate(STATUS_QUEUE_SIZE, sizeof(PlaybackStatusMsg));
+    if (statusQueue == NULL) {
+        Serial.println("[MQTT] Failed to create status queue");
+    }
+}
+
+// Actually publish a playback status. Core 1 only — called from mqtt_loop().
+static void publishPlaybackStatusNow(const PlaybackStatusMsg& msg) {
+    JsonDocument doc;
+    doc["type"] = "playback_status";
+    doc["status"] = msg.status;
+    doc["mediaId"] = msg.mediaId;
+    doc["position"] = msg.position;
+
+    String payload;
+    serializeJson(doc, payload);
+
+    mqttClient.publish(topicEvents.c_str(), payload.c_str());
+}
+
+// Drain queued playback statuses. Core 1 only.
+static void drainStatusQueue() {
+    if (statusQueue == NULL) return;
+
+    PlaybackStatusMsg msg;
+    while (xQueueReceive(statusQueue, &msg, 0) == pdTRUE) {
+        publishPlaybackStatusNow(msg);
+    }
 }
 
 bool mqtt_discover_broker() {
@@ -169,6 +223,7 @@ void mqtt_connect() {
 void mqtt_loop() {
     if (mqttClient.connected()) {
         mqttClient.loop();
+        drainStatusQueue();
     } else if (brokerDiscovered) {
         // Handle reconnection
         unsigned long now = millis();
@@ -361,19 +416,23 @@ void mqtt_publish_card_played_locally(const char* uid) {
     Serial.printf("[MQTT] Published card played locally: %s\n", uid);
 }
 
+// Safe to call from any core — enqueues for mqtt_loop() to publish on Core 1.
+// Does NOT touch mqttClient; see the threading invariant at the top of this file.
 void mqtt_publish_playback_status(const char* status, int mediaId, int position) {
-    if (!mqttClient.connected()) return;
+    if (statusQueue == NULL || status == NULL) return;
 
-    JsonDocument doc;
-    doc["type"] = "playback_status";
-    doc["status"] = status;
-    doc["mediaId"] = mediaId;
-    doc["position"] = position;
+    PlaybackStatusMsg msg = {};
+    strncpy(msg.status, status, sizeof(msg.status) - 1);
+    msg.mediaId = mediaId;
+    msg.position = position;
 
-    String payload;
-    serializeJson(doc, payload);
-
-    mqttClient.publish(topicEvents.c_str(), payload.c_str());
+    if (xQueueSend(statusQueue, &msg, 0) != pdTRUE) {
+        // Queue full: discard the oldest so the most recent status still gets
+        // through. Status is telemetry — the latest value is what matters.
+        PlaybackStatusMsg discarded;
+        xQueueReceive(statusQueue, &discarded, 0);
+        xQueueSend(statusQueue, &msg, 0);
+    }
 }
 
 void mqtt_publish_soundmachine_request() {
