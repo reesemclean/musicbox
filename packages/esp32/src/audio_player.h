@@ -56,7 +56,6 @@ int audio_get_max_volume();
 
 AudioState audio_get_state();
 AudioMode audio_get_mode();
-int audio_get_current_media_id();
 
 // Seconds into the current track. Sent with a skip so the server can decide
 // between "go back one" and "restart this one".

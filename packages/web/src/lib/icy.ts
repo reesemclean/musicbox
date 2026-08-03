@@ -50,16 +50,3 @@ export function icyMetadataBlock(title: string): Buffer {
 export function encodeTrackAnnouncement(mediaId: number, title: string): string {
   return `${mediaId}|${title}`
 }
-
-/** Recover a mediaId from an announcement, or null if it isn't one. */
-export function decodeTrackAnnouncement(
-  value: string
-): { mediaId: number; title: string } | null {
-  const sep = value.indexOf('|')
-  if (sep <= 0) return null
-
-  const mediaId = parseInt(value.slice(0, sep), 10)
-  if (!Number.isInteger(mediaId)) return null
-
-  return { mediaId, title: value.slice(sep + 1) }
-}

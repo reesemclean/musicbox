@@ -145,10 +145,6 @@ No dependencies on each other or on later phases. Safe to do in any order.
   `refreshAllFeeds()` exists but only runs from a UI button. Nothing in
   `startup.ts` schedules it, so subscriptions only update when someone clicks.
 
-- [ ] **3.7 — Transition shim** (cutover only, not a spec requirement)
-  Keep the `soundmachine_request` handler until all devices run new firmware, so
-  an un-updated device's long-press still works during cutover. Delete after.
-
 - [x] **3.8 — Skip support** (spec §3.6)
   Emerged from 3.3: skip needed more than a command rename. The device holds no
   queue, so it reports a press and the server decides. That required two things

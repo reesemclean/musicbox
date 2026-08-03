@@ -143,10 +143,6 @@ int flash_soundmachine_volume() {
     return sm_volume;
 }
 
-const char* flash_soundmachine_name() {
-    return sm_name;
-}
-
 void flash_set_soundmachine_config(const char* url, const char* name, int volume) {
     if (configMutex == NULL) return;
     if (xSemaphoreTake(configMutex, pdMS_TO_TICKS(100)) != pdTRUE) return;

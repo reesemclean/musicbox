@@ -44,15 +44,6 @@ export interface DeviceStatusEvent {
 }
 
 /**
- * Legacy: firmware predating locally-stored sound machine config asks the
- * server on every long-press. Kept only for the cutover window — see the
- * transition shim note on the handler.
- */
-export interface SoundMachineRequestEvent {
-  type: 'soundmachine_request'
-}
-
-/**
  * A physical next/previous press. The device resolves nothing itself — it
  * reports the press and the elapsed position, and the server answers with a
  * fresh play. Elapsed matters because "previous" means restart-this-track once
@@ -76,7 +67,6 @@ export type DeviceEvent =
   | PlaybackStatusEvent
   | DeviceStatusEvent
   | SkipEvent
-  | SoundMachineRequestEvent
   | DeviceLogsEvent
 
 // Commands to devices
@@ -190,11 +180,6 @@ class MqttService extends EventEmitter {
   // Get playback status for a device (MAC with colons)
   getPlaybackStatus(mac: string): PlaybackStatus | undefined {
     return this.playbackStatusStore.get(mac)
-  }
-
-  // Get all playback statuses
-  getAllPlaybackStatuses(): Map<string, PlaybackStatus> {
-    return this.playbackStatusStore
   }
 
   async connect(): Promise<void> {
@@ -385,8 +370,6 @@ class MqttService extends EventEmitter {
       this.emit('playback:status', { mac, status: event.status, mediaId: event.mediaId, mediaTitle })
     } else if (event.type === 'skip') {
       await this.handleSkip(macNoColons, mac, event)
-    } else if (event.type === 'soundmachine_request') {
-      await this.handleSoundMachineRequest(macNoColons, mac)
     } else if (event.type === 'device_logs') {
       this.handleDeviceLogs(mac, event.logs)
     }
@@ -559,37 +542,6 @@ class MqttService extends EventEmitter {
     this.playPlaylist(macNoColons, macWithColons, session.playlistId, url, target.mediaId)
   }
 
-  /**
-   * TRANSITION SHIM — delete once every device runs firmware that stores its
-   * sound machine configuration locally (backlog 3.7).
-   *
-   * Older firmware asks the server on every long-press instead of using local
-   * state, and answers only to the legacy `soundmachine` command. Keeping this
-   * lets old and new firmware coexist against one server during the rollout,
-   * so devices can be updated one at a time rather than all at once.
-   */
-  private async handleSoundMachineRequest(
-    macNoColons: string,
-    macWithColons: string
-  ): Promise<void> {
-    console.log(`[MQTT] Legacy sound machine request from ${macWithColons}`)
-
-    const [device] = await db
-      .select()
-      .from(devices)
-      .where(eq(devices.mac, macWithColons))
-      .limit(1)
-
-    const sound = await this.resolveSoundMachineSound(device?.soundMachineSound ?? null)
-
-    this.publish(TOPICS.deviceCommands(macNoColons), {
-      command: 'soundmachine',
-      url: sound ? `${this.getStreamBaseUrl()}/api/media/stream/${sound.id}` : null,
-      name: sound?.title ?? null,
-      volume: device?.soundMachineVolume ?? null,
-    })
-  }
-
   private async handleDeviceStatus(macNoColons: string, status: { online: boolean }): Promise<void> {
     const mac = this.macWithColons(macNoColons)
     console.log(`[MQTT] Device ${mac} is ${status.online ? 'online' : 'offline'}`)
@@ -758,14 +710,6 @@ class MqttService extends EventEmitter {
 
   isConnected(): boolean {
     return this.connected
-  }
-
-  async disconnect(): Promise<void> {
-    if (this.client) {
-      await this.client.endAsync()
-      this.client = null
-      this.connected = false
-    }
   }
 }
 

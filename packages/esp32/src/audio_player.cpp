@@ -465,10 +465,6 @@ AudioMode audio_get_mode() {
     return mode;
 }
 
-int audio_get_current_media_id() {
-    return current_media_id;
-}
-
 uint32_t audio_get_elapsed_sec() {
     if (track_started_ms == 0) return 0;
     return (millis() - track_started_ms) / 1000;

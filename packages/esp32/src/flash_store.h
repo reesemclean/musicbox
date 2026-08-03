@@ -46,9 +46,6 @@ const char* flash_soundmachine_path();
 // Configured playback volume, or -1 to leave the current volume alone.
 int flash_soundmachine_volume();
 
-// Friendly name, for logs. Empty string when unconfigured.
-const char* flash_soundmachine_name();
-
 // Apply a configuration pushed by the server. Downloads the file if it differs
 // from what is stored. A NULL url clears the configuration. Safe to call from
 // any core; the work happens in flash_process().

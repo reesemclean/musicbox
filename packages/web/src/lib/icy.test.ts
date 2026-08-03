@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import {
-  decodeTrackAnnouncement,
-  encodeTrackAnnouncement,
-  icyMetadataBlock,
-  ICY_EMPTY_BLOCK,
-} from './icy'
+import { encodeTrackAnnouncement, icyMetadataBlock, ICY_EMPTY_BLOCK } from './icy'
+
+/** Parse an announcement the way the device's firmware does. */
+function parseAnnouncement(value: string) {
+  const sep = value.indexOf('|')
+  if (sep <= 0) return null
+  const mediaId = parseInt(value.slice(0, sep), 10)
+  if (!Number.isInteger(mediaId)) return null
+  return { mediaId, title: value.slice(sep + 1) }
+}
 
 /** Parse a block the way a client does: length byte, then payload. */
 function readBlock(block: Buffer) {
@@ -61,7 +65,7 @@ describe('ICY_EMPTY_BLOCK', () => {
 describe('track announcements', () => {
   it('round-trips a mediaId and title', () => {
     const encoded = encodeTrackAnnouncement(107, 'Some Song')
-    expect(decodeTrackAnnouncement(encoded)).toEqual({
+    expect(parseAnnouncement(encoded)).toEqual({
       mediaId: 107,
       title: 'Some Song',
     })
@@ -69,14 +73,14 @@ describe('track announcements', () => {
 
   it('keeps separators that appear inside the title', () => {
     const encoded = encodeTrackAnnouncement(9, 'A|B|C')
-    expect(decodeTrackAnnouncement(encoded)).toEqual({ mediaId: 9, title: 'A|B|C' })
+    expect(parseAnnouncement(encoded)).toEqual({ mediaId: 9, title: 'A|B|C' })
   })
 
   it('rejects values that are not announcements', () => {
-    expect(decodeTrackAnnouncement('no separator')).toBeNull()
-    expect(decodeTrackAnnouncement('|leading')).toBeNull()
-    expect(decodeTrackAnnouncement('abc|title')).toBeNull()
-    expect(decodeTrackAnnouncement('')).toBeNull()
+    expect(parseAnnouncement('no separator')).toBeNull()
+    expect(parseAnnouncement('|leading')).toBeNull()
+    expect(parseAnnouncement('abc|title')).toBeNull()
+    expect(parseAnnouncement('')).toBeNull()
   })
 
   it('survives the full encode -> block -> parse path', () => {
@@ -84,6 +88,6 @@ describe('track announcements', () => {
       icyMetadataBlock(encodeTrackAnnouncement(55, 'Round Trip'))
     )
     const value = /StreamTitle='([^']*)'/.exec(payload)![1]
-    expect(decodeTrackAnnouncement(value)).toEqual({ mediaId: 55, title: 'Round Trip' })
+    expect(parseAnnouncement(value)).toEqual({ mediaId: 55, title: 'Round Trip' })
   })
 })
