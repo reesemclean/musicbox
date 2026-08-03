@@ -6,6 +6,8 @@ When working on this project, read the following files into context:
 
 - `docs/ESP32-BUILD-GUIDE.md` - Step-by-step guide for building the ESP32 player
 - `docs/BUILD-GUIDE-TODOS.md` - Progress tracker for the build guide
+- `docs/SYSTEM-BEHAVIOR-SPEC.md` - Normative spec for how the device, MQTT contract, and web control plane are expected to behave. Describes the target state, not current code. Read this before making playback, connectivity, OTA, or device-lifecycle changes.
+- `docs/IMPLEMENTATION-BACKLOG.md` - Where the code currently diverges from the spec, and the work left to close the gap. Check items off here rather than editing the spec.
 
 ## Project Structure
 
@@ -43,9 +45,12 @@ Songs, podcasts, and sound machine sounds are stored in a single `media` table w
   ```
 
 ### Sound Machine Sounds
-- Pre-bundled in `data/soundmachine/`
+- Pre-bundled in `data/soundmachine/` (server-side library storage)
 - Seeded into DB on first run
 - Marked with `system: true` in metadata to prevent deletion
+- Device-side storage/sync of the sound-machine sound (and system sounds)
+  is a separate concern — see `docs/SYSTEM-BEHAVIOR-SPEC.md` §3.8 and §4.
+  The device has no SD card; it holds these on local flash.
 
 ### Missing File Handling
 - Check file exists before streaming
