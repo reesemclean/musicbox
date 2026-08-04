@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync, unlinkSync } from 'node:fs'
 import { join, basename, extname } from 'node:path'
 import { db } from '../db/index.js'
-import { media } from '../db/schema.js'
+import { media, devices } from '../db/schema.js'
 import { eq, and } from 'drizzle-orm'
+import { ownedPaths } from '../lib/media.js'
 
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data')
 const SOUNDMACHINE_SEED_DIR = join(process.cwd(), 'seed-data', 'soundmachine')
@@ -23,9 +24,57 @@ function mimeTypeFor(fileName: string): string {
 }
 
 /**
+ * Retire sound machine sounds that the image no longer ships.
+ *
+ * These entries are image-managed (`system: true`), so seed-data is their
+ * source of truth — adding a file must make a sound appear and removing one
+ * must make it disappear. Without this, seeding only ever grows: a retired
+ * sound lingers in the picker forever with no UI anywhere to remove it.
+ *
+ * Only ever touches system entries, and only when the caller found at least
+ * one seed file — so a build that somehow shipped an empty seed directory
+ * cannot wipe the list.
+ */
+async function pruneRemovedSoundMachineSounds(seedFiles: string[]): Promise<void> {
+  if (seedFiles.length === 0) return
+
+  const expected = new Set(seedFiles.map((f) => `soundmachine/${f}`))
+
+  const existing = await db
+    .select()
+    .from(media)
+    .where(eq(media.type, 'soundmachine'))
+
+  for (const item of existing) {
+    if (!item.metadata?.system) continue // never touch user-added sounds
+    if (expected.has(item.filePath)) continue
+
+    // Devices pointing at this sound would otherwise be left with a dangling
+    // id — the picker shows nothing selected and pushing config resolves to
+    // null. Clear it explicitly so the state is honest.
+    await db
+      .update(devices)
+      .set({ soundMachineSound: null })
+      .where(eq(devices.soundMachineSound, String(item.id)))
+
+    for (const relative of ownedPaths(item)) {
+      try {
+        unlinkSync(join(DATA_DIR, relative))
+      } catch {
+        // Already gone; the row still needs to go.
+      }
+    }
+
+    await db.delete(media).where(eq(media.id, item.id))
+    console.log(`[Seed] Retired sound machine sound "${item.title}" (no longer shipped)`)
+  }
+}
+
+/**
  * Seeds sound machine files and database entries.
- * Copies files from seed-data/soundmachine to data/soundmachine if they don't exist,
- * and creates database entries for them.
+ *
+ * Reconciles rather than only adding: new seed files appear, changed ones
+ * replace what's on disk, and removed ones are retired.
  */
 export async function seedSoundMachineSounds(): Promise<void> {
   console.log('[Seed] Checking for sound machine sounds to seed...')
@@ -61,10 +110,15 @@ export async function seedSoundMachineSounds(): Promise<void> {
       .replace(/[-_]/g, ' ')
       .replace(/\b\w/g, c => c.toUpperCase()) // Title case
 
-    // Copy file if it doesn't exist
-    if (!existsSync(destPath)) {
+    // The image is the source of truth for these, so a seed file that has
+    // changed replaces what's on disk. Comparing size is enough: these are
+    // replaced wholesale, never edited in place.
+    const seedSize = statSync(srcPath).size
+    const replaced = existsSync(destPath) && statSync(destPath).size !== seedSize
+
+    if (!existsSync(destPath) || replaced) {
       copyFileSync(srcPath, destPath)
-      console.log(`[Seed] Copied ${file} to data/soundmachine/`)
+      console.log(`[Seed] ${replaced ? 'Updated' : 'Copied'} ${file}`)
     }
 
     // Check if DB entry exists (by file path)
@@ -80,18 +134,33 @@ export async function seedSoundMachineSounds(): Promise<void> {
 
     if (existing.length === 0) {
       // Create DB entry
-      const stats = statSync(destPath)
       await db.insert(media).values({
         title: name,
         type: 'soundmachine',
         mimeType: mimeTypeFor(file),
         filePath: relativePath,
-        fileSize: stats.size,
+        fileSize: seedSize,
         metadata: { system: true },
       })
       console.log(`[Seed] Created DB entry for "${name}"`)
+    } else if (replaced) {
+      // Clear the derived audio profile so the backfill re-measures the new
+      // file rather than trusting figures taken from the old one.
+      await db
+        .update(media)
+        .set({
+          fileSize: seedSize,
+          audioBytes: null,
+          sampleRate: null,
+          channels: null,
+          duration: null,
+        })
+        .where(eq(media.id, existing[0].id))
+      console.log(`[Seed] Reset audio profile for "${name}"`)
     }
   }
+
+  await pruneRemovedSoundMachineSounds(files)
 
   console.log('[Seed] Sound machine seeding complete')
 }
