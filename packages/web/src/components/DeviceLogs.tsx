@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Trash2, ScrollText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useDeviceLogs, type DeviceLogLine } from '@/hooks/useMqtt'
+import { useMqttContext } from '@/hooks/MqttProvider'
 
 const LEVEL_STYLE: Record<DeviceLogLine['level'], string> = {
   E: 'text-red-600 dark:text-red-400',
@@ -29,6 +30,7 @@ function formatUptime(seconds: number): string {
  */
 export function DeviceLogs({ mac }: { mac: string }) {
   const { lines, clear } = useDeviceLogs(mac)
+  const { isConnected } = useMqttContext()
   const [debug, setDebug] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedToBottom = useRef(true)
@@ -87,10 +89,19 @@ export function DeviceLogs({ mac }: { mac: string }) {
         onScroll={onScroll}
         className="h-48 overflow-y-auto rounded border border-border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed"
       >
-        {visible.length === 0 ? (
+        {!isConnected ? (
+          // Distinguish "the browser can't hear the broker" from "the device
+          // is silent". They look identical here and have nothing in common.
+          <p className="text-yellow-600 dark:text-yellow-400">
+            This browser isn't connected to the MQTT broker, so no device logs
+            can arrive. Live card scans and status updates are affected too.
+            Check that the broker's WebSocket port (9001) is reachable from
+            here.
+          </p>
+        ) : visible.length === 0 ? (
           <p className="text-muted-foreground">
             Devices send their logs every few seconds. Nothing has arrived yet —
-            if this stays empty, the device isn't connected to the broker.
+            if this stays empty, the device isn't reaching the broker.
           </p>
         ) : (
           visible.map((line, i) => (

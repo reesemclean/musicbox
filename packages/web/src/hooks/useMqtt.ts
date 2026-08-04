@@ -253,12 +253,17 @@ export function useMqtt({ onEvent, enabled = true }: UseMqttOptions = {}) {
 
     mqttManager.setQueryClient(queryClient)
 
+    // Default to the host that served this page. The broker is deployed
+    // alongside the server, so that is nearly always right, and unlike a
+    // baked-in default it stays right when reached from another machine.
+    const fallbackUrl = `ws://${window.location.hostname}:9001`
+
     getMqttConfig()
       .then((config) => {
-        mqttManager.connect(config.wsUrl)
+        mqttManager.connect(config.wsUrl || fallbackUrl)
       })
       .catch(() => {
-        mqttManager.connect(`ws://${window.location.hostname}:9001`)
+        mqttManager.connect(fallbackUrl)
       })
 
     const listener: EventListener = (event) => {
