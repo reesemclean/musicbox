@@ -9,6 +9,14 @@
 packages/web/.output
 packages/web/.vinxi
 
+# Runtime media library. Lives in a Docker volume, never in the image — but
+# without this it still lands in the build context, so a build machine that has
+# actually run the app ships its whole library to the daemon, and adding a
+# single song invalidates the layer cache for the entire web build.
+# Note this does not match seed-data/, which is a different directory and is
+# genuinely needed in the image.
+packages/web/data
+
 # Development files
 **/.env
 **/.env.local

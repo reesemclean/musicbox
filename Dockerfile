@@ -60,8 +60,12 @@ COPY --from=firmware-builder /build/packages/esp32/.pio/build/esp32-s3-devkitc-1
 ARG FIRMWARE_VERSION=latest
 RUN echo "{\"version\": \"${FIRMWARE_VERSION}\"}" > ./firmware/manifest.json
 
-# Create data directories
-RUN mkdir -p /data /data/songs /data/podcasts /data/soundmachine /data/sounds
+# Create data directories.
+# normalized/ holds canonical derivatives of media whose original isn't already
+# in the canonical encoding. The app creates it on demand — an existing volume
+# won't pick up new directories from the image — but listing it here keeps the
+# expected layout visible in one place.
+RUN mkdir -p /data /data/songs /data/podcasts /data/soundmachine /data/sounds /data/normalized
 
 # Environment variables
 ENV NODE_ENV=production
