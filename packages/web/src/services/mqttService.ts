@@ -165,6 +165,25 @@ export interface PlaybackSession {
   startedAt: Date
 }
 
+/** One line of device output, as retained by the server. */
+export interface DeviceLogLine {
+  seq: number
+  uptime: number
+  level: string
+  module: string
+  message: string
+  receivedAt: number
+}
+
+/**
+ * Lines retained per device.
+ *
+ * The server is the only subscriber that is reliably connected when a device
+ * boots, so it is the only place a boot sequence can be captured. 500 lines
+ * covers a startup plus a good stretch of use.
+ */
+const MAX_LOG_LINES = 500
+
 class MqttService extends EventEmitter {
   private client: MqttClient | null = null
   private connected = false
@@ -175,6 +194,12 @@ class MqttService extends EventEmitter {
   // the broker redelivers retained messages on subscribe, so a server restart
   // repopulates this automatically rather than guessing from timestamps.
   private deviceOnline: Map<string, boolean> = new Map()
+  // Device logs arrive as ordinary (non-retained) MQTT messages, so anything
+  // published before a client subscribes is gone for that client — which is
+  // every boot, since browsers are rarely open at the moment a device starts.
+  // The server holds them instead and serves them on request.
+  private deviceLogs: Map<string, DeviceLogLine[]> = new Map()
+  private logSeq = 0
 
   constructor() {
     super()
@@ -194,6 +219,16 @@ class MqttService extends EventEmitter {
    */
   isDeviceOnline(mac: string): boolean | undefined {
     return this.deviceOnline.get(mac)
+  }
+
+  /** Retained log lines for a device, oldest first. */
+  getDeviceLogs(mac: string, sinceSeq = 0): DeviceLogLine[] {
+    const lines = this.deviceLogs.get(mac) ?? []
+    return sinceSeq > 0 ? lines.filter((l) => l.seq > sinceSeq) : lines
+  }
+
+  clearDeviceLogs(mac: string): void {
+    this.deviceLogs.delete(mac)
   }
 
   async connect(): Promise<void> {
@@ -578,17 +613,35 @@ class MqttService extends EventEmitter {
   }
 
   private handleDeviceLogs(mac: string, logs: string): void {
-    // Parse and display logs from device
-    // Format: "uptime|level|module|message\nuptime|level|module|message\n..."
-    const lines = logs.split('\n').filter(line => line.trim())
-    for (const line of lines) {
+    // Format: "uptime|level|module|message" per line.
+    const raw = logs.split('\n').filter((line) => line.trim())
+    const receivedAt = Date.now()
+    const parsed: DeviceLogLine[] = []
+
+    for (const line of raw) {
       const [uptime, level, module, ...msgParts] = line.split('|')
-      const msg = msgParts.join('|')
-      const levelIcon = level === 'E' ? '🔴' : level === 'W' ? '🟡' : ''
-      console.log(`[Device ${mac}] ${levelIcon}[${level}][${module}] ${msg} (uptime: ${uptime}s)`)
+      const message = msgParts.length > 0 ? msgParts.join('|') : line
+
+      parsed.push({
+        seq: ++this.logSeq,
+        uptime: Number(uptime) || 0,
+        // Anything unrecognised is still worth keeping — it is probably the
+        // thing being debugged.
+        level: ['D', 'I', 'W', 'E'].includes(level) ? level : 'I',
+        module: module || '?',
+        message,
+        receivedAt,
+      })
+
+      const icon = level === 'E' ? '🔴' : level === 'W' ? '🟡' : ''
+      console.log(`[Device ${mac}] ${icon}[${level}][${module}] ${message} (uptime: ${uptime}s)`)
     }
 
-    // Emit for WebSocket clients (could be used to display in Control Plane)
+    if (parsed.length > 0) {
+      const existing = this.deviceLogs.get(mac) ?? []
+      this.deviceLogs.set(mac, [...existing, ...parsed].slice(-MAX_LOG_LINES))
+    }
+
     this.emit('device:logs', { mac, logs })
   }
 

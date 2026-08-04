@@ -49,47 +49,8 @@ export type MqttEvent =
   | DeviceRegisteredEvent
   | DeviceLogsEvent
 
-/** One parsed line of device output. */
-export interface DeviceLogLine {
-  uptime: number
-  level: 'D' | 'I' | 'W' | 'E'
-  module: string
-  message: string
-  receivedAt: number
-}
-
 type EventListener = (event: MqttEvent) => void
 type ConnectionListener = (connected: boolean) => void
-type LogListener = () => void
-
-/**
- * Lines retained per device. Enough to cover a boot sequence and the events
- * around a failure, without letting a chatty device grow without bound.
- */
-const MAX_LOG_LINES = 300
-
-/** Stable empty reference — useSyncExternalStore requires snapshot identity. */
-const NO_LINES: DeviceLogLine[] = []
-
-function parseLogBatch(batch: string, receivedAt: number): DeviceLogLine[] {
-  const lines: DeviceLogLine[] = []
-
-  for (const raw of batch.split('\n')) {
-    if (!raw.trim()) continue
-    const [uptime, level, module, ...rest] = raw.split('|')
-    // Anything not in the expected shape is still worth showing rather than
-    // dropping — it is probably the thing you are trying to debug.
-    lines.push({
-      uptime: Number(uptime) || 0,
-      level: (['D', 'I', 'W', 'E'].includes(level) ? level : 'I') as DeviceLogLine['level'],
-      module: module || '?',
-      message: rest.length > 0 ? rest.join('|') : raw,
-      receivedAt,
-    })
-  }
-
-  return lines
-}
 
 // Singleton manager to survive React StrictMode double-renders
 class MqttClientManager {
@@ -99,10 +60,6 @@ class MqttClientManager {
   private connectionListeners = new Set<ConnectionListener>()
   private queryClient: QueryClient | null = null
   private _isConnected = false
-  // Kept on the singleton, not in a component, so lines that arrive while the
-  // devices page is closed are still there when it opens.
-  private deviceLogs = new Map<string, DeviceLogLine[]>()
-  private logListeners = new Set<LogListener>()
 
   static getInstance(): MqttClientManager {
     if (!MqttClientManager.instance) {
@@ -153,10 +110,6 @@ class MqttClientManager {
           event = { type: 'device_status', mac, online: message.online }
         }
 
-        if (event?.type === 'device_logs') {
-          this.appendLogs(event.mac, event.logs)
-        }
-
         if (event) {
           if (this.queryClient) {
             if (event.type === 'playback_status' || event.type === 'device_registered' || event.type === 'device_status') {
@@ -192,33 +145,6 @@ class MqttClientManager {
 
   removeEventListener(listener: EventListener) {
     this.eventListeners.delete(listener)
-  }
-
-  private appendLogs(mac: string, batch: string): void {
-    const incoming = parseLogBatch(batch, Date.now())
-    if (incoming.length === 0) return
-
-    const existing = this.deviceLogs.get(mac) ?? NO_LINES
-    // New array each time: the snapshot's identity is what tells React the
-    // store changed.
-    const next = [...existing, ...incoming].slice(-MAX_LOG_LINES)
-    this.deviceLogs.set(mac, next)
-
-    this.logListeners.forEach((listener) => listener())
-  }
-
-  subscribeToLogs = (listener: LogListener) => {
-    this.logListeners.add(listener)
-    return () => this.logListeners.delete(listener)
-  }
-
-  /** Lines for a device, keyed by MAC without colons. */
-  getLogs = (macNoColons: string): DeviceLogLine[] =>
-    this.deviceLogs.get(macNoColons) ?? NO_LINES
-
-  clearLogs = (macNoColons: string) => {
-    this.deviceLogs.delete(macNoColons)
-    this.logListeners.forEach((listener) => listener())
   }
 
   subscribeToConnection = (listener: ConnectionListener) => {
@@ -279,24 +205,3 @@ export function useMqtt({ onEvent, enabled = true }: UseMqttOptions = {}) {
   return { isConnected }
 }
 
-/**
- * Recent log output from a device.
- *
- * Devices batch their logs and publish them every few seconds; the browser is
- * already subscribed to the events topic, so this is just a view onto data
- * that was arriving anyway.
- */
-export function useDeviceLogs(mac: string) {
-  const macNoColons = mac.replace(/:/g, '')
-
-  const lines = useSyncExternalStore(
-    mqttManager.subscribeToLogs,
-    () => mqttManager.getLogs(macNoColons),
-    () => NO_LINES
-  )
-
-  return {
-    lines,
-    clear: () => mqttManager.clearLogs(macNoColons),
-  }
-}

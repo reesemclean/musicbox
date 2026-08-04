@@ -190,3 +190,24 @@ export const resyncDevice = createServerFn({ method: 'POST' })
     await mqttService.pushSoundMachineConfig(device.mac)
     return { success: true }
   })
+
+/**
+ * Retained log output for a device.
+ *
+ * Device logs arrive as ordinary MQTT messages, which a client only receives
+ * while it is subscribed — so a browser opened after boot has permanently
+ * missed the boot sequence. The server is connected from startup, so it holds
+ * the history and hands it over here.
+ */
+export const getDeviceLogs = createServerFn({ method: 'GET' })
+  .inputValidator((data: { mac: string; sinceSeq?: number }) => data)
+  .handler(async ({ data }) => {
+    return mqttService.getDeviceLogs(data.mac, data.sinceSeq ?? 0)
+  })
+
+export const clearDeviceLogs = createServerFn({ method: 'POST' })
+  .inputValidator((data: { mac: string }) => data)
+  .handler(async ({ data }) => {
+    mqttService.clearDeviceLogs(data.mac)
+    return { success: true }
+  })

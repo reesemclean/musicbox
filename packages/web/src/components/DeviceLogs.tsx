@@ -1,17 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2, ScrollText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useDeviceLogs, type DeviceLogLine } from '@/hooks/useMqtt'
-import { useMqttContext } from '@/hooks/MqttProvider'
+import { getDeviceLogs, clearDeviceLogs } from '@/server/devices'
 
-const LEVEL_STYLE: Record<DeviceLogLine['level'], string> = {
+interface LogLine {
+  seq: number
+  uptime: number
+  level: string
+  module: string
+  message: string
+}
+
+const LEVEL_STYLE: Record<string, string> = {
   E: 'text-red-600 dark:text-red-400',
   W: 'text-yellow-600 dark:text-yellow-400',
   I: 'text-foreground',
   D: 'text-muted-foreground',
 }
 
-/** Seconds of device uptime as m:ss / h:mm:ss, which reads better than raw seconds. */
+/** Device uptime as m:ss / h:mm:ss, which reads better than raw seconds. */
 function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
@@ -22,18 +30,35 @@ function formatUptime(seconds: number): string {
 }
 
 /**
- * Live log output from a device.
+ * Log output from a device.
  *
- * Devices batch their logs over MQTT every few seconds and the browser is
- * already subscribed to that topic, so this needs no polling and no server
- * round trip — it renders data that was arriving regardless.
+ * Read from the server rather than from live MQTT. Device logs are published
+ * as ordinary messages, so a subscriber only ever sees what was sent while it
+ * was connected — a browser opened after boot has permanently missed the boot
+ * sequence, which is the part worth reading. The server is connected from
+ * startup and keeps the history, so asking it returns everything regardless of
+ * when this page was opened.
  */
 export function DeviceLogs({ mac }: { mac: string }) {
-  const { lines, clear } = useDeviceLogs(mac)
-  const { isConnected } = useMqttContext()
+  const queryClient = useQueryClient()
   const [debug, setDebug] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedToBottom = useRef(true)
+
+  const { data: lines = [], isLoading } = useQuery({
+    queryKey: ['device-logs', mac],
+    queryFn: () => getDeviceLogs({ data: { mac } }) as Promise<LogLine[]>,
+    // Devices batch their output every couple of seconds; matching that is
+    // close enough to live for reading logs.
+    refetchInterval: 2000,
+  })
+
+  const clearMutation = useMutation({
+    mutationFn: async () => {
+      await clearDeviceLogs({ data: { mac } })
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['device-logs', mac] }),
+  })
 
   const visible = debug ? lines : lines.filter((l) => l.level !== 'D')
 
@@ -60,7 +85,7 @@ export function DeviceLogs({ mac }: { mac: string }) {
           Device log
         </h4>
         <span className="text-xs text-muted-foreground">
-          {visible.length > 0 ? `${visible.length} lines` : 'waiting…'}
+          {visible.length > 0 ? `${visible.length} lines` : ''}
         </span>
         <div className="ml-auto flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
@@ -76,8 +101,8 @@ export function DeviceLogs({ mac }: { mac: string }) {
             variant="ghost"
             size="sm"
             className="h-7 px-2 text-muted-foreground"
-            onClick={clear}
-            disabled={lines.length === 0}
+            onClick={() => clearMutation.mutate()}
+            disabled={lines.length === 0 || clearMutation.isPending}
           >
             <Trash2 className="h-3 w-3" />
           </Button>
@@ -89,30 +114,24 @@ export function DeviceLogs({ mac }: { mac: string }) {
         onScroll={onScroll}
         className="h-48 overflow-y-auto rounded border border-border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed"
       >
-        {!isConnected ? (
-          // Distinguish "the browser can't hear the broker" from "the device
-          // is silent". They look identical here and have nothing in common.
-          <p className="text-yellow-600 dark:text-yellow-400">
-            This browser isn't connected to the MQTT broker, so no device logs
-            can arrive. Live card scans and status updates are affected too.
-            Check that the broker's WebSocket port (9001) is reachable from
-            here.
-          </p>
+        {isLoading ? (
+          <p className="text-muted-foreground">Loading…</p>
         ) : visible.length === 0 ? (
           <p className="text-muted-foreground">
-            Devices send their logs every few seconds. Nothing has arrived yet —
-            if this stays empty, the device isn't reaching the broker.
+            No output recorded since the server started. Devices send their logs
+            every couple of seconds — if this stays empty, the device isn't
+            reaching the broker.
           </p>
         ) : (
-          visible.map((line, i) => (
-            <div key={i} className="flex gap-2 whitespace-pre-wrap break-all">
+          visible.map((line) => (
+            <div key={line.seq} className="flex gap-2 whitespace-pre-wrap break-all">
               <span className="shrink-0 text-muted-foreground tabular-nums">
                 {formatUptime(line.uptime)}
               </span>
-              <span className={`shrink-0 ${LEVEL_STYLE[line.level]}`}>
+              <span className={`shrink-0 ${LEVEL_STYLE[line.level] ?? ''}`}>
                 [{line.module}]
               </span>
-              <span className={LEVEL_STYLE[line.level]}>{line.message}</span>
+              <span className={LEVEL_STYLE[line.level] ?? ''}>{line.message}</span>
             </div>
           ))
         )}
