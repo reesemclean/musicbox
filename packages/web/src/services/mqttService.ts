@@ -171,6 +171,10 @@ class MqttService extends EventEmitter {
   private brokerUrl: string
   private playbackStatusStore: Map<string, PlaybackStatus> = new Map()
   private playbackSessions: Map<string, PlaybackSession> = new Map()
+  // Live connection state, from the retained status topic. In memory is right:
+  // the broker redelivers retained messages on subscribe, so a server restart
+  // repopulates this automatically rather than guessing from timestamps.
+  private deviceOnline: Map<string, boolean> = new Map()
 
   constructor() {
     super()
@@ -180,6 +184,16 @@ class MqttService extends EventEmitter {
   // Get playback status for a device (MAC with colons)
   getPlaybackStatus(mac: string): PlaybackStatus | undefined {
     return this.playbackStatusStore.get(mac)
+  }
+
+  /**
+   * Whether the broker currently believes a device is connected.
+   *
+   * Undefined means nothing has been heard either way — no retained status,
+   * so treat it as unknown rather than assuming either state.
+   */
+  isDeviceOnline(mac: string): boolean | undefined {
+    return this.deviceOnline.get(mac)
   }
 
   async connect(): Promise<void> {
@@ -546,13 +560,19 @@ class MqttService extends EventEmitter {
     const mac = this.macWithColons(macNoColons)
     console.log(`[MQTT] Device ${mac} is ${status.online ? 'online' : 'offline'}`)
 
-    // Any status message is proof of life — including online:true. Without
-    // this, a device that reconnects but hasn't yet sent a playback event
-    // still reads as stale and the UI disables its controls.
-    await db
-      .update(devices)
-      .set({ lastSeen: new Date() })
-      .where(eq(devices.mac, mac))
+    this.deviceOnline.set(mac, status.online)
+
+    // Only an online message is proof of life. Refreshing lastSeen on the
+    // will message would mean a device's final act — announcing that it is
+    // gone — made it look freshly seen, so it would read as online until the
+    // staleness window passed, and again after every broker reconnect
+    // redelivered that retained message.
+    if (status.online) {
+      await db
+        .update(devices)
+        .set({ lastSeen: new Date() })
+        .where(eq(devices.mac, mac))
+    }
 
     this.emit('device:status', { mac, online: status.online })
   }

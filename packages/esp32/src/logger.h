@@ -31,8 +31,6 @@ enum LogLevel {
 // Initialize logger (call in setup)
 void logger_init();
 
-// Set whether to buffer logs for remote sending
-void logger_set_remote(bool enabled);
 
 // Get buffered logs and clear buffer (returns count)
 int logger_get_buffer(char* outBuf, int maxLen);

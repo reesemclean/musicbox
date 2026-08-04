@@ -8,7 +8,6 @@
 static char logBuffer[LOG_BUFFER_SIZE];
 static int bufferHead = 0;
 static int bufferTail = 0;
-static bool remoteEnabled = false;
 static SemaphoreHandle_t bufferMutex = NULL;
 
 // Level prefixes
@@ -18,15 +17,16 @@ void logger_init() {
     bufferMutex = xSemaphoreCreateMutex();
     bufferHead = 0;
     bufferTail = 0;
-    remoteEnabled = false;
-}
-
-void logger_set_remote(bool enabled) {
-    remoteEnabled = enabled;
 }
 
 static void buffer_add(const char* entry, int len) {
-    if (!remoteEnabled || bufferMutex == NULL) return;
+    // Buffer from the first line, not from whenever the network came up.
+    // Boot is exactly when the interesting things happen — the filesystem
+    // mounting, the restart reason, config loading — and all of that precedes
+    // WiFi. Dropping it left the server with no record of a device's startup.
+    // Sending is gated separately by the MQTT connection; the circular buffer
+    // drops oldest-first if nothing ever drains it.
+    if (bufferMutex == NULL) return;
     if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
 
     // Add to circular buffer

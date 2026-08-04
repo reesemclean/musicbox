@@ -14,6 +14,9 @@ export const getDevices = createServerFn({ method: 'GET' })
       const playbackStatus = mqttService.getPlaybackStatus(device.mac)
       return {
         ...device,
+        // The broker's view, from the retained status topic. Undefined when
+        // nothing has been heard, which the UI falls back from.
+        online: mqttService.isDeviceOnline(device.mac),
         playback: playbackStatus ? {
           status: playbackStatus.status,
           mediaId: playbackStatus.mediaId,

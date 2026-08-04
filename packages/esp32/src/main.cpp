@@ -83,7 +83,6 @@ static void log_restart_reason() {
 
 void onWifiConnected() {
     LOG_I(MOD_WIFI, "Connected");
-    logger_set_remote(true);
 
     // Fetch any system cues we don't have. The audio task performs the writes
     // when nothing is playing.

@@ -233,7 +233,7 @@ function DevicesTable({ devices }: { devices: Device[] }) {
 function MobileDeviceCard({ device }: { device: Device }) {
   const [expanded, setExpanded] = useState(false)
   const queryClient = useQueryClient()
-  const isOnline = getIsOnline(device.lastSeen)
+  const isOnline = getIsOnline(device)
   const canControl = device.status === 'approved' && isOnline
   const playback = device.playback
   const isPlaying = playback?.status === 'playing'
@@ -317,7 +317,7 @@ function MobileDeviceCard({ device }: { device: Device }) {
 function DeviceRow({ device }: { device: Device }) {
   const [expanded, setExpanded] = useState(false)
   const queryClient = useQueryClient()
-  const isOnline = getIsOnline(device.lastSeen)
+  const isOnline = getIsOnline(device)
   const canControl = device.status === 'approved' && isOnline
   const playback = device.playback
   const isPlaying = playback?.status === 'playing'
@@ -825,12 +825,21 @@ function LastSeen({ lastSeen }: { lastSeen: Date | null }) {
   )
 }
 
-function getIsOnline(lastSeen: Date | null): boolean {
-  if (!lastSeen) return false
+/**
+ * Is a device currently reachable?
+ *
+ * The broker's retained status is authoritative when we have it: it says
+ * "connected right now", where a timestamp only ever says "was here recently".
+ * An unplugged device produces a will message immediately, so this reflects
+ * the unplug within seconds rather than waiting out a staleness window.
+ *
+ * lastSeen is the fallback for a device the broker has said nothing about —
+ * one that registered before this server started and has been quiet since.
+ */
+function getIsOnline(device: { online?: boolean; lastSeen: Date | null }): boolean {
+  if (device.online !== undefined) return device.online
 
-  const now = new Date()
-  const diffMs = now.getTime() - lastSeen.getTime()
+  if (!device.lastSeen) return false
   const fiveMinutes = 5 * 60 * 1000
-
-  return diffMs < fiveMinutes
+  return Date.now() - device.lastSeen.getTime() < fiveMinutes
 }
