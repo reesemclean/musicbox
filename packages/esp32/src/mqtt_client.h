@@ -44,7 +44,9 @@ void mqtt_publish_playback_status(const char* status, int mediaId, int position)
 // server answers with a fresh play. Elapsed lets it choose between going back
 // a track and restarting the current one.
 void mqtt_publish_skip(const char* direction, uint32_t elapsedSec);
-void mqtt_publish_logs(const char* logs);
+// Returns false if the publish was rejected — most likely too large for the
+// client buffer, which PubSubClient otherwise fails silently.
+bool mqtt_publish_logs(const char* logs);
 
 // Command callbacks
 void mqtt_on_play(PlayCallback callback);

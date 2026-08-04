@@ -2,7 +2,10 @@
 #include <stdarg.h>
 
 // Circular buffer for remote logs (WARN and ERROR only)
-#define LOG_BUFFER_SIZE 2048
+// Holds output until the server takes it. Sized to survive a boot sequence
+// plus the wait for WiFi and MQTT — the batch most worth keeping is the one
+// produced before the device can send anything.
+#define LOG_BUFFER_SIZE 4096
 #define LOG_ENTRY_MAX 256
 
 static char logBuffer[LOG_BUFFER_SIZE];
@@ -54,19 +57,53 @@ bool logger_has_pending() {
     return bufferHead != bufferTail;
 }
 
-int logger_get_buffer(char* outBuf, int maxLen) {
+/**
+ * Copy pending output without consuming it.
+ *
+ * Separated from consuming so the caller can hold on to the lines until the
+ * server has actually taken them — a publish that is rejected must not take
+ * the only copy of a boot log with it.
+ *
+ * Stops on a line boundary where possible, so a batch never splits a line
+ * across two publishes.
+ */
+int logger_peek_buffer(char* outBuf, int maxLen) {
     if (bufferMutex == NULL) return 0;
     if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;
 
     int count = 0;
-    while (bufferTail != bufferHead && count < maxLen - 1) {
-        outBuf[count++] = logBuffer[bufferTail];
-        bufferTail = (bufferTail + 1) % LOG_BUFFER_SIZE;
+    int lastNewline = -1;
+    int pos = bufferTail;
+
+    while (pos != bufferHead && count < maxLen - 1) {
+        outBuf[count] = logBuffer[pos];
+        if (outBuf[count] == '\n') lastNewline = count;
+        count++;
+        pos = (pos + 1) % LOG_BUFFER_SIZE;
     }
+
+    // Truncate to the last complete line, unless a single line is longer than
+    // the whole batch — then send what we have rather than nothing.
+    if (pos != bufferHead && lastNewline >= 0) {
+        count = lastNewline + 1;
+    }
+
     outBuf[count] = '\0';
 
     xSemaphoreGive(bufferMutex);
     return count;
+}
+
+/** Drop the first `len` bytes, after they have been delivered. */
+void logger_consume(int len) {
+    if (bufferMutex == NULL || len <= 0) return;
+    if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    for (int i = 0; i < len && bufferTail != bufferHead; i++) {
+        bufferTail = (bufferTail + 1) % LOG_BUFFER_SIZE;
+    }
+
+    xSemaphoreGive(bufferMutex);
 }
 
 void _log(LogLevel level, const char* module, const char* fmt, ...) {

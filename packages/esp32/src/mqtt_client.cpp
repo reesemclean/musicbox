@@ -93,7 +93,11 @@ void mqtt_init() {
 
     // Setup message callback
     mqttClient.setCallback(onMqttMessage);
-    mqttClient.setBufferSize(1024);  // Increase buffer for larger messages
+    // Must exceed the largest payload plus its MQTT header. Log batches are
+    // the biggest thing published, and PubSubClient drops an oversized publish
+    // silently — no error, no partial send — so a too-small buffer looks like
+    // a device that has gone quiet.
+    mqttClient.setBufferSize(4096);
 
     statusQueue = xQueueCreate(STATUS_QUEUE_SIZE, sizeof(PlaybackStatusMsg));
     if (statusQueue == NULL) {
@@ -367,8 +371,8 @@ void mqtt_publish_skip(const char* direction, uint32_t elapsedSec) {
     Serial.printf("[MQTT] Published skip %s (elapsed %us)\n", direction, (unsigned)elapsedSec);
 }
 
-void mqtt_publish_logs(const char* logs) {
-    if (!mqttClient.connected() || !logs || logs[0] == '\0') return;
+bool mqtt_publish_logs(const char* logs) {
+    if (!mqttClient.connected() || !logs || logs[0] == '\0') return false;
 
     JsonDocument doc;
     doc["type"] = "device_logs";
@@ -378,7 +382,7 @@ void mqtt_publish_logs(const char* logs) {
     String payload;
     serializeJson(doc, payload);
 
-    mqttClient.publish(topicEvents.c_str(), payload.c_str());
+    return mqttClient.publish(topicEvents.c_str(), payload.c_str());
 }
 
 // Callback registration

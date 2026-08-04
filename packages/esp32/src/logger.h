@@ -33,7 +33,11 @@ void logger_init();
 
 
 // Get buffered logs and clear buffer (returns count)
-int logger_get_buffer(char* outBuf, int maxLen);
+// Copy pending output without consuming it, stopping on a line boundary.
+int logger_peek_buffer(char* outBuf, int maxLen);
+
+// Discard `len` bytes once they have been delivered.
+void logger_consume(int len);
 
 // Check if there are buffered logs waiting
 bool logger_has_pending();

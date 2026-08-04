@@ -405,14 +405,22 @@ void loop() {
         audio_play_system_sound(SOUND_ERROR);
     }
 
-    // Send buffered logs to server
+    // Send buffered logs to server.
+    //
+    // Chunked well below the MQTT client's buffer: the JSON envelope and any
+    // escaping are pure overhead on top of the text, and an oversized publish
+    // is dropped silently. Anything left over goes out on the next pass rather
+    // than being lost.
     static unsigned long last_log_send = 0;
-    if (mqtt_is_connected() && logger_has_pending() && millis() - last_log_send > 5000) {
+    if (mqtt_is_connected() && logger_has_pending() && millis() - last_log_send > 2000) {
         last_log_send = millis();
-        char logBuf[1024];
-        int len = logger_get_buffer(logBuf, sizeof(logBuf));
-        if (len > 0) {
-            mqtt_publish_logs(logBuf);
+        char logBuf[768];
+        int len = logger_peek_buffer(logBuf, sizeof(logBuf));
+        // Only discard what the server actually accepted. Consuming on the way
+        // in meant a rejected publish took the lines with it — and a boot's
+        // worth of logs is exactly the batch most likely to be rejected.
+        if (len > 0 && mqtt_publish_logs(logBuf)) {
+            logger_consume(len);
         }
     }
 
