@@ -725,16 +725,18 @@ existing `api/<resource>/<action>/<param>` convention used by
   status-reporting mechanism (§3.5, §6.2). Announcement is quantised to the
   `icy-metaint` interval, so the reported track lags the true boundary by at
   most one interval (§9) — sub-second, and acceptable for status.
-- **Send an exact `Content-Length`; never fall back to chunked transfer
-  encoding.** Chunk-size framing interleaved with ICY metadata is an
-  untested combination for the device's decoder, and a known-length body is
-  its best-supported path. The length MUST be derived from the same pass
-  that produces the byte plan, so the two cannot disagree.
+- **Omit `Content-Length` when serving ICY metadata.** The device's decoder
+  chooses how to read a response by precedence, and a non-zero
+  `Content-Length` classifies it as a plain file — a path with no metadata
+  handling at all, which would feed every metadata block to the decoder as
+  audio. Metadata is only parsed on the chunked path. Responses that carry
+  metadata must therefore be chunked, and only requests that did *not* ask
+  for metadata (a browser, say) get a known length.
 
-To send `Content-Length` without first reading every file, the server needs
-each track's *extracted audio* byte length up front. That length MUST be
-computed once at ingest and stored alongside the media item (§11), not
-recomputed per request.
+Serving a known length still requires each track's *extracted audio* byte
+length up front, computed once at ingest and stored alongside the media item
+(§11) rather than recomputed per request. The same figures let the server
+report a playlist's total size without opening any files.
 
 ### 8.6 Preview Player
 

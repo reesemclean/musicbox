@@ -119,13 +119,31 @@ async function handlePlaylistStream(
 
   const headers: Record<string, string> = {
     'Content-Type': 'audio/mpeg',
-    'Content-Length': String(plan.totalBytes),
     // Seeking into a concatenated stream has no meaning — byte offsets don't
     // correspond to anything a client can reason about.
     'Accept-Ranges': 'none',
     'Cache-Control': 'no-cache',
   }
-  if (wantsMetadata) headers['icy-metaint'] = String(ICY_METAINT)
+
+  if (wantsMetadata) {
+    // Deliberately NO Content-Length here.
+    //
+    // ESP32-audioI2S decides how to read a response by precedence: a non-zero
+    // Content-Length makes it a "web file", and the web-file path has no ICY
+    // metadata handling whatsoever — every metadata block would be fed to the
+    // decoder as audio, corrupting the stream roughly once per metaint. Only
+    // the chunked path pairs with metadata (Audio.cpp: `if(m_f_chunked &&
+    // m_f_metadata) m_streamType = ST_WEBSTREAM`).
+    //
+    // Omitting Content-Length lets the response fall back to chunked transfer
+    // encoding, which is what makes the device treat this as a metadata-
+    // carrying stream. plan.totalBytes stays useful for logging and tests.
+    headers['icy-metaint'] = String(ICY_METAINT)
+  } else {
+    // Plain concatenated audio for anything that didn't ask for metadata —
+    // a browser, or curl. A known length is friendlier there.
+    headers['Content-Length'] = String(plan.totalBytes)
+  }
 
   return new Response(withBody ? streamPlan(plan) : null, { headers })
 }
