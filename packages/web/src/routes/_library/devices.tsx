@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield, Trash2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
+import { DeviceLogs } from '@/components/DeviceLogs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { getMedia } from '@/server/media'
@@ -737,6 +738,13 @@ function DeviceRemoteControl({ device }: { device: Device }) {
             {resyncMutation.isPending ? 'Sending...' : 'Re-sync'}
           </Button>
         </div>
+      </div>
+
+      {/* Live output from the device. Already arriving over MQTT, so this
+          costs no polling and no server round trip. */}
+      <DeviceLogs mac={device.mac} />
+
+      <div className="hidden">
       </div>
     </div>
   )
