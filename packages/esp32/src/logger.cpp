@@ -123,16 +123,19 @@ void _log(LogLevel level, const char* module, const char* fmt, ...) {
     // Print to serial
     Serial.println(fullBuf);
 
-    // Buffer every level, not just problems.
+    // Ship INFO and above.
     //
-    // Restricting this to WARN and ERROR meant the server only ever heard
-    // about failures, never about what the device was doing — no boot
-    // sequence, no filesystem state, no playback events. Diagnosing anything
-    // remotely required physical access to the serial port, which defeats the
-    // point of shipping logs at all.
+    // WARN-only meant the server heard about failures but never about what the
+    // device was doing — no boot sequence, no filesystem state, no playback
+    // events — so diagnosing anything remotely needed physical access to the
+    // serial port. INFO carries all of that.
     //
-    // Volume is not a concern: the buffer drops oldest-first, batches are
-    // capped, and the control plane hides debug lines behind a toggle.
+    // DEBUG stays serial-only: it is per-status-change and per-volume-step, so
+    // it is both the chattiest level and the one most likely to push the
+    // interesting lines out of the buffer exactly when something is happening.
+    // Raise this to LOG_LEVEL_DEBUG temporarily when chasing something.
+    if (level < LOG_LEVEL_INFO) return;
+
     char remoteBuf[LOG_ENTRY_MAX + 48];
     unsigned long uptime = millis() / 1000;
     int rlen = snprintf(remoteBuf, sizeof(remoteBuf), "%lu|%s|%s|%s",

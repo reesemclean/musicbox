@@ -93,8 +93,11 @@ void nfc_loop() {
     uint8_t uid[7];
     uint8_t uid_len;
 
-    // Non-blocking read attempt (50ms timeout - balance between detection and responsiveness)
-    if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uid_len, 50)) {
+    // This blocks the caller for up to the timeout, and the main loop polls
+    // buttons around it — so a long timeout is felt directly as button lag. A
+    // card already in the field answers in well under this; the timeout only
+    // bounds how long we wait to learn there is no card.
+    if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uid_len, 20)) {
         // Reset error counter on successful read
         consecutive_read_errors = 0;
 

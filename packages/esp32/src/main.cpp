@@ -290,6 +290,21 @@ void onCardRead(const char* uid) {
     mqtt_publish_card_scanned(uid);
 }
 
+/**
+ * Sample every button.
+ *
+ * Called more than once per pass: the NFC read blocks in between, and button
+ * feel is governed by how often this runs rather than by anything in the
+ * handlers.
+ */
+static void poll_buttons() {
+    btnPlay.loop();
+    btnVolUp.loop();
+    btnVolDn.loop();
+    btnNext.loop();
+    btnPrev.loop();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Setup & loop
 // ─────────────────────────────────────────────────────────────────────────────
@@ -333,6 +348,14 @@ void setup() {
     btnNext.begin(BTN_NEXT, INPUT_PULLUP, true);
     btnPrev.begin(BTN_PREV, INPUT_PULLUP, true);
 
+    // Default debounce is 50ms, which on top of the polling interval is most
+    // of what makes a press feel late.
+    btnPlay.setDebounceTime(20);
+    btnVolUp.setDebounceTime(20);
+    btnVolDn.setDebounceTime(20);
+    btnNext.setDebounceTime(20);
+    btnPrev.setDebounceTime(20);
+
     btnPlay.setClickHandler(onPlayClick);
     btnPlay.setLongClickHandler(onPlayLongPress);
     btnPlay.setLongClickTime(1000);
@@ -375,11 +398,7 @@ void loop() {
     wifi_loop();
     mqtt_loop();
 
-    btnPlay.loop();
-    btnVolUp.loop();
-    btnVolDn.loop();
-    btnNext.loop();
-    btnPrev.loop();
+    poll_buttons();
 
     // Combo: vol up + vol down held
     //   Release after 2s → restart
@@ -425,6 +444,7 @@ void loop() {
     }
 
     nfc_loop();
+    poll_buttons();  // again: the read above blocked for a while
 
     // A card was read but no answer arrived. Say so, rather than leaving the
     // user with a cue and then silence. Informational only: a play that turns
