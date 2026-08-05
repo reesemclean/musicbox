@@ -701,6 +701,26 @@ browser semantics) and the browser preview player. It MUST:
   cause the server to buffer an entire file in memory. The stream from disk
   should pause when the outbound connection isn't ready for more data.
 
+### 8.4b Endpoints the Device Calls
+
+The device reaches these over plain HTTP, without credentials, and nothing
+else:
+
+| Path | Purpose |
+|---|---|
+| `/api/device/config` | Broker address and stream base URL, fetched on connect |
+| `/api/media/stream/:id` | A single item, and the sound machine file |
+| `/api/playlists/stream/:id` | A whole playlist as one stream (§8.5) |
+| `/api/sounds/*.mp3` | System cues, downloaded once to local flash |
+| `/api/firmware/*` | OTA image and manifest |
+
+Deployments commonly expose this set through a reverse proxy on a separate
+port, allowing exactly these paths and refusing everything else so the control
+plane isn't reachable without authentication. **Adding a device-facing
+endpoint therefore means updating that allowlist as well** — otherwise the
+proxy rejects it and the device sees a failure the server never logged, since
+the request never arrived.
+
 ### 8.5 Continuous Playlist Stream
 
 `GET /api/playlists/stream/:id` serves an entire playlist as one continuous
