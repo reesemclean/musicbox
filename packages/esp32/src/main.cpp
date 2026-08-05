@@ -45,6 +45,15 @@ static unsigned long both_vol_pressed_start = 0;
 #define RESTART_HOLD_MS       2000
 #define FACTORY_RESET_HOLD_MS 5000
 
+// Holding a volume button ramps rather than requiring a press per step.
+// Without this, crossing the range takes a press-release cycle per step, and
+// the main loop only polls buttons every ~60ms because the NFC read blocks —
+// so setting a level felt unresponsive however hard you pressed.
+static unsigned long vol_hold_start = 0;
+static unsigned long last_vol_repeat = 0;
+#define VOL_REPEAT_AFTER_MS 400  // treat as a hold, not a click
+#define VOL_REPEAT_EVERY_MS 120  // ~8 steps a second once ramping
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Restart reason logging
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,15 +225,15 @@ void onPlayLongPress(Button2 &btn) {
     audio_play_soundmachine(path, flash_soundmachine_volume());
 }
 
-void onVolUpClick(Button2 &btn) {
-    int vol = audio_get_volume();
-    if (vol < audio_get_max_volume()) audio_set_volume(vol + 1);
+static void adjust_volume(int delta) {
+    int vol = audio_get_volume() + delta;
+    if (vol < 0) vol = 0;
+    if (vol > audio_get_max_volume()) vol = audio_get_max_volume();
+    if (vol != audio_get_volume()) audio_set_volume(vol);
 }
 
-void onVolDnClick(Button2 &btn) {
-    int vol = audio_get_volume();
-    if (vol > 0) audio_set_volume(vol - 1);
-}
+void onVolUpClick(Button2 &btn) { adjust_volume(+1); }
+void onVolDnClick(Button2 &btn) { adjust_volume(-1); }
 
 /**
  * Skip is a request, not a local operation.
@@ -394,6 +403,27 @@ void loop() {
         both_vol_pressed_start = 0;
     }
 
+    // Ramp while exactly one volume button is held. Both together is the
+    // restart/factory-reset combo, so leave that alone.
+    {
+        bool volUp = btnVolUp.isPressed();
+        bool volDn = btnVolDn.isPressed();
+
+        if (volUp != volDn) {
+            unsigned long now = millis();
+            if (vol_hold_start == 0) {
+                vol_hold_start = now;
+                last_vol_repeat = now;
+            } else if (now - vol_hold_start > VOL_REPEAT_AFTER_MS &&
+                       now - last_vol_repeat >= VOL_REPEAT_EVERY_MS) {
+                last_vol_repeat = now;
+                adjust_volume(volUp ? +1 : -1);
+            }
+        } else {
+            vol_hold_start = 0;
+        }
+    }
+
     nfc_loop();
 
     // A card was read but no answer arrived. Say so, rather than leaving the
@@ -445,5 +475,7 @@ void loop() {
             millis() / 1000);
     }
 
-    delay(10);
+    // Kept short: this adds directly to button-polling latency, on top of the
+    // NFC read that already dominates it.
+    delay(2);
 }
