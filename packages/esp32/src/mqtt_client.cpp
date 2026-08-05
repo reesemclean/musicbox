@@ -315,9 +315,12 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         onErrorSoundCb();
     }
     else if (strcmp(command, "soundmachine_config") == 0 && onSoundMachineConfigCb) {
-        // A null url clears the configuration.
-        const char* url = doc["url"].is<const char*>() ? doc["url"] : nullptr;
-        const char* name = doc["name"].is<const char*>() ? doc["name"] : nullptr;
+        // Assign straight from the document. ArduinoJson yields nullptr for a
+        // key that is missing or JSON null, which is exactly the "no sound
+        // configured" signal — and unlike a ternary against nullptr, it does
+        // not force the proxy type into a conversion that discards the string.
+        const char* url = doc["url"];
+        const char* name = doc["name"];
         int volume = doc["volume"] | -1;  // -1 means leave the current volume
         onSoundMachineConfigCb(url, name, volume);
     }
