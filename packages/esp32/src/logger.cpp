@@ -1,7 +1,7 @@
 #include "logger.h"
 #include <stdarg.h>
 
-// Circular buffer for remote logs (WARN and ERROR only)
+// Circular buffer for logs on their way to the server.
 // Holds output until the server takes it. Sized to survive a boot sequence
 // plus the wait for WiFi and MQTT — the batch most worth keeping is the one
 // produced before the device can send anything.
@@ -123,13 +123,19 @@ void _log(LogLevel level, const char* module, const char* fmt, ...) {
     // Print to serial
     Serial.println(fullBuf);
 
-    // Buffer WARN and ERROR for remote
-    if (level >= LOG_LEVEL_WARN) {
-        // Add uptime prefix for remote logs
-        char remoteBuf[LOG_ENTRY_MAX + 48];
-        unsigned long uptime = millis() / 1000;
-        int rlen = snprintf(remoteBuf, sizeof(remoteBuf), "%lu|%s|%s|%s",
-            uptime, levelStr[level], module, msgBuf);
-        buffer_add(remoteBuf, rlen);
-    }
+    // Buffer every level, not just problems.
+    //
+    // Restricting this to WARN and ERROR meant the server only ever heard
+    // about failures, never about what the device was doing — no boot
+    // sequence, no filesystem state, no playback events. Diagnosing anything
+    // remotely required physical access to the serial port, which defeats the
+    // point of shipping logs at all.
+    //
+    // Volume is not a concern: the buffer drops oldest-first, batches are
+    // capped, and the control plane hides debug lines behind a toggle.
+    char remoteBuf[LOG_ENTRY_MAX + 48];
+    unsigned long uptime = millis() / 1000;
+    int rlen = snprintf(remoteBuf, sizeof(remoteBuf), "%lu|%s|%s|%s",
+        uptime, levelStr[level], module, msgBuf);
+    buffer_add(remoteBuf, rlen);
 }
