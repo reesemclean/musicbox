@@ -7,4 +7,4 @@ _.python.venv = { path = ".venv", create = true }
 
 [tasks.setup]
 description = "Install Python dependencies"
-run = "pip install -q -r requirements.txt && pip install -q platformio"
+run = "pip install -q -r requirements.txt -r requirements-esp32.txt && pip install -q platformio"

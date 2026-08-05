@@ -235,21 +235,19 @@ No dependencies on each other or on later phases. Safe to do in any order.
   Do this on its own, not folded into feature work — a framework bump across 36
   minor versions plus a Nitro channel change wants its own verification pass.
 
-- [ ] **M.2 — Split build-only Python packages out of the production image**
-  `requirements.txt` is installed only in the `base` stage, which production
-  inherits — the firmware-builder stage doesn't use it at all, it just installs
-  platformio. The server itself shells out to `curl`, `ffmpeg`, `python3` and
-  `yt-dlp`, so of the nine packages only `ytmusicapi` and `yt-dlp` are needed at
-  runtime. The other six (`littlefs-python`, `fatfs-ng`, `cryptography`,
-  `esp-idf-size`, `esp-coredump`, `intelhex`) are ESP32 tooling that nothing in
-  the running image ever invokes.
+- [x] **M.2 — Split build-only Python packages out of the production image**
+  `requirements.txt` is installed into the production image, and six of its
+  nine packages were ESP32 tooling the server never invokes. Split into
+  `requirements.txt` (runtime) and `requirements-esp32.txt` (local firmware
+  work, installed by the mise setup task); the Dockerfile needed no change.
 
-  Deliberately not done alongside the streaming release: `yt-dlp` has optional
-  dependencies, and `cryptography`/`pyyaml` could plausibly be pulled in by
-  particular extractors. A break there surfaces weeks later on one specific
-  video, so it needs its own change and its own verification — download a few
-  tracks and run a YouTube Music search afterwards — rather than riding along
-  with something else.
+  The earlier worry that trimming might break a yt-dlp extractor was
+  unfounded, and checking settled it rather than guessing: `cryptography`,
+  `pyyaml` and `intelhex` are all `Required-by: esptool`, `yt-dlp` declares no
+  dependencies at all, and `ytmusicapi` needs only `requests`. A clean venv
+  with just the two runtime packages installs eight packages total — none of
+  the removed ones — and in it a real ytmusicapi search returns results, the
+  `yt-dlp` command runs, and its extractor machinery loads.
 
 ---
 

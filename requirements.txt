@@ -1,9 +1,10 @@
+# Python packages the running server needs.
+#
+# Installed into the production image, so keep this to what the server
+# actually invokes: ytmusicapi is imported by the search helper it spawns,
+# and yt-dlp is run as a command. Transitive dependencies come from pip.
+#
+# ESP32 build and debugging tools belong in requirements-esp32.txt — they are
+# never invoked by the server and only inflate the image.
 ytmusicapi
 yt-dlp
-littlefs-python>=0.16.0
-fatfs-ng>=0.1.14
-pyyaml>=6.0.2
-cryptography>=45.0.3
-esp-idf-size>=2.0.0
-esp-coredump>=1.14.0
-intelhex>=2.3.0

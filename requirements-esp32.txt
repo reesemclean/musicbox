@@ -1,0 +1,12 @@
+# Firmware build and debugging tools. Local development only.
+#
+# Deliberately not installed into the production image: nothing in the running
+# server invokes any of these. The image builds firmware in a separate stage
+# that installs platformio directly.
+littlefs-python>=0.16.0
+fatfs-ng>=0.1.14
+pyyaml>=6.0.2
+cryptography>=45.0.3
+esp-idf-size>=2.0.0
+esp-coredump>=1.14.0
+intelhex>=2.3.0
