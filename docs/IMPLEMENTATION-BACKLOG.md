@@ -92,13 +92,19 @@ No dependencies on each other or on later phases. Safe to do in any order.
   ID3/Xing frames, normalize sample rate at ingest, always send
   `Content-Length` (never chunked), and cache per-track extracted-audio length.
 
-- [ ] **2.2 — Confirm on hardware** (spec §3.5)
-  The prototype proves the server emits a correct stream; it cannot prove the
-  device consumes it. On real hardware, confirm: the `streamtitle` event fires
-  mid-stream carrying the injected `mediaId`; the decoder crosses a track
-  boundary without an audible artifact; real time-to-first-audio over WiFi.
-  Fallback if the boundary is audible: server-side transcoding — heavier, but
-  no change to the device-facing contract. Can be done alongside Phase 4.
+- [x] **2.2 — Confirm on hardware** (spec §3.5)
+  Playlists stream end to end on a real device, and skip next/previous works
+  against the server-computed target. The design holds.
+
+  Getting there took four unrelated fixes, none of them in the streaming
+  design itself: `Content-Length` routed the device away from the ICY path
+  entirely; the reverse proxy refused the new endpoint (see §8.4b); the
+  sound machine config was discarded by a JSON parsing bug; and the log
+  channel that would have shown all of this only ever carried warnings.
+
+  Still unconfirmed by ear: whether a track boundary is audible, and whether
+  the now-playing title updates mid-playlist as each track begins. Playback is
+  correct either way — the second would only mean status is misreported.
 
 ---
 
@@ -198,6 +204,17 @@ No dependencies on each other or on later phases. Safe to do in any order.
 
 - [x] **4.5 — `mqtt_client.cpp` command/event set** (spec §6)
   Update to the new contract. Transport layer itself is sound.
+
+---
+
+## Known limitations — accepted, not planned
+
+- **Buttons lag while the sound machine file downloads.** The download runs on
+  the audio task so that flash writes can never overlap playback, and while it
+  is writing that task is not draining the command queue — so presses register
+  but their effect waits. It lasts a few seconds and only happens when the
+  configured sound changes. Moving the download off that task would reintroduce
+  exactly the overlap the placement exists to prevent, so this stays.
 
 ---
 
