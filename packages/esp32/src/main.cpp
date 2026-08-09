@@ -46,9 +46,8 @@ static unsigned long both_vol_pressed_start = 0;
 #define FACTORY_RESET_HOLD_MS 5000
 
 // Holding a volume button ramps rather than requiring a press per step.
-// Without this, crossing the range takes a press-release cycle per step, and
-// the main loop only polls buttons every ~60ms because the NFC read blocks —
-// so setting a level felt unresponsive however hard you pressed.
+// Without this, crossing the range takes a press-release cycle per step, which
+// made setting a level feel unresponsive however hard you pressed.
 static unsigned long vol_hold_start = 0;
 static unsigned long last_vol_repeat = 0;
 #define VOL_REPEAT_AFTER_MS 400  // treat as a hold, not a click
@@ -293,9 +292,8 @@ void onCardRead(const char* uid) {
 /**
  * Sample every button.
  *
- * Called more than once per pass: the NFC read blocks in between, and button
- * feel is governed by how often this runs rather than by anything in the
- * handlers.
+ * Button feel is governed by how often this runs rather than by anything in
+ * the handlers, so nothing on this task may block for long between passes.
  */
 static void poll_buttons() {
     btnPlay.loop();
@@ -389,7 +387,10 @@ void setup() {
 
     wifi_init(onWifiConnected, onWifiDisconnected);
 
-    LOG_I(MOD_SYS, "Setup complete");
+    // Recorded alongside the audio task's own core so the pairing is visible
+    // rather than assumed. Whether these two share a core decides whether work
+    // added here can starve playback directly or only through contention.
+    LOG_I(MOD_SYS, "Setup complete (loop task on core %d)", xPortGetCoreID());
 }
 
 void loop() {
@@ -443,8 +444,8 @@ void loop() {
         }
     }
 
+    // Hands over reads the scan task has already completed — does not block.
     nfc_loop();
-    poll_buttons();  // again: the read above blocked for a while
 
     // A card was read but no answer arrived. Say so, rather than leaving the
     // user with a cue and then silence. Informational only: a play that turns
@@ -495,7 +496,7 @@ void loop() {
             millis() / 1000);
     }
 
-    // Kept short: this adds directly to button-polling latency, on top of the
-    // NFC read that already dominates it.
+    // Kept short: this adds directly to button-polling latency, which is now
+    // what governs the interval on most passes.
     delay(2);
 }

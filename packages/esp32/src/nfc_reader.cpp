@@ -1,4 +1,5 @@
 #include "nfc_reader.h"
+#include "logger.h"
 #include <Wire.h>
 #include <Adafruit_PN532.h>
 
@@ -9,72 +10,181 @@
 // Debounce settings
 #define DEBOUNCE_MS 1500
 
+// How often to attempt a read. Every attempt costs I2C traffic and holds the
+// scan task for the duration, so this is paced to how fast a card can actually
+// be presented rather than run flat out.
+#define NFC_SCAN_INTERVAL_MS 100
+
+// A read attempt blocks for roughly twice this: the library waits this long
+// for the command ACK and then again for the response. Generous on purpose —
+// see the desync note in attempt_read().
+#define NFC_READ_TIMEOUT_MS 100
+
 // Retry settings
 #define NFC_INIT_RETRY_INTERVAL_MS 5000
-#define NFC_READ_RETRY_MAX 3
 
-// NFC reader instance
-static Adafruit_PN532 nfc(PN532_SDA, PN532_SCL);
+// Only 4- and 7-byte UIDs are expected from ISO14443A, and the buffers here
+// are sized for those. Anything else means the frame was not a target report.
+#define UID_LEN_SINGLE 4
+#define UID_LEN_DOUBLE 7
 
-// State
-static bool ready = false;
-static bool enabled = false;
-static uint8_t last_uid[7] = {0};
+// The library copies uidLength bytes out of its packet buffer without checking
+// the value it read, so the destination has to cover the whole range that byte
+// can hold. Sized for the library's behaviour, not for a real UID.
+#define UID_BUF_SIZE 255
+
+// Two hex characters per byte, plus a terminator.
+#define UID_STR_SIZE (UID_LEN_DOUBLE * 2 + 1)
+
+// The two-argument I2C constructor takes (irq, reset) — not pins. The bus
+// itself comes from Wire.begin() below. Passing the pin numbers here made the
+// library treat SCL as a reset line and drive it as a plain output.
+static Adafruit_PN532 nfc(-1, -1);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scan task
+//
+// Reads run here rather than on the loop task, because a read blocks for as
+// long as it takes the reader to answer and the loop task has buttons to
+// sample. Completed reads are queued and handed back on the loop task in
+// nfc_loop(): the callback publishes over MQTT, which is only safe from there.
+// ─────────────────────────────────────────────────────────────────────────────
+
+typedef struct {
+    char uid[UID_STR_SIZE];
+} CardScan;
+
+#define SCAN_QUEUE_SIZE 4
+
+static QueueHandle_t scanQueue = NULL;
+static TaskHandle_t nfcTaskHandle = NULL;
+
+// State. Written on one task and read from the other, hence volatile.
+static volatile bool ready = false;
+static volatile bool enabled = false;
+
+// Owned by the scan task.
+static uint8_t last_uid[UID_LEN_DOUBLE] = {0};
 static uint8_t last_uid_len = 0;
 static unsigned long last_scan_time = 0;
-
-// Retry state
-static unsigned long last_init_attempt = 0;
-static int consecutive_read_errors = 0;
+static unsigned long last_desync_report = 0;
+#define DESYNC_REPORT_INTERVAL_MS 5000
 
 // Callback
 static CardScannedCallback on_card_scanned_cb = nullptr;
 
-bool nfc_init() {
-    Serial.println("[NFC] Initializing PN532...");
-    Wire.begin(PN532_SDA, PN532_SCL);
+/** Bring the reader up. Scan task only. */
+static bool try_init() {
     nfc.begin();
 
     uint32_t versiondata = nfc.getFirmwareVersion();
-    if (!versiondata) {
-        Serial.println("[NFC] PN532 not found - will retry in loop");
-        ready = false;
-        last_init_attempt = millis();
-        return false;
-    }
+    if (!versiondata) return false;
 
-    Serial.printf("[NFC] Found PN532 firmware v%d.%d\n",
-        (versiondata >> 16) & 0xFF,
-        (versiondata >> 8) & 0xFF);
+    LOG_I(MOD_NFC, "Found PN532 firmware v%d.%d",
+        (int)((versiondata >> 16) & 0xFF),
+        (int)((versiondata >> 8) & 0xFF));
 
     nfc.SAMConfig();
-    ready = true;
-    consecutive_read_errors = 0;
-    Serial.println("[NFC] Ready to read cards");
     return true;
 }
 
-// Retry initialization if it failed
-static void nfc_retry_init() {
-    if (ready) return;
+/** One read attempt. Scan task only. */
+static void attempt_read() {
+    uint8_t uid[UID_BUF_SIZE];
+    uint8_t uid_len;
+
+    // On timeout the library gives up without cancelling the scan it started,
+    // so the reader answers the abandoned command later — into whatever read
+    // comes next. That leaves the two sides one frame apart, and what we then
+    // parse is not the response we asked for. A generous window is what keeps
+    // a present card's reply inside the call that asked for it; the guard
+    // below is what makes a desync harmless when one happens anyway.
+    if (!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uid_len,
+                                 NFC_READ_TIMEOUT_MS)) {
+        return;
+    }
+
+    // The library takes the length straight from the frame and copies that
+    // many bytes without checking the value, so a desynced frame yields
+    // whatever that byte happened to be. Treat anything that is not a real UID
+    // length as one of those and drop it — passing it on would overrun
+    // last_uid and uid_str below.
+    if (uid_len != UID_LEN_SINGLE && uid_len != UID_LEN_DOUBLE) {
+        if (millis() - last_desync_report > DESYNC_REPORT_INTERVAL_MS) {
+            last_desync_report = millis();
+            LOG_W(MOD_NFC, "Discarding frame with implausible UID length %u",
+                  (unsigned)uid_len);
+        }
+        return;
+    }
 
     unsigned long now = millis();
-    if (now - last_init_attempt < NFC_INIT_RETRY_INTERVAL_MS) return;
 
-    last_init_attempt = now;
-    Serial.println("[NFC] Retrying initialization...");
+    // Check if this is the same card we just scanned (debounce)
+    bool same_card = (uid_len == last_uid_len) &&
+                     (memcmp(uid, last_uid, uid_len) == 0);
+    if (same_card && now - last_scan_time <= DEBOUNCE_MS) return;
 
-    nfc.begin();
-    uint32_t versiondata = nfc.getFirmwareVersion();
-    if (versiondata) {
-        Serial.printf("[NFC] Found PN532 firmware v%d.%d\n",
-            (versiondata >> 16) & 0xFF,
-            (versiondata >> 8) & 0xFF);
-        nfc.SAMConfig();
-        ready = true;
-        consecutive_read_errors = 0;
-        Serial.println("[NFC] Ready to read cards (after retry)");
+    memcpy(last_uid, uid, uid_len);
+    last_uid_len = uid_len;
+    last_scan_time = now;
+
+    CardScan scan;
+    char* p = scan.uid;
+    for (int i = 0; i < uid_len; i++) {
+        p += sprintf(p, "%02X", uid[i]);
     }
+
+    // Dropped rather than waited on: blocking here would only delay the next
+    // read, and a scan the loop task has not drained yet is already stale.
+    if (xQueueSend(scanQueue, &scan, 0) != pdTRUE) {
+        LOG_W(MOD_NFC, "Scan queue full, dropping read");
+    }
+}
+
+static void nfcTask(void* parameter) {
+    LOG_I(MOD_NFC, "Scan task started on core %d", xPortGetCoreID());
+
+    // All I2C for the reader happens on this task, starting with the bus.
+    Wire.begin(PN532_SDA, PN532_SCL);
+
+    for (;;) {
+        if (!ready) {
+            if (try_init()) {
+                ready = true;
+                LOG_I(MOD_NFC, "Ready to read cards");
+            } else {
+                LOG_W(MOD_NFC, "PN532 not found, retrying");
+                vTaskDelay(pdMS_TO_TICKS(NFC_INIT_RETRY_INTERVAL_MS));
+            }
+            continue;
+        }
+
+        if (enabled) attempt_read();
+
+        vTaskDelay(pdMS_TO_TICKS(NFC_SCAN_INTERVAL_MS));
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool nfc_init() {
+    LOG_I(MOD_NFC, "Initializing PN532...");
+
+    scanQueue = xQueueCreate(SCAN_QUEUE_SIZE, sizeof(CardScan));
+    if (scanQueue == NULL) {
+        LOG_E(MOD_NFC, "Failed to create scan queue");
+        return false;
+    }
+
+    // Pinned away from core 0, which the audio task and the WiFi stack share.
+    // Low priority: this task spends nearly all its time asleep, and nothing
+    // it does is more urgent than either of those.
+    xTaskCreatePinnedToCore(nfcTask, "NfcTask", 4096, NULL, 1, &nfcTaskHandle, 1);
+
+    return true;
 }
 
 void nfc_on_card_scanned(CardScannedCallback callback) {
@@ -82,58 +192,21 @@ void nfc_on_card_scanned(CardScannedCallback callback) {
 }
 
 void nfc_loop() {
-    // Retry initialization if not ready
-    if (!ready) {
-        nfc_retry_init();
-        return;
-    }
+    if (scanQueue == NULL) return;
 
-    if (!enabled) return;
-
-    uint8_t uid[7];
-    uint8_t uid_len;
-
-    // This blocks the caller for up to the timeout, and the main loop polls
-    // buttons around it — so a long timeout is felt directly as button lag. A
-    // card already in the field answers in well under this; the timeout only
-    // bounds how long we wait to learn there is no card.
-    if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uid_len, 20)) {
-        // Reset error counter on successful read
-        consecutive_read_errors = 0;
-
-        unsigned long now = millis();
-
-        // Check if this is the same card we just scanned (debounce)
-        bool same_card = (uid_len == last_uid_len) &&
-                         (memcmp(uid, last_uid, uid_len) == 0);
-
-        if (!same_card || (now - last_scan_time > DEBOUNCE_MS)) {
-            // New card or debounce period passed
-            memcpy(last_uid, uid, uid_len);
-            last_uid_len = uid_len;
-            last_scan_time = now;
-
-            // Convert UID to hex string
-            char uid_str[15];
-            char* p = uid_str;
-            for (int i = 0; i < uid_len; i++) {
-                p += sprintf(p, "%02X", uid[i]);
-            }
-
-            Serial.printf("[NFC] Card scanned: %s\n", uid_str);
-
-            // Invoke callback
-            if (on_card_scanned_cb) {
-                on_card_scanned_cb(uid_str);
-            }
-        }
+    // Non-blocking. The read itself already happened on the scan task; this is
+    // only where its result gets handed to the callback.
+    CardScan scan;
+    while (xQueueReceive(scanQueue, &scan, 0) == pdTRUE) {
+        Serial.printf("[NFC] Card scanned: %s\n", scan.uid);
+        if (on_card_scanned_cb) on_card_scanned_cb(scan.uid);
     }
 }
 
 void nfc_set_enabled(bool value) {
     enabled = value;
     if (enabled) {
-        Serial.println("[NFC] Scanning enabled");
+        LOG_I(MOD_NFC, "Scanning enabled");
     }
 }
 
