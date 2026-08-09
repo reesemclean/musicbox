@@ -5,7 +5,7 @@
 When working on this project, read the following files into context:
 
 - `docs/SYSTEM-BEHAVIOR-SPEC.md` - Normative spec for how the device, MQTT contract, and web control plane are expected to behave. Describes the target state, not current code. Read this before making playback, connectivity, OTA, or device-lifecycle changes.
-- `docs/IMPLEMENTATION-BACKLOG.md` - Where the code currently diverges from the spec, and the work left to close the gap. Check items off here rather than editing the spec.
+- `docs/IMPLEMENTATION-BACKLOG.md` - Where the code currently diverges from the spec, and the work left to close the gap. Track work here rather than editing the spec; completed items get deleted, not checked off.
 - `DEVELOPMENT.md` - How to run the server, broker, and device locally.
 
 Reference only, not authoritative:
@@ -28,7 +28,7 @@ The Control Plane UI is built. Match the conventions already in `packages/web/sr
 Work is tracked in `docs/IMPLEMENTATION-BACKLOG.md`, not in step order.
 
 1. Check the backlog for the item you're working on, and the spec section it cites.
-2. Make the change, then check the item off in the backlog. The spec describes the finished state and should not need editing as code catches up to it.
+2. Make the change, then delete the item from the backlog — don't check it off and leave it. The spec describes the finished state and should not need editing as code catches up to it, so a completed item is just a stale second copy. The commit that closes an item is where its reasoning belongs; `git log -p docs/IMPLEMENTATION-BACKLOG.md` recovers anything trimmed.
 3. If the code needs to diverge from the spec, change the spec deliberately and say why - don't let them drift silently.
 
 ## Code Style

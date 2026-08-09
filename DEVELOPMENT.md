@@ -29,6 +29,27 @@ Then install the web dependencies:
 cd packages/web && npm install
 ```
 
+### If you regenerate `package-lock.json`
+
+Use the npm that ships in `node:24-alpine`, not whatever is on your machine:
+
+```bash
+cd packages/web && npx npm@11.17.0 install --package-lock-only
+```
+
+Older npm writes an internally incomplete tree — it resolves optional
+platform packages without their transitive dependencies (for example
+`@tailwindcss/oxide-wasm32-wasi` needs `@emnapi/core`, which never gets an
+entry). Your local npm installs that happily and `npm ci` passes on macOS;
+the newer npm in the image refuses, so **the build fails only inside Docker**,
+in CI, after everything looked green locally.
+
+Check `node:24-alpine`'s npm version if it has moved on:
+
+```bash
+docker run --rm node:24-alpine npm -v
+```
+
 ## Running it
 
 ### Option A: Docker Compose (closest to production)
