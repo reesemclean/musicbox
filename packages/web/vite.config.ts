@@ -3,15 +3,13 @@ import { devtools } from '@tanstack/devtools-vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import { nitro } from 'nitro/vite'
 import viteReact from '@vitejs/plugin-react'
-import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
-import { fileURLToPath, URL } from 'url'
 
 const config = defineConfig({
+  // Vite resolves the `@/*` paths from tsconfig.json natively now; this
+  // replaces the vite-tsconfig-paths plugin and the manual alias.
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
+    tsconfigPaths: true,
   },
   ssr: {
     // mqtt.js has Node-specific code paths that break Vite's SSR bundler
@@ -24,12 +22,9 @@ const config = defineConfig({
   },
   plugins: [
     devtools(),
-    tailwindcss(),
-    viteTsConfigPaths({
-      projects: ['./tsconfig.json'],
-    }),
-    tanstackStart(),
     nitro(),
+    tailwindcss(),
+    tanstackStart(),
     viteReact(),
   ],
 })

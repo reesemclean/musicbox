@@ -220,20 +220,72 @@ No dependencies on each other or on later phases. Safe to do in any order.
 
 ## Maintenance
 
-- [ ] **M.1 — Upgrade TanStack Start**
-  Currently on `@tanstack/react-start` 1.157.16 (declared `^1.132.0`); latest is
-  1.168.34. Nitro is pinned to `nitro-nightly@latest`, which is worth resolving
-  to a stable release at the same time.
+- [x] **M.1 — Upgrade TanStack Start**
+  Now on `@tanstack/react-start` 1.168.42 and `@tanstack/react-router` 1.170.25,
+  with `nitro` pinned to `3.0.260610-beta` — the `nitro-nightly@latest` alias is
+  gone, so an unrelated `npm install` can no longer move the build underneath us.
 
-  Motivation is more than currency: server startup is awkward on this version.
-  Initialization lives in a module only pulled in by server functions, so it is
-  lazy — nothing runs, including the MQTT connection, until the first HTTP
-  request. That is currently worked around with a Nitro plugin
-  (`src/nitro/startup.plugin.ts`). Newer versions offer a first-class server
-  entry/startup hook, which would let that plugin go away.
+  The declared range was the misleading part: `^1.132.0` had already resolved to
+  1.157.16, so the real jump was 11 minor versions, not 36. Scaffolding a throwaway
+  project with `@tanstack/cli create` and diffing it against ours showed the app
+  code needed no changes at all — `getRouter`, `shellComponent`, `HeadContent`/
+  `Scripts` were already the current shapes. The delta was entirely config:
 
-  Do this on its own, not folded into feature work — a framework bump across 36
-  minor versions plus a Nitro channel change wants its own verification pass.
+  - Vite 7 → 8, TypeScript 5.7 → 6, `@vitejs/plugin-react` 5 → 6, vitest 3 → 4.
+  - `vite-tsconfig-paths` dropped for Vite's native `resolve.tsconfigPaths`.
+  - `baseUrl` removed from tsconfig — TS 6 errors on it (TS5101), and `paths`
+    resolves relative to the config file without it.
+  - `nitro()` now runs before `tanstackStart()` in the plugin array.
+  - `routeTree.gen.ts` regenerated; the diff is alphabetical reordering only.
+
+  Current scaffolds also ship `tsr.config.json` and `@tanstack/router-cli` with a
+  `generate-routes` script. Deliberately not adopted: in a Start project the Vite
+  plugin is the authoritative generator, and `tsr generate` emits a *different*
+  tree — it drops the `declare module '@tanstack/react-start'` Register block the
+  plugin appends, which is what types `getRouter` for Start. The script would
+  manufacture a diff that silently degrades types. `vite build` reproduces the
+  committed tree byte-for-byte; that is the only generator we use.
+
+  Deliberately skipped two scaffold conventions as pure churn across 68 files that
+  already use `@/`: `verbatimModuleSyntax: true` and the `#/*` subpath imports.
+
+  Verification beyond a green build, since a green build proves little here: the
+  built server was run directly and confirmed to connect and subscribe to MQTT
+  *before* any HTTP request; migrations and seeding ran at boot, which also
+  exercises `better-sqlite3`'s native binding from inside the bundle; and
+  `.output/server/index.mjs` still exists, which `Dockerfile:50` and the `start`
+  script both hardcode.
+
+  Vitest needed a new `vitest.config.ts`. Under vitest 4 it picked up the app's
+  `vite.config.ts`, dragged the Start/Nitro plugin chain into the test run, and
+  failed to evaluate CJS deps (`react`, `better-sqlite3`) while leaving the Vite
+  server hanging 10s at teardown. Tests passed and CI stayed green throughout, so
+  this was noise rather than breakage — but the tests are pure logic and have no
+  business loading the server pipeline. A standalone config decouples them.
+
+  One trap worth remembering: the lockfile had to be regenerated with npm 11.17.0,
+  the version in `node:24-alpine`. Regenerating it with the local npm (11.6.2)
+  produced an internally incomplete tree — `@tailwindcss/oxide-wasm32-wasi`
+  declares `@emnapi/core@^1.11.1` with no entry satisfying it. The local npm
+  installs that happily; the newer npm in the image correctly refuses, so
+  `npm ci` failed only inside Docker. Local `npm ci` passing is not evidence the
+  image will build. Verified both ways, plus that Nitro traces the native
+  `better_sqlite3.node` into `.output/server/node_modules` in the image.
+
+  Not done: `src/nitro/startup.plugin.ts` still exists. 1.168 does export
+  `./server-entry`, so the first-class hook this item anticipated is now
+  available — but swapping it in changes a load-bearing path (MQTT must be
+  listening before the first card scan) and deserves its own change. See M.3.
+
+- [ ] **M.3 — Retire the Nitro startup plugin for the Start server entry**
+  `src/nitro/startup.plugin.ts` exists only because initialization was lazy —
+  it lived in a module pulled in by server functions, so nothing ran until the
+  first HTTP request. `@tanstack/react-start` 1.168 exposes a `./server-entry`
+  export, which should let the plugin go away.
+
+  Verify the same property the plugin guarantees today: MQTT connected and
+  subscribed before any HTTP traffic. A device that boots before a human opens
+  the UI must still have its registration seen and its card scans answered.
 
 - [x] **M.2 — Split build-only Python packages out of the production image**
   `requirements.txt` is installed into the production image, and six of its

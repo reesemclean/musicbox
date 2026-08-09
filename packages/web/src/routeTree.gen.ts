@@ -11,22 +11,22 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LibraryRouteImport } from './routes/_library'
 import { Route as LibraryIndexRouteImport } from './routes/_library/index'
-import { Route as LibraryPodcastsRouteImport } from './routes/_library/podcasts'
-import { Route as LibraryPlaylistsRouteImport } from './routes/_library/playlists'
-import { Route as LibraryDevicesRouteImport } from './routes/_library/devices'
-import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
 import { Route as LibraryAddSongsRouteImport } from './routes/_library/add-songs'
+import { Route as LibraryCardsRouteImport } from './routes/_library/cards'
+import { Route as LibraryDevicesRouteImport } from './routes/_library/devices'
+import { Route as LibraryPlaylistsRouteImport } from './routes/_library/playlists'
+import { Route as LibraryPodcastsRouteImport } from './routes/_library/podcasts'
 import { Route as LibraryPlaylistsIndexRouteImport } from './routes/_library/playlists.index'
-import { Route as ApiSoundsFilenameRouteImport } from './routes/api/sounds/$filename'
-import { Route as ApiMediaUploadRouteImport } from './routes/api/media/upload'
-import { Route as ApiFirmwareLatestRouteImport } from './routes/api/firmware/latest'
-import { Route as ApiFirmwareDownloadRouteImport } from './routes/api/firmware/download'
-import { Route as ApiDeviceConfigRouteImport } from './routes/api/device/config'
 import { Route as LibraryPlaylistsPlaylistIdRouteImport } from './routes/_library/playlists.$playlistId'
-import { Route as ApiSoundmachineConfigMacRouteImport } from './routes/api/soundmachine/config/$mac'
-import { Route as ApiPlaylistsStreamIdRouteImport } from './routes/api/playlists/stream/$id'
-import { Route as ApiMediaStreamIdRouteImport } from './routes/api/media/stream/$id'
+import { Route as ApiDeviceConfigRouteImport } from './routes/api/device/config'
+import { Route as ApiFirmwareDownloadRouteImport } from './routes/api/firmware/download'
+import { Route as ApiFirmwareLatestRouteImport } from './routes/api/firmware/latest'
+import { Route as ApiMediaUploadRouteImport } from './routes/api/media/upload'
+import { Route as ApiSoundsFilenameRouteImport } from './routes/api/sounds/$filename'
 import { Route as ApiCardsLookupUidRouteImport } from './routes/api/cards/lookup/$uid'
+import { Route as ApiMediaStreamIdRouteImport } from './routes/api/media/stream/$id'
+import { Route as ApiPlaylistsStreamIdRouteImport } from './routes/api/playlists/stream/$id'
+import { Route as ApiSoundmachineConfigMacRouteImport } from './routes/api/soundmachine/config/$mac'
 
 const LibraryRoute = LibraryRouteImport.update({
   id: '/_library',
@@ -37,19 +37,9 @@ const LibraryIndexRoute = LibraryIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LibraryRoute,
 } as any)
-const LibraryPodcastsRoute = LibraryPodcastsRouteImport.update({
-  id: '/podcasts',
-  path: '/podcasts',
-  getParentRoute: () => LibraryRoute,
-} as any)
-const LibraryPlaylistsRoute = LibraryPlaylistsRouteImport.update({
-  id: '/playlists',
-  path: '/playlists',
-  getParentRoute: () => LibraryRoute,
-} as any)
-const LibraryDevicesRoute = LibraryDevicesRouteImport.update({
-  id: '/devices',
-  path: '/devices',
+const LibraryAddSongsRoute = LibraryAddSongsRouteImport.update({
+  id: '/add-songs',
+  path: '/add-songs',
   getParentRoute: () => LibraryRoute,
 } as any)
 const LibraryCardsRoute = LibraryCardsRouteImport.update({
@@ -57,9 +47,19 @@ const LibraryCardsRoute = LibraryCardsRouteImport.update({
   path: '/cards',
   getParentRoute: () => LibraryRoute,
 } as any)
-const LibraryAddSongsRoute = LibraryAddSongsRouteImport.update({
-  id: '/add-songs',
-  path: '/add-songs',
+const LibraryDevicesRoute = LibraryDevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => LibraryRoute,
+} as any)
+const LibraryPlaylistsRoute = LibraryPlaylistsRouteImport.update({
+  id: '/playlists',
+  path: '/playlists',
+  getParentRoute: () => LibraryRoute,
+} as any)
+const LibraryPodcastsRoute = LibraryPodcastsRouteImport.update({
+  id: '/podcasts',
+  path: '/podcasts',
   getParentRoute: () => LibraryRoute,
 } as any)
 const LibraryPlaylistsIndexRoute = LibraryPlaylistsIndexRouteImport.update({
@@ -67,19 +67,15 @@ const LibraryPlaylistsIndexRoute = LibraryPlaylistsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LibraryPlaylistsRoute,
 } as any)
-const ApiSoundsFilenameRoute = ApiSoundsFilenameRouteImport.update({
-  id: '/api/sounds/$filename',
-  path: '/api/sounds/$filename',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMediaUploadRoute = ApiMediaUploadRouteImport.update({
-  id: '/api/media/upload',
-  path: '/api/media/upload',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiFirmwareLatestRoute = ApiFirmwareLatestRouteImport.update({
-  id: '/api/firmware/latest',
-  path: '/api/firmware/latest',
+const LibraryPlaylistsPlaylistIdRoute =
+  LibraryPlaylistsPlaylistIdRouteImport.update({
+    id: '/$playlistId',
+    path: '/$playlistId',
+    getParentRoute: () => LibraryPlaylistsRoute,
+  } as any)
+const ApiDeviceConfigRoute = ApiDeviceConfigRouteImport.update({
+  id: '/api/device/config',
+  path: '/api/device/config',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiFirmwareDownloadRoute = ApiFirmwareDownloadRouteImport.update({
@@ -87,31 +83,19 @@ const ApiFirmwareDownloadRoute = ApiFirmwareDownloadRouteImport.update({
   path: '/api/firmware/download',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiDeviceConfigRoute = ApiDeviceConfigRouteImport.update({
-  id: '/api/device/config',
-  path: '/api/device/config',
+const ApiFirmwareLatestRoute = ApiFirmwareLatestRouteImport.update({
+  id: '/api/firmware/latest',
+  path: '/api/firmware/latest',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LibraryPlaylistsPlaylistIdRoute =
-  LibraryPlaylistsPlaylistIdRouteImport.update({
-    id: '/$playlistId',
-    path: '/$playlistId',
-    getParentRoute: () => LibraryPlaylistsRoute,
-  } as any)
-const ApiSoundmachineConfigMacRoute =
-  ApiSoundmachineConfigMacRouteImport.update({
-    id: '/api/soundmachine/config/$mac',
-    path: '/api/soundmachine/config/$mac',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPlaylistsStreamIdRoute = ApiPlaylistsStreamIdRouteImport.update({
-  id: '/api/playlists/stream/$id',
-  path: '/api/playlists/stream/$id',
+const ApiMediaUploadRoute = ApiMediaUploadRouteImport.update({
+  id: '/api/media/upload',
+  path: '/api/media/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiMediaStreamIdRoute = ApiMediaStreamIdRouteImport.update({
-  id: '/api/media/stream/$id',
-  path: '/api/media/stream/$id',
+const ApiSoundsFilenameRoute = ApiSoundsFilenameRouteImport.update({
+  id: '/api/sounds/$filename',
+  path: '/api/sounds/$filename',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCardsLookupUidRoute = ApiCardsLookupUidRouteImport.update({
@@ -119,6 +103,22 @@ const ApiCardsLookupUidRoute = ApiCardsLookupUidRouteImport.update({
   path: '/api/cards/lookup/$uid',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMediaStreamIdRoute = ApiMediaStreamIdRouteImport.update({
+  id: '/api/media/stream/$id',
+  path: '/api/media/stream/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPlaylistsStreamIdRoute = ApiPlaylistsStreamIdRouteImport.update({
+  id: '/api/playlists/stream/$id',
+  path: '/api/playlists/stream/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSoundmachineConfigMacRoute =
+  ApiSoundmachineConfigMacRouteImport.update({
+    id: '/api/soundmachine/config/$mac',
+    path: '/api/soundmachine/config/$mac',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LibraryIndexRoute
@@ -267,25 +267,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryIndexRouteImport
       parentRoute: typeof LibraryRoute
     }
-    '/_library/podcasts': {
-      id: '/_library/podcasts'
-      path: '/podcasts'
-      fullPath: '/podcasts'
-      preLoaderRoute: typeof LibraryPodcastsRouteImport
-      parentRoute: typeof LibraryRoute
-    }
-    '/_library/playlists': {
-      id: '/_library/playlists'
-      path: '/playlists'
-      fullPath: '/playlists'
-      preLoaderRoute: typeof LibraryPlaylistsRouteImport
-      parentRoute: typeof LibraryRoute
-    }
-    '/_library/devices': {
-      id: '/_library/devices'
-      path: '/devices'
-      fullPath: '/devices'
-      preLoaderRoute: typeof LibraryDevicesRouteImport
+    '/_library/add-songs': {
+      id: '/_library/add-songs'
+      path: '/add-songs'
+      fullPath: '/add-songs'
+      preLoaderRoute: typeof LibraryAddSongsRouteImport
       parentRoute: typeof LibraryRoute
     }
     '/_library/cards': {
@@ -295,11 +281,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryCardsRouteImport
       parentRoute: typeof LibraryRoute
     }
-    '/_library/add-songs': {
-      id: '/_library/add-songs'
-      path: '/add-songs'
-      fullPath: '/add-songs'
-      preLoaderRoute: typeof LibraryAddSongsRouteImport
+    '/_library/devices': {
+      id: '/_library/devices'
+      path: '/devices'
+      fullPath: '/devices'
+      preLoaderRoute: typeof LibraryDevicesRouteImport
+      parentRoute: typeof LibraryRoute
+    }
+    '/_library/playlists': {
+      id: '/_library/playlists'
+      path: '/playlists'
+      fullPath: '/playlists'
+      preLoaderRoute: typeof LibraryPlaylistsRouteImport
+      parentRoute: typeof LibraryRoute
+    }
+    '/_library/podcasts': {
+      id: '/_library/podcasts'
+      path: '/podcasts'
+      fullPath: '/podcasts'
+      preLoaderRoute: typeof LibraryPodcastsRouteImport
       parentRoute: typeof LibraryRoute
     }
     '/_library/playlists/': {
@@ -309,25 +309,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryPlaylistsIndexRouteImport
       parentRoute: typeof LibraryPlaylistsRoute
     }
-    '/api/sounds/$filename': {
-      id: '/api/sounds/$filename'
-      path: '/api/sounds/$filename'
-      fullPath: '/api/sounds/$filename'
-      preLoaderRoute: typeof ApiSoundsFilenameRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_library/playlists/$playlistId': {
+      id: '/_library/playlists/$playlistId'
+      path: '/$playlistId'
+      fullPath: '/playlists/$playlistId'
+      preLoaderRoute: typeof LibraryPlaylistsPlaylistIdRouteImport
+      parentRoute: typeof LibraryPlaylistsRoute
     }
-    '/api/media/upload': {
-      id: '/api/media/upload'
-      path: '/api/media/upload'
-      fullPath: '/api/media/upload'
-      preLoaderRoute: typeof ApiMediaUploadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/firmware/latest': {
-      id: '/api/firmware/latest'
-      path: '/api/firmware/latest'
-      fullPath: '/api/firmware/latest'
-      preLoaderRoute: typeof ApiFirmwareLatestRouteImport
+    '/api/device/config': {
+      id: '/api/device/config'
+      path: '/api/device/config'
+      fullPath: '/api/device/config'
+      preLoaderRoute: typeof ApiDeviceConfigRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/firmware/download': {
@@ -337,32 +330,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiFirmwareDownloadRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/device/config': {
-      id: '/api/device/config'
-      path: '/api/device/config'
-      fullPath: '/api/device/config'
-      preLoaderRoute: typeof ApiDeviceConfigRouteImport
+    '/api/firmware/latest': {
+      id: '/api/firmware/latest'
+      path: '/api/firmware/latest'
+      fullPath: '/api/firmware/latest'
+      preLoaderRoute: typeof ApiFirmwareLatestRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_library/playlists/$playlistId': {
-      id: '/_library/playlists/$playlistId'
-      path: '/$playlistId'
-      fullPath: '/playlists/$playlistId'
-      preLoaderRoute: typeof LibraryPlaylistsPlaylistIdRouteImport
-      parentRoute: typeof LibraryPlaylistsRoute
-    }
-    '/api/soundmachine/config/$mac': {
-      id: '/api/soundmachine/config/$mac'
-      path: '/api/soundmachine/config/$mac'
-      fullPath: '/api/soundmachine/config/$mac'
-      preLoaderRoute: typeof ApiSoundmachineConfigMacRouteImport
+    '/api/media/upload': {
+      id: '/api/media/upload'
+      path: '/api/media/upload'
+      fullPath: '/api/media/upload'
+      preLoaderRoute: typeof ApiMediaUploadRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/playlists/stream/$id': {
-      id: '/api/playlists/stream/$id'
-      path: '/api/playlists/stream/$id'
-      fullPath: '/api/playlists/stream/$id'
-      preLoaderRoute: typeof ApiPlaylistsStreamIdRouteImport
+    '/api/sounds/$filename': {
+      id: '/api/sounds/$filename'
+      path: '/api/sounds/$filename'
+      fullPath: '/api/sounds/$filename'
+      preLoaderRoute: typeof ApiSoundsFilenameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cards/lookup/$uid': {
+      id: '/api/cards/lookup/$uid'
+      path: '/api/cards/lookup/$uid'
+      fullPath: '/api/cards/lookup/$uid'
+      preLoaderRoute: typeof ApiCardsLookupUidRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/media/stream/$id': {
@@ -372,11 +365,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMediaStreamIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/cards/lookup/$uid': {
-      id: '/api/cards/lookup/$uid'
-      path: '/api/cards/lookup/$uid'
-      fullPath: '/api/cards/lookup/$uid'
-      preLoaderRoute: typeof ApiCardsLookupUidRouteImport
+    '/api/playlists/stream/$id': {
+      id: '/api/playlists/stream/$id'
+      path: '/api/playlists/stream/$id'
+      fullPath: '/api/playlists/stream/$id'
+      preLoaderRoute: typeof ApiPlaylistsStreamIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/soundmachine/config/$mac': {
+      id: '/api/soundmachine/config/$mac'
+      path: '/api/soundmachine/config/$mac'
+      fullPath: '/api/soundmachine/config/$mac'
+      preLoaderRoute: typeof ApiSoundmachineConfigMacRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
