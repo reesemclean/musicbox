@@ -19,9 +19,20 @@ import { ensureInitialized } from '../services/startup.js'
  * the server ~10s after start; relying on that is accidental, and it does
  * nothing for anyone running the server outside Docker.
  *
- * This plugin is a workaround for the framework version in use. Newer TanStack
- * Start releases provide a first-class server startup hook — see backlog M.1,
- * which should remove the need for this file.
+ * This is the deliberate answer, not a stopgap awaiting a framework feature.
+ * Start's `./server-entry` export looks like the obvious replacement and is not
+ * one: a `src/server.ts` built on `createServerEntry` is evaluated on the first
+ * request, not at boot, so moving startup there reintroduces exactly the lazy
+ * behaviour this file prevents. Measured on 1.168, not assumed — with the plugin
+ * removed, the log was still empty eight seconds after the server began
+ * listening, and one request produced the whole startup sequence. `createStart`
+ * is not an alternative either; it offers middleware, serialization adapters and
+ * SSR options, nothing process-scoped.
+ *
+ * If you are tempted to replace this with an import whose side effects run
+ * earlier in the module graph, don't — that rebuilds the guarantee out of
+ * import-order luck. Whatever replaces this has to prove the same property:
+ * MQTT connected and subscribed before any HTTP traffic.
  */
 export default function startupPlugin(_nitroApp: NitroApp) {
   // Not awaited: Nitro should finish booting and start listening regardless of

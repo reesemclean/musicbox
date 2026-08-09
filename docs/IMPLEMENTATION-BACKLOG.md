@@ -272,20 +272,12 @@ No dependencies on each other or on later phases. Safe to do in any order.
   image will build. Verified both ways, plus that Nitro traces the native
   `better_sqlite3.node` into `.output/server/node_modules` in the image.
 
-  Not done: `src/nitro/startup.plugin.ts` still exists. 1.168 does export
-  `./server-entry`, so the first-class hook this item anticipated is now
-  available — but swapping it in changes a load-bearing path (MQTT must be
-  listening before the first card scan) and deserves its own change. See M.3.
-
-- [ ] **M.3 — Retire the Nitro startup plugin for the Start server entry**
-  `src/nitro/startup.plugin.ts` exists only because initialization was lazy —
-  it lived in a module pulled in by server functions, so nothing ran until the
-  first HTTP request. `@tanstack/react-start` 1.168 exposes a `./server-entry`
-  export, which should let the plugin go away.
-
-  Verify the same property the plugin guarantees today: MQTT connected and
-  subscribed before any HTTP traffic. A device that boots before a human opens
-  the UI must still have its registration seen and its card scans answered.
+  `src/nitro/startup.plugin.ts` stays. This item originally expected a newer
+  Start to provide a startup hook that would replace it; `./server-entry` is not
+  that hook — a `src/server.ts` built on `createServerEntry` is evaluated on the
+  first request, not at boot. That was measured on 1.168 by removing the plugin
+  and watching the production build, and the plugin is now the deliberate answer
+  rather than a stopgap. The reasoning lives in the file's docstring.
 
 - [x] **M.2 — Split build-only Python packages out of the production image**
   `requirements.txt` is installed into the production image, and six of its
