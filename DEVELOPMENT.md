@@ -74,17 +74,11 @@ The `.env` in the repo root is what Docker Compose consumes. Don't count on
 `vite dev` picking it up — Vite loads `.env` from `packages/web/`, so set the
 vars explicitly as above.
 
-**The dev broker config listens on 1883 only.** The browser UI subscribes over
-MQTT-over-WebSocket on 9001 for live playback status and device logs; without
-that listener the UI still works and commands still reach devices (those go
-through the server), but status panels won't update live. Add it to
-`mosquitto/mosquitto.conf` if you want them:
-
-```
-listener 9001
-protocol websockets
-allow_anonymous true
-```
+`mosquitto/mosquitto.conf` listens on 1883 for devices and the server, and on
+9001 for browsers — the UI subscribes over MQTT-over-WebSocket there for live
+playback status and device logs. It matches the root `mosquitto.conf` that
+Docker Compose mounts, minus persistence, so it runs from a checkout without
+needing a state directory.
 
 ### ESP32
 
