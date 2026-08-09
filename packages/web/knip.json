@@ -1,0 +1,8 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/nitro/startup.plugin.ts"],
+  "project": ["src/**/*.{ts,tsx,css}"],
+  "ignore": ["src/components/ui/**"],
+  "ignoreBinaries": ["ffmpeg", "yt-dlp"],
+  "ignoreExportsUsedInFile": true
+}

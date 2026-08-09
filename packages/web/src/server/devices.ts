@@ -26,14 +26,6 @@ export const getDevices = createServerFn({ method: 'GET' })
     })
   })
 
-export const getDeviceById = createServerFn({ method: 'GET' })
-  .inputValidator((data: { id: number }) => data)
-  .handler(async ({ data }) => {
-    const [device] = await db.select().from(devices).where(eq(devices.id, data.id)).limit(1)
-    if (!device) throw new Error('Device not found')
-    return device
-  })
-
 interface UpdateDeviceData {
   id: number
   name?: string

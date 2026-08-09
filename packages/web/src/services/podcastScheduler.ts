@@ -81,11 +81,3 @@ export function startPodcastRefreshSchedule(): void {
       `(first run in ${INITIAL_DELAY_MS / 1000}s)`
   )
 }
-
-/** Stop the schedule. Exposed for tests and clean shutdown. */
-export function stopPodcastRefreshSchedule(): void {
-  if (!timer) return
-  clearTimeout(timer)
-  clearInterval(timer)
-  timer = null
-}

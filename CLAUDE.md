@@ -4,25 +4,32 @@
 
 When working on this project, read the following files into context:
 
-- `docs/ESP32-BUILD-GUIDE.md` - Step-by-step guide for building the ESP32 player
-- `docs/BUILD-GUIDE-TODOS.md` - Progress tracker for the build guide
 - `docs/SYSTEM-BEHAVIOR-SPEC.md` - Normative spec for how the device, MQTT contract, and web control plane are expected to behave. Describes the target state, not current code. Read this before making playback, connectivity, OTA, or device-lifecycle changes.
 - `docs/IMPLEMENTATION-BACKLOG.md` - Where the code currently diverges from the spec, and the work left to close the gap. Check items off here rather than editing the spec.
+- `DEVELOPMENT.md` - How to run the server, broker, and device locally.
+
+Reference only, not authoritative:
+
+- `docs/ESP32-BUILD-GUIDE.md` - How the player was originally built. Its hardware sections (components, pin reference, Phases 1-4 and 6) are still accurate and useful; Phase 5 and everything from Phase 7 on describe a superseded architecture (SD card, a separate Hono API, WebSocket transport). Its own banner says which is which. Where it conflicts with the spec, the spec wins.
 
 ## Project Structure
 
 - `packages/esp32/` - ESP32 PlatformIO project for the hardware player
-- `packages/web/` - TanStack Start web app (UI + API server + SQLite database)
+- `packages/web/` - TanStack Start web app (UI + API server + SQLite database + MQTT bridge), all one process
+
+Device and server talk only over MQTT (Mosquitto) plus the handful of HTTP endpoints the device pulls from, listed in spec §8.4b.
 
 ## Control Plane Design
 
-When building the Control Plane (web UI), use the design from the existing prototype as reference. Add specific design details here as we get to Phase 8.
+The Control Plane UI is built. Match the conventions already in `packages/web/src/routes/_library/` and the shadcn-style primitives in `src/components/ui/` rather than introducing a new pattern.
 
 ## Development Workflow
 
-1. Follow the ESP32 Build Guide step-by-step
-2. After completing and verifying each step, mark it as complete in `docs/BUILD-GUIDE-TODOS.md`
-3. Commit the step with a message referencing the step number (e.g., "Step 1.1: ESP32 Hello World")
+Work is tracked in `docs/IMPLEMENTATION-BACKLOG.md`, not in step order.
+
+1. Check the backlog for the item you're working on, and the spec section it cites.
+2. Make the change, then check the item off in the backlog. The spec describes the finished state and should not need editing as code catches up to it.
+3. If the code needs to diverge from the spec, change the spec deliberately and say why - don't let them drift silently.
 
 ## Code Style
 
@@ -45,8 +52,7 @@ Songs, podcasts, and sound machine sounds are stored in a single `media` table w
   ```
 
 ### Sound Machine Sounds
-- Pre-bundled in `data/soundmachine/` (server-side library storage)
-- Seeded into DB on first run
+- Shipped in `packages/web/seed-data/soundmachine/`, copied into `data/soundmachine/` and seeded into the DB at server startup
 - Marked with `system: true` in metadata to prevent deletion
 - Device-side storage/sync of the sound-machine sound (and system sounds)
   is a separate concern — see `docs/SYSTEM-BEHAVIOR-SPEC.md` §3.8 and §4.
@@ -63,9 +69,9 @@ Songs, podcasts, and sound machine sounds are stored in a single `media` table w
 - Upload failures: cleanup partial files
 - System files (sound machine): prevent deletion via API
 
-### Podcast Management (Future)
-When implementing podcast support:
-- Add `podcastFeeds` table (name, feedUrl, imageUrl, retentionCount, lastFetchedAt)
-- Add `podcastEpisodeFeeds` linking table (mediaId → feedId) to keep `media` table generic
-- Retention policy: auto-delete oldest episodes beyond retentionCount
-- Dynamic playlist items: support "newest from feed X" references (feedId + position instead of mediaId)
+### Podcast Management
+Implemented - see spec §11.3 for the normative behavior.
+- `podcastFeeds` table (name, feedUrl, imageUrl, retentionCount, lastFetchedAt)
+- Retention policy: auto-deletes oldest episodes beyond retentionCount
+- Episode→feed association is a `feedId` in the episode's JSON metadata. The `podcastEpisodeFeeds` linking table this document originally called for was never added; it would be cleaner but isn't needed for correct behavior, and is not planned.
+- Not built: dynamic playlist items ("newest from feed X" as a playlist entry). A card can point at a feed directly, which covers the same need.

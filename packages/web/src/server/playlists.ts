@@ -41,20 +41,6 @@ export const createPlaylist = createServerFn({ method: 'POST' })
     return created
   })
 
-export const updatePlaylist = createServerFn({ method: 'POST' })
-  .inputValidator((data: { id: number; name?: string }) => data)
-  .handler(async ({ data }) => {
-    const { id, ...updates } = data
-    const [updated] = await db
-      .update(playlists)
-      .set(updates)
-      .where(eq(playlists.id, id))
-      .returning()
-
-    if (!updated) throw new Error('Playlist not found')
-    return updated
-  })
-
 export const deletePlaylist = createServerFn({ method: 'POST' })
   .inputValidator((data: { id: number }) => data)
   .handler(async ({ data }) => {

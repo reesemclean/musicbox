@@ -2,6 +2,29 @@
 
 A step-by-step guide to building the MusicBox ESP32 player from scratch. Each step is incremental, testable, and builds toward the complete system.
 
+> **Status: partly historical.** This guide records how the system was
+> originally built, and parts of it describe an architecture that has since
+> been replaced. Still accurate: the hardware components, pin reference, and
+> the incremental bring-up in Phases 1–4 and 6 (audio, NFC, buttons, WiFi).
+>
+> Superseded, and kept only as a record of how things got here:
+>
+> - **Phase 5 (SD Card Storage)** — there is no SD card. The device holds
+>   system sounds and one sound-machine file in onboard flash (LittleFS) and
+>   streams everything else. No SD module is needed to build one.
+> - **Everything from Phase 7 onward** — these phases build a separate Hono
+>   API service on port 3001 talking to the device over a WebSocket at
+>   `/ws/device`. Neither exists. The TanStack Start app in `packages/web`
+>   serves the UI, the API, and the database from one process on port 3000,
+>   and device↔server messaging is MQTT through a Mosquitto broker. The
+>   features these phases cover are real; only the architecture they
+>   describe is obsolete.
+>
+> For how the system behaves today, read
+> [`SYSTEM-BEHAVIOR-SPEC.md`](./SYSTEM-BEHAVIOR-SPEC.md) — it is normative,
+> and this guide is not. For running it, see
+> [`../DEVELOPMENT.md`](../DEVELOPMENT.md).
+
 ## Philosophy
 
 - **One thing at a time**: Each step adds exactly one capability
@@ -17,29 +40,42 @@ The MusicBox system consists of three main components:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      CONTROL PLANE (Web UI)                          │
-│                       TanStack Start App                             │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │  Library • Playlists • Cards • Devices • Podcasts • Downloads   │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
+│  CONTROL PLANE UI (browser)                                         │
+│  Library • Playlists • Cards • Devices • Podcasts • Downloads       │
+│                                                                     │
+│  Commands go through the server. Subscribes to MQTT over            │
+│  WebSocket (:9001) for live status — never commands a device.       │
 └──────────────────────────────┬──────────────────────────────────────┘
-                               │ HTTP (internal)
+                               │ HTTP / server functions
                                ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        API SERVICE                                   │
-│                     Hono + Node.js                                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐ │
-│  │  WebSocket   │  │  HTTP API    │  │  SQLite Database           │ │
-│  │  /ws/device  │  │  /api/*      │  │  Songs, Cards, Devices...  │ │
-│  └──────────────┘  └──────────────┘  └────────────────────────────┘ │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ WebSocket + HTTP
-                               ▼
+│  SERVER — packages/web (TanStack Start, :3000)                      │
+│  UI + API + database + MQTT bridge, all in one process              │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────────┐  │
+│  │ MQTT client  │  │  HTTP API    │  │ SQLite (Drizzle)          │  │
+│  │  (bridge)    │  │  /api/*      │  │ Media, Cards, Devices...  │  │
+│  └──────┬───────┘  └──────┬───────┘  └───────────────────────────┘  │
+└─────────┼─────────────────┼─────────────────────────────────────────┘
+          │                 │
+          │ MQTT            │ HTTP (the device pulls)
+          ▼                 │   /api/device/config
+┌──────────────────────┐    │   /api/media/stream/:id
+│   MQTT BROKER        │    │   /api/playlists/stream/:id
+│   Mosquitto (:1883)  │    │   /api/sounds/*, /api/firmware/*
+└──────────┬───────────┘    │
+           │ commands ↓     │
+           │ events   ↑     │
+           ▼                ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      ESP32 PLAYER                                    │
-│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐            │
-│  │  NFC   │ │ Audio  │ │Buttons │ │SD Card │ │  OTA   │            │
-│  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘            │
+│  ESP32 PLAYER                                                       │
+│  ┌────────┐ ┌────────┐ ┌─────────┐ ┌──────────┐ ┌────────┐          │
+│  │  NFC   │ │ Audio  │ │ Buttons │ │ LittleFS │ │  OTA   │          │
+│  │ PN532  │ │  I2S   │ │   x5    │ │  cues +  │ │        │          │
+│  │        │ │        │ │         │ │  1 loop  │ │        │          │
+│  └────────┘ └────────┘ └─────────┘ └──────────┘ └────────┘          │
+│                                                                     │
+│  Holds no card mappings and no play queue — every scan is           │
+│  resolved by the server, and a playlist arrives as one stream.      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,8 +85,9 @@ The MusicBox system consists of three main components:
 
 ### Development Environment
 
-- **PlatformIO**: Install via VS Code extension or CLI
-- **Node.js 22+**: For the API server and Control Plane
+- **PlatformIO**: Install via VS Code extension or CLI (`mise run setup`
+  installs it into the project venv)
+- **Node.js 24**: For the server and Control Plane
 - **Git**: Version control
 
 ### Hardware Components
@@ -61,7 +98,6 @@ The MusicBox system consists of three main components:
 | NFC Reader | PN532 V3 Module | Must support I2C mode |
 | Audio Amp | MAX98357A | I2S DAC with built-in amp |
 | Speaker | 4Ω or 8Ω, 3W | Small form factor |
-| SD Card Module | MicroSD SPI module | For caching |
 | Buttons | 5x Momentary pushbuttons | Any tactile switches |
 | Breadboard | Full-size recommended | For prototyping |
 | Jumper wires | Male-to-male, male-to-female | Assorted |
@@ -85,22 +121,16 @@ I2C (PN532 NFC):
   GPIO8  → SDA
   GPIO9  → SCL
 
-SPI (SD Card):
-  GPIO38 → CLK
-  GPIO39 → MOSI
-  GPIO40 → MISO
-  GPIO41 → CS
-
-Buttons (active low):
-  GPIO10 → Play/Pause
-  GPIO11 → Volume Up
-  GPIO12 → Volume Down
-  GPIO13 → Next Track
-  GPIO14 → Previous Track
+Buttons (active low, as wired in main.cpp):
+  GPIO10 → Previous Track
+  GPIO11 → Play/Pause
+  GPIO12 → Next Track
+  GPIO13 → Volume Up
+  GPIO14 → Volume Down
 
 Power:
   3.3V   → PN532 VCC, I2C pull-ups
-  5V     → MAX98357A VIN, SD Card VCC
+  5V     → MAX98357A VIN
   GND    → All grounds (common)
 
 Reserved (do not use):
@@ -349,7 +379,7 @@ Optional I2C pull-ups (may not be needed if module has them):
 
 **What to do**:
 1. Track last read UID and timestamp
-2. Ignore same UID within debounce window (e.g., 2 seconds)
+2. Ignore same UID within debounce window (1.5s, per spec §9)
 3. Allow new card to be read immediately
 
 **Verification**:
@@ -371,15 +401,15 @@ Optional I2C pull-ups (may not be needed if module has them):
 ```
 ESP32-S3                Buttons
 ─────────               ───────
-GPIO10 ─────────┬────── Play/Pause ────── GND
+GPIO10 ─────────┬────── Prev Track  ───── GND
                 │
-GPIO11 ─────────┼────── Volume Up  ────── GND
+GPIO11 ─────────┼────── Play/Pause  ───── GND
                 │
-GPIO12 ─────────┼────── Volume Down ───── GND
+GPIO12 ─────────┼────── Next Track  ───── GND
                 │
-GPIO13 ─────────┼────── Next Track ────── GND
+GPIO13 ─────────┼────── Volume Up   ───── GND
                 │
-GPIO14 ─────────┴────── Prev Track ────── GND
+GPIO14 ─────────┴────── Volume Down ───── GND
 ```
 
 **Notes**:
@@ -400,7 +430,7 @@ GPIO14 ─────────┴────── Prev Track ────�
 
 **What to do**:
 1. Configure GPIOs as INPUT_PULLUP
-2. Implement debouncing (50ms recommended)
+2. Implement debouncing (`main.cpp` uses 20ms)
 3. Print button events to serial
 
 **Library**: `lennarthennigs/Button2`
@@ -420,12 +450,13 @@ GPIO14 ─────────┴────── Prev Track ────�
 
 **What to do**:
 1. Track press duration for Play/Pause button
-2. Trigger different event for press > 3 seconds
+2. Trigger a different event for a press past the long-click threshold
+   (`main.cpp` uses 1000ms)
 3. Distinguish between click and long press
 
 **Verification**:
 - Quick press: "click" event
-- Hold 3+ seconds: "long press" event
+- Hold past the threshold: "long press" event
 - Long press doesn't also trigger click on release
 
 **Success criteria**: Long press triggers distinct event from normal press.
@@ -526,6 +557,11 @@ GND    ────────────────► GND
 - Create `secrets.h` file with SSID and password
 - Add to `.gitignore`
 - Provide `secrets.h.example` template
+
+> **Superseded.** There is no `secrets.h` — `FIRMWARE_VERSION` is the only
+> compile-time setting (`build_flags.sh`). Credentials and the server URL are
+> entered through the captive portal on first boot and stored in NVS, so one
+> firmware image works on every device. See spec §1.1.
 
 **Success criteria**: ESP32 connects to WiFi, IP address prints to serial.
 
