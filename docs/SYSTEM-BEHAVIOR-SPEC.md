@@ -318,11 +318,13 @@ accordingly, with **no new network connection**.
 
 > **⚠ Provisional (device side only).** Server-side concatenation and ICY
 > metadata injection are validated — see
-> `decisions/2026-08-02-playlist-streaming.md`. What remains unconfirmed is
-> how the device consumes it: that the `streamtitle` event fires mid-stream
-> carrying the injected `mediaId`, and that the decoder crosses a track
-> boundary without an audible artifact. Fallback if not: server-side
-> transcoding, which changes no device-facing contract.
+> `decisions/2026-08-02-playlist-streaming.md` — and playlists stream end to
+> end on a real device, with skip next/previous working against the
+> server-computed target. Still unconfirmed by ear: whether the `streamtitle`
+> event fires mid-stream carrying the injected `mediaId` (so now-playing
+> status updates as each track in a playlist begins), and whether the decoder
+> crosses a track boundary without an audible artifact. Fallback if either
+> fails: server-side transcoding, which changes no device-facing contract.
 
 ### 3.6 Skip Previous / Restart
 
@@ -408,7 +410,22 @@ being the explicit, configured `maxVolume`.
   sound chosen, volume changed), the device MUST download the new file to
   local flash and update its local config *before* discarding the old
   file/config — an update should never leave the device in a state where
-  neither the old nor new sound is available locally.
+  neither the old nor new sound is available locally — **except when the two
+  files cannot coexist within the flash budget, which at §4.1's sizes is the
+  normal case.** Holding both requires 2× the file size; one sound-machine
+  file already occupies most of a 3.38 MB partition, so the device MUST
+  compare the incoming `Content-Length` against actual free space and, when
+  the new file will not fit alongside the old, delete the old one first.
+  Deleting first is the only option that can succeed at all — the alternative
+  is a download that always fails partway through, which leaves the device
+  with neither sound anyway.
+- During that window the device has no sound-machine sound, and a long-press
+  MUST give the "nothing configured" cue rather than attempt playback. If the
+  download then fails and exhausts its retries, the device stays without one
+  until the configuration is re-pushed. This is recoverable, not permanent:
+  NVS still records the configured URL with no matching file, which triggers a
+  re-download on the next boot, and Server re-pushes the configuration when
+  the device reconnects (§6.1).
 - The configured track loops indefinitely until `soundmachine_stop` or a
   `play` command interrupts it.
 - **Physical short-press and remote `pause` are intentionally different
@@ -453,8 +470,9 @@ the device is small, fixed, and rarely changes — stored in onboard flash
 Consequences of this being so much smaller in scope than the old SD cache:
 
 - **No eviction policy needed.** There's at most one sound-machine file;
-  replacing the config replaces the file (§3.8's "download new before
-  discarding old" rule covers the only case that matters).
+  replacing the config replaces the file (§3.8 covers the only case that
+  matters — including why the replacement usually has to delete before it
+  downloads rather than after).
 - **No background download queue needed.** A config change triggers one
   download, once, not an ongoing sync process.
 - **No blocking-download-during-playback risk in the way SD caching had
@@ -477,6 +495,11 @@ Everything on the device shares that ceiling: the system sounds (tens of KB)
 plus exactly one sound-machine file. **Sound-machine audio MUST therefore be
 encoded to fit inside it with headroom** — target ≤ 2.6 MB, leaving ~25% free
 for the filesystem's own overhead and the system sounds.
+
+That headroom is sized for *one* file, deliberately. Sizing it for two would
+halve the loop length, which §3.8 and the encoding rationale below both reject
+— so the download path gives up atomic replacement instead, and §3.8 says what
+that costs.
 
 That budget interacts with 3.8's looping requirement: the decoder library has
 no native file-loop, so each loop iteration costs a file re-open and a small
@@ -522,8 +545,10 @@ one word ("scanned"):
 
 Sequence:
 
-- Reads are polled non-blockingly (short per-read timeout) so scanning
-  never stalls the main loop.
+- Reads run on a dedicated scan task, paced with a short per-read timeout
+  (§9), so scanning never stalls the main loop. Completed reads are queued
+  back to the main loop, where the `card_scanned` publish happens — MQTT
+  client calls stay on one task (§2.2).
 - A debounce window (target: 1.5s) prevents the same physical card being
   re-triggered by continuous presence on the reader.
 - On read: play the read cue immediately (§3.3 — this is a `SYSTEM_SOUND`,
@@ -714,6 +739,11 @@ else:
 | `/api/sounds/*.mp3` | System cues, downloaded once to local flash |
 | `/api/firmware/*` | OTA image and manifest |
 
+`/api/media/stream/:id` MUST send `Content-Length` on a non-range response.
+The device sizes the sound-machine download against free flash before writing
+a byte (§3.8); with no length to check it has to assume the worst and delete
+the existing file even when the replacement would have fit beside it.
+
 Deployments commonly expose this set through a reverse proxy on a separate
 port, allowing exactly these paths and refusing everything else so the control
 plane isn't reachable without authentication. **Adding a device-facing
@@ -781,17 +811,18 @@ match — values should not silently diverge between spec and code.
 | WiFi initial connect grace window | ~3s | Boot must not stall waiting on WiFi |
 | WiFi reconnect backoff | 1s → 30s, doubling | Avoid hammering AP after a WiFi outage |
 | MQTT reconnect interval | 5s | Bounded retry without busy-looping |
-| NFC read poll timeout | 50ms | Balance responsiveness vs. main-loop budget |
+| NFC scan interval | 100ms | Paces read attempts — each costs I2C traffic and holds the scan task for its duration |
+| NFC per-read timeout | 100ms | PN532 command-ACK wait plus response wait; a read attempt blocks for roughly twice this |
 | NFC card debounce | 1.5s | Prevent re-trigger from continuous card presence |
 | NFC init retry interval | 5s | Reader may not be present at boot |
-| System-sound init delay | 50ms | Let decoder initialize before liveness-checking it |
-| Read cue duration | ~100ms target | Short enough that its cost, additive to real content's connect time (§3.3), stays negligible |
-| Soundmachine liveness grace period | 200ms | Same purpose as system-sound init delay; local flash reads are fast, this is a safety margin not a network allowance |
+| Read cue duration | ~210ms (shipped `scan.mp3`; the design target was ~100ms) | Short enough that its cost, additive to real content's connect time (§3.3), stays negligible |
+| Liveness grace period, streamed source | 3000ms | A decoder legitimately reports "not running" while it opens a connection and fills its first buffer; stream startup takes seconds, not milliseconds |
+| Liveness grace period, local source | 300ms | System sounds and sound machine alike — local flash reads are fast, this is a safety margin not a network allowance |
 | Skip-previous restart threshold | 3s | "Meant to restart this track" vs. "meant to go back" |
 | Card-scanned resolution timeout | 3s | Bounds the wait after publishing `card_scanned` before the "can't do anything right now" cue (§5). Long enough that a slow-but-working resolution isn't falsely flagged, short enough not to leave the user guessing |
 | `icy-metaint` (playlist stream) | 8192 bytes | Audio between ICY metadata blocks (§8.5). Also the worst-case lag on reporting a track change: ~510ms at 128kbps, ~275ms at 238kbps |
 | Podcast feed refresh interval | 6h | Frequent enough that a card scanned in the morning gets that morning's episode (§11.3), infrequent enough not to hammer feed hosts |
-| OTA HTTP timeout | 30s | Applies to the version-check and initial connect, not total download time |
+| OTA HTTP timeout | 10s (version check), 30s (download) | Per-request client timeout — connection and stream reads — not a cap on total download time |
 | OTA pre-update audio-stop wait | 3s | Bounded wait for playback to confirm `IDLE` before updating (§7); proceeds anyway on timeout |
 | Vol-up+down → restart | held ≥2s, release-triggered | Deliberate combo, distinguishable from factory reset |
 | Vol-up+down → factory reset | held ≥5s | Long enough to be clearly intentional |

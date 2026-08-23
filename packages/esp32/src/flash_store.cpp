@@ -30,6 +30,11 @@
 #define DOWNLOAD_MAX_RETRIES  3
 #define DOWNLOAD_RETRY_DELAY_MS 30000
 
+// Slack left over the raw byte count when deciding whether a download fits.
+// LittleFS rounds every file up to a block and spends a little more on
+// metadata, so free bytes exactly equal to the file size is not enough room.
+#define DOWNLOAD_SPACE_MARGIN 32768
+
 // Sound machine configuration persists across reboots so a long-press works
 // before — or without — any contact with the server.
 #define NVS_NAMESPACE "musicbox"
@@ -185,13 +190,34 @@ void flash_set_soundmachine_config(const char* url, const char* name, int volume
     xSemaphoreGive(configMutex);
 }
 
+static size_t fs_free_bytes() {
+    size_t total = LittleFS.totalBytes();
+    size_t used = LittleFS.usedBytes();
+    return total > used ? total - used : 0;
+}
+
+/**
+ * Called just before an existing destination file is deleted to make room.
+ *
+ * Lets the caller drop any cached "this file is present" state before it stops
+ * being true. The window matters: freeing space up front means the destination
+ * is missing for the length of the whole download, not just for the instant of
+ * the rename at the end.
+ */
+typedef void (*FileGoneFn)(void);
+
 /**
  * Stream an HTTP body to a file.
  *
  * Writes go to a temp path and are renamed on success, so an interrupted
- * download never leaves a truncated file looking complete.
+ * download never leaves a truncated file looking complete. That costs room for
+ * two copies at once, which the flash budget (spec §4.1) cannot always give:
+ * a sound-machine file is ~2.4 MB in a 3.38 MB partition. So when the incoming
+ * file won't fit alongside the one it replaces, the old one goes first — see
+ * spec §3.8 for what that trade gives up.
  */
-static bool download_to(const char* url, const char* finalPath, const char* tempPath) {
+static bool download_to(const char* url, const char* finalPath, const char* tempPath,
+                        FileGoneFn onFinalRemoved) {
     if (!WiFi.isConnected()) return false;
 
     HTTPClient http;
@@ -205,6 +231,31 @@ static bool download_to(const char* url, const char* finalPath, const char* temp
         return false;
     }
 
+    int contentLength = http.getSize();
+    size_t freeBytes = fs_free_bytes();
+
+    LOG_I(MOD_SYS, "Fetching %s: %d bytes, %u KB free",
+          finalPath, contentLength, (unsigned)(freeBytes / 1024));
+
+    // No Content-Length means no way to know whether it fits, so treat it as
+    // "won't fit" rather than discovering it a megabyte into the write.
+    bool fits_alongside = contentLength >= 0 &&
+                          (size_t)contentLength + DOWNLOAD_SPACE_MARGIN <= freeBytes;
+
+    if (!fits_alongside && LittleFS.exists(finalPath)) {
+        LOG_W(MOD_SYS, "Freeing %s to make room for the new copy", finalPath);
+        if (onFinalRemoved) onFinalRemoved();
+        LittleFS.remove(finalPath);
+        freeBytes = fs_free_bytes();
+    }
+
+    if (contentLength >= 0 && (size_t)contentLength + DOWNLOAD_SPACE_MARGIN > freeBytes) {
+        LOG_E(MOD_SYS, "Not enough space for %s: need %d bytes, %u free",
+              finalPath, contentLength, (unsigned)freeBytes);
+        http.end();
+        return false;
+    }
+
     File out = LittleFS.open(tempPath, FILE_WRITE);
     if (!out) {
         LOG_E(MOD_SYS, "Cannot open %s for writing", tempPath);
@@ -213,7 +264,6 @@ static bool download_to(const char* url, const char* finalPath, const char* temp
     }
 
     WiFiClient* stream = http.getStreamPtr();
-    int contentLength = http.getSize();
     uint8_t buf[1024];
     size_t written = 0;
     unsigned long lastProgress = millis();
@@ -233,7 +283,8 @@ static bool download_to(const char* url, const char* finalPath, const char* temp
             size_t got = stream->readBytes(buf, toRead);
             if (got > 0) {
                 if (out.write(buf, got) != got) {
-                    LOG_E(MOD_SYS, "Write failed (filesystem full?): %s", finalPath);
+                    LOG_E(MOD_SYS, "Write failed after %u bytes, %u KB free: %s",
+                          (unsigned)written, (unsigned)(fs_free_bytes() / 1024), finalPath);
                     out.close();
                     LittleFS.remove(tempPath);
                     http.end();
@@ -288,8 +339,18 @@ static void download_system_sounds() {
 
         char url[256];
         snprintf(url, sizeof(url), "%s%s", config_stream_base_url(), sounds[i].url);
-        download_to(url, sounds[i].path, PATH_DOWNLOAD_TMP);
+        // No hook: these are only fetched when absent, so there is never an
+        // existing copy for the space check to remove.
+        download_to(url, sounds[i].path, PATH_DOWNLOAD_TMP, NULL);
     }
+}
+
+// The button handler reads soundmachine_present from the loop task, so it has
+// to stop claiming the file exists before the file goes away. A long-press in
+// the gap then lands on §3.8's "nothing configured" cue instead of handing the
+// audio player a path to a deleted file.
+static void soundmachine_file_gone() {
+    soundmachine_present = false;
 }
 
 static bool download_soundmachine() {
@@ -304,7 +365,7 @@ static bool download_soundmachine() {
 
     LOG_I(MOD_SYS, "Downloading sound machine: %s", sm_name);
 
-    if (!download_to(url, PATH_SOUNDMACHINE, PATH_DOWNLOAD_TMP)) return false;
+    if (!download_to(url, PATH_SOUNDMACHINE, PATH_DOWNLOAD_TMP, soundmachine_file_gone)) return false;
 
     soundmachine_present = true;
     strncpy(sm_stored_url, url, sizeof(sm_stored_url) - 1);

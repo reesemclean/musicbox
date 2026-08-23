@@ -21,6 +21,25 @@ describe. §3.5's device-side ICY consumption is the current example.
 
 ---
 
+## Open
+
+- [ ] **Long-press with no sound machine plays the error cue** (spec §3.8,
+  `main.cpp` `onPlayLongPress`). The spec asks for "a distinct, clearly-not-an-
+  error cue" for the nothing-configured case; the code plays `SOUND_ERROR`, so
+  a device that simply has no sound assigned sounds like a device that broke.
+
+  Worth doing now because §3.8's delete-before-download rule makes this path
+  reachable in normal operation, not just on an unconfigured device: while a
+  replacement sound downloads, a long-press lands here. Needs a fourth system
+  sound (a short two-note "nothing here" chime): the file in
+  `packages/web/seed-data/system-sounds/`, plus an `ALLOWED_SOUNDS` whitelist
+  entry in `routes/api/sounds/$filename.ts`, a `SOUND_*` enum value, and a
+  `PATH_*`/`URL_*` row in the `sounds[]` table in `flash_store.cpp`. (The
+  copies in `packages/esp32/data/` are vestigial — no LittleFS image is built;
+  the device downloads its sounds from the server at runtime.)
+
+---
+
 ## Known limitations — accepted, not planned
 
 - **Buttons lag while the sound machine file downloads.** The download runs on
@@ -40,8 +59,9 @@ describe. §3.5's device-side ICY consumption is the current example.
   ingest path now populates these fields itself, so this exists only to carry
   libraries that were created before that was true.
 
-  *Removable once every deployed library has been through it* — currently the
-  production server and the local dev copy. Verify with:
+  *Removable once every deployed library has been through it* — the local dev
+  copy already passes (checked 2026-08-23); the production server is what
+  remains. Verify with:
 
   ```sql
   SELECT COUNT(*) FROM media
