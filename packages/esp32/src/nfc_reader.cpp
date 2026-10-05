@@ -70,8 +70,9 @@ static unsigned long last_scan_time = 0;
 static unsigned long last_desync_report = 0;
 #define DESYNC_REPORT_INTERVAL_MS 5000
 
-// Callback
-static CardScannedCallback on_card_scanned_cb = nullptr;
+// Callbacks
+static CardScannedCallback on_card_scanned_cb = nullptr;  // loop task
+static CardScannedCallback on_card_read_cb = nullptr;     // scan task
 
 /** Bring the reader up. Scan task only. */
 static bool try_init() {
@@ -135,6 +136,11 @@ static void attempt_read() {
         p += sprintf(p, "%02X", uid[i]);
     }
 
+    // Feedback goes out from here rather than after the hand-off: the loop
+    // task can be stalled behind a network call, and the cue is what tells
+    // the user they can take the card away.
+    if (on_card_read_cb) on_card_read_cb(scan.uid);
+
     // Dropped rather than waited on: blocking here would only delay the next
     // read, and a scan the loop task has not drained yet is already stale.
     if (xQueueSend(scanQueue, &scan, 0) != pdTRUE) {
@@ -189,6 +195,10 @@ bool nfc_init() {
 
 void nfc_on_card_scanned(CardScannedCallback callback) {
     on_card_scanned_cb = callback;
+}
+
+void nfc_on_card_read(CardScannedCallback callback) {
+    on_card_read_cb = callback;
 }
 
 void nfc_loop() {
