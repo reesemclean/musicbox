@@ -53,6 +53,13 @@ static unsigned long last_vol_repeat = 0;
 #define VOL_REPEAT_AFTER_MS 400  // treat as a hold, not a click
 #define VOL_REPEAT_EVERY_MS 120  // ~8 steps a second once ramping
 
+// Hold play this long to start the sound machine.
+#define PLAY_HOLD_MS 1000
+
+// Set when a press on play turned the sound machine off, so the long-press the
+// same hold goes on to reach doesn't turn it straight back on.
+static bool play_press_stopped_soundmachine = false;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Restart reason logging
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,25 +198,26 @@ void onPlaybackStatus(const char* status, int mediaId) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Buttons
+//
+// Every button acts on the press, not the click. Button2 reports a click only
+// once its double-click window has passed, which put 300ms between a press
+// and its effect — and it counts taps closer together than that as a double
+// or triple click, which nothing here handles, so rapid taps did nothing.
 // ─────────────────────────────────────────────────────────────────────────────
 
-void onPlayClick(Button2 &btn) {
-    // While the sound machine runs, the play button is its off switch. There
-    // is no physical pause for the loop — only stop.
-    if (audio_get_mode() == MODE_SOUNDMACHINE) {
-        LOG_D(MOD_BTN, "Stopping sound machine");
-        audio_stop_soundmachine();
-        return;
-    }
+void onPlayPressed(Button2 &btn) {
+    // Read before the toggle is queued: once it runs, the sound machine is no
+    // longer the mode, and this same hold reaching the long-press would start
+    // it again.
+    play_press_stopped_soundmachine = audio_get_mode() == MODE_SOUNDMACHINE;
 
-    if (audio_get_state() == AUDIO_PLAYING) {
-        audio_pause();
-    } else if (audio_get_state() == AUDIO_PAUSED) {
-        audio_resume();
-    }
+    // Stop the sound machine, pause, or resume — the audio task decides,
+    // since it owns the state the choice depends on.
+    audio_toggle();
 }
 
 void onPlayLongPress(Button2 &btn) {
+    if (play_press_stopped_soundmachine) return;
     if (audio_get_mode() == MODE_SOUNDMACHINE) return;
 
     const char* path = flash_soundmachine_path();
@@ -224,15 +232,9 @@ void onPlayLongPress(Button2 &btn) {
     audio_play_soundmachine(path, flash_soundmachine_volume());
 }
 
-static void adjust_volume(int delta) {
-    int vol = audio_get_volume() + delta;
-    if (vol < 0) vol = 0;
-    if (vol > audio_get_max_volume()) vol = audio_get_max_volume();
-    if (vol != audio_get_volume()) audio_set_volume(vol);
-}
-
-void onVolUpClick(Button2 &btn) { adjust_volume(+1); }
-void onVolDnClick(Button2 &btn) { adjust_volume(-1); }
+// The step lands at once; holding on past VOL_REPEAT_AFTER_MS ramps (see loop).
+void onVolUpPressed(Button2 &btn) { audio_step_volume(+1); }
+void onVolDnPressed(Button2 &btn) { audio_step_volume(-1); }
 
 /**
  * Skip is a request, not a local operation.
@@ -251,12 +253,12 @@ static void publish_skip(const char* direction) {
     mqtt_publish_skip(direction, audio_get_elapsed_sec());
 }
 
-void onNextClick(Button2 &btn) {
+void onNextPressed(Button2 &btn) {
     LOG_D(MOD_BTN, "Next");
     publish_skip("next");
 }
 
-void onPrevClick(Button2 &btn) {
+void onPrevPressed(Button2 &btn) {
     LOG_D(MOD_BTN, "Previous");
     publish_skip("previous");
 }
@@ -346,21 +348,28 @@ void setup() {
     btnNext.begin(BTN_NEXT, INPUT_PULLUP, true);
     btnPrev.begin(BTN_PREV, INPUT_PULLUP, true);
 
-    // Default debounce is 50ms, which on top of the polling interval is most
-    // of what makes a press feel late.
-    btnPlay.setDebounceTime(20);
-    btnVolUp.setDebounceTime(20);
-    btnVolDn.setDebounceTime(20);
-    btnNext.setDebounceTime(20);
-    btnPrev.setDebounceTime(20);
+    Button2* buttons[] = { &btnPlay, &btnVolUp, &btnVolDn, &btnNext, &btnPrev };
+    for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++) {
+        // A press fires once it has been held this long, so this is now most
+        // of the delay between pressing and hearing. Still well past contact
+        // bounce; Button2's default is 50.
+        buttons[i]->setDebounceTime(20);
+        // No multi-click gestures are used, so report each press on its own.
+        // This also matters for the long-press: Button2 only looks for one on
+        // the first click of a sequence, so a tap followed quickly by a hold
+        // would otherwise never start the sound machine.
+        buttons[i]->setDoubleClickTime(0);
+    }
 
-    btnPlay.setClickHandler(onPlayClick);
-    btnPlay.setLongClickHandler(onPlayLongPress);
-    btnPlay.setLongClickTime(1000);
-    btnVolUp.setClickHandler(onVolUpClick);
-    btnVolDn.setClickHandler(onVolDnClick);
-    btnNext.setClickHandler(onNextClick);
-    btnPrev.setClickHandler(onPrevClick);
+    btnPlay.setPressedHandler(onPlayPressed);
+    // "Detected" fires when the hold reaches the threshold, while the button
+    // is still down. The plain long-click handler waits for the release.
+    btnPlay.setLongClickDetectedHandler(onPlayLongPress);
+    btnPlay.setLongClickTime(PLAY_HOLD_MS);
+    btnVolUp.setPressedHandler(onVolUpPressed);
+    btnVolDn.setPressedHandler(onVolDnPressed);
+    btnNext.setPressedHandler(onNextPressed);
+    btnPrev.setPressedHandler(onPrevPressed);
 
     nfc_init();
     nfc_on_card_scanned(onCardRead);
@@ -437,7 +446,7 @@ void loop() {
             } else if (now - vol_hold_start > VOL_REPEAT_AFTER_MS &&
                        now - last_vol_repeat >= VOL_REPEAT_EVERY_MS) {
                 last_vol_repeat = now;
-                adjust_volume(volUp ? +1 : -1);
+                audio_step_volume(volUp ? +1 : -1);
             }
         } else {
             vol_hold_start = 0;
