@@ -478,16 +478,15 @@ function DeviceRemoteControl({ device }: { device: Device }) {
     onError: () => toast.error('Failed to update max volume'),
   })
 
-  const handleSoundMachineVolumeChange = (values: number[]) => {
-    const newVolume = values[0]
-    setSoundMachineVolume(newVolume)
-    soundMachineMutation.mutate({ volume: newVolume })
+  // The sliders show their value as they move but send it only when let go.
+  // Sending on every step of a drag put a server call and a device command on
+  // the wire per step — and for max volume, a database write and a toast.
+  const commitSoundMachineVolume = (values: number[]) => {
+    soundMachineMutation.mutate({ volume: values[0] })
   }
 
-  const handleMaxVolumeChange = (values: number[]) => {
-    const newMaxVol = values[0]
-    setMaxVolume(newMaxVol)
-    maxVolumeMutation.mutate(newMaxVol)
+  const commitMaxVolume = (values: number[]) => {
+    maxVolumeMutation.mutate(values[0])
   }
 
   const pauseMutation = useMutation({
@@ -527,10 +526,8 @@ function DeviceRemoteControl({ device }: { device: Device }) {
     onError: () => toast.error('Failed to set volume'),
   })
 
-  const handleVolumeChange = (values: number[]) => {
-    const newVolume = values[0]
-    setVolume(newVolume)
-    volumeMutation.mutate(newVolume)
+  const commitVolume = (values: number[]) => {
+    volumeMutation.mutate(values[0])
   }
 
   const resyncMutation = useMutation({
@@ -624,7 +621,8 @@ function DeviceRemoteControl({ device }: { device: Device }) {
             )}
             <Slider
               value={[volume]}
-              onValueChange={handleVolumeChange}
+              onValueChange={(values) => setVolume(values[0])}
+              onValueCommit={commitVolume}
               max={42}
               step={1}
               className="w-24"
@@ -664,7 +662,8 @@ function DeviceRemoteControl({ device }: { device: Device }) {
               <span className="text-xs text-muted-foreground">Vol</span>
               <Slider
                 value={[soundMachineVolume]}
-                onValueChange={handleSoundMachineVolumeChange}
+                onValueChange={(values) => setSoundMachineVolume(values[0])}
+                onValueCommit={commitSoundMachineVolume}
                 max={42}
                 step={1}
                 className="w-16"
@@ -681,7 +680,8 @@ function DeviceRemoteControl({ device }: { device: Device }) {
           <span className="text-sm">Max Volume</span>
           <Slider
             value={[maxVolume]}
-            onValueChange={handleMaxVolumeChange}
+            onValueChange={(values) => setMaxVolume(values[0])}
+            onValueCommit={commitMaxVolume}
             max={42}
             min={1}
             step={1}
