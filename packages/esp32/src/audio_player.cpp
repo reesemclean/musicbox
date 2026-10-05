@@ -126,6 +126,24 @@ static void go_idle(const char* status) {
     current_media_id = -1;
 }
 
+// Library content is playing or paused — the thing the server is showing.
+static bool library_content_active() {
+    return mode == MODE_NORMAL && state != AUDIO_IDLE && current_media_id >= 0;
+}
+
+/**
+ * A local source — a cue, or the sound machine — has just replaced whatever
+ * was playing.
+ *
+ * Neither reports a status of its own, so if library content was cut off it
+ * has to be reported stopped here. Otherwise the server goes on showing the
+ * last track as playing, and with nothing else to correct it, for good.
+ */
+static void library_content_replaced() {
+    if (library_content_active()) emit_status("stopped");
+    current_media_id = -1;
+}
+
 static bool start_local(const char* path) {
     if (!path) return false;
     // connecttoFS calls setDefaults(), which stops any current source, so an
@@ -192,8 +210,11 @@ static void handle_play_system_sound(SystemSound sound) {
         soundmachine_path[0] = '\0';
     }
 
+    // On failure the stream (if any) is already gone — opening the file
+    // stopped it — but the liveness check will notice and report it finished.
     if (!start_local(path)) return;
 
+    library_content_replaced();
     mode = MODE_SYSTEM_SOUND;
     state = AUDIO_PLAYING;
 }
@@ -216,11 +237,12 @@ static void handle_play_soundmachine(const char* path, int volume) {
 
     if (!start_local(soundmachine_path)) {
         soundmachine_path[0] = '\0';
-        go_idle(NULL);
+        // Opening the file stopped anything that was playing.
+        go_idle(library_content_active() ? "stopped" : NULL);
         return;
     }
 
-    current_media_id = -1;
+    library_content_replaced();
     mode = MODE_SOUNDMACHINE;
     state = AUDIO_PLAYING;
     LOG_I(MOD_AUDIO, "Sound machine started");

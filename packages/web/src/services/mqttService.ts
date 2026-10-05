@@ -444,8 +444,9 @@ class MqttService extends EventEmitter {
 
       this.emit('playback:status', { mac, status: event.status, mediaId: event.mediaId, mediaTitle })
 
-      // The device sends -1 when nothing is playing.
-      if (event.mediaId !== undefined && event.mediaId > 0) {
+      // Only "playing" says which track is now under way — a "stopped" names
+      // the track that just ended. The device sends -1 when there is none.
+      if (event.status === 'playing' && event.mediaId !== undefined && event.mediaId > 0) {
         await this.followPlaylistPosition(mac, event.mediaId)
       }
     } else if (event.type === 'skip') {
