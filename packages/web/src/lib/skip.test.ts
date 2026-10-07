@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   CONFIRM_TIMEOUT_MS,
   followReportedTrack,
+  issuePlay,
   resolveSkip,
   resolveSkipFrom,
   RESTART_THRESHOLD_SEC,
   type PlaylistPosition,
+  type SkipDirection,
 } from './skip'
 
 const base = { trackCount: 5, elapsedSec: 0 }
@@ -123,11 +125,12 @@ const soon = issuedAt + 500
 
 /** A play just issued for the track at `index`, not yet reported back. */
 function issued(index: number, trackIds = tracks): PlaylistPosition {
-  return { index, mediaId: trackIds[index], confirmed: false, issuedAt }
+  return { index, mediaId: trackIds[index], awaiting: [trackIds[index]], issuedAt }
 }
 
+/** The device has reported every play it was sent, ending on `index`. */
 function confirmed(index: number, trackIds = tracks): PlaylistPosition {
-  return { ...issued(index, trackIds), confirmed: true }
+  return { ...issued(index, trackIds), awaiting: [] }
 }
 
 describe('followReportedTrack', () => {
@@ -211,5 +214,111 @@ describe('resolveSkipFrom', () => {
       action: 'play',
       index: 0,
     })
+  })
+})
+
+// End to end, the way mqttService drives these: each press resolves a skip
+// from the current position and issues the play; the device's "playing"
+// reports then arrive in the order the plays were sent.
+
+/** A press, as handleSkip handles it, for presses expected to send a play. */
+function press(
+  position: PlaylistPosition,
+  direction: SkipDirection,
+  { elapsedSec = 0, now = soon, trackIds = tracks } = {}
+): PlaylistPosition {
+  const outcome = resolveSkipFrom(position, trackIds, direction, elapsedSec, now)
+  if (outcome.action !== 'play') throw new Error(`expected a play, got ${outcome.action}`)
+  return issuePlay(position, outcome.index, trackIds[outcome.index], now)
+}
+
+function reports(position: PlaylistPosition, mediaIds: number[], trackIds = tracks): PlaylistPosition {
+  return mediaIds.reduce((p, id) => followReportedTrack(p, trackIds, id, soon), position)
+}
+
+describe('a burst of skips', () => {
+  it('counts the device off play by play, even when the burst comes back on itself', () => {
+    // On 20. Next, Next, Next, Previous, Previous — overshoot and correct —
+    // all before the device has opened the first stream. Plays sent: 30, 40,
+    // 50, 40, 30.
+    let p = confirmed(1)
+    for (const d of ['next', 'next', 'next', 'previous', 'previous'] as const) p = press(p, d)
+    expect(p).toMatchObject({ index: 2, mediaId: 30, awaiting: [30, 40, 50, 40, 30] })
+
+    // Matching on the latest track alone took the first report, of 30, as
+    // confirming the last play, then followed 40 and 50 forward and ignored
+    // the rest — leaving the server on 50 while the device played 30.
+    p = reports(p, [30, 40, 50, 40, 30])
+    expect(p).toMatchObject({ index: 2, mediaId: 30, awaiting: [] })
+
+    // So Next plays 40 rather than running off the end.
+    expect(resolveSkipFrom(p, tracks, 'next', 0, soon)).toEqual({ action: 'play', index: 3 })
+  })
+
+  it('lands on the right track after Next, Next, Previous', () => {
+    let p = confirmed(1)
+    for (const d of ['next', 'next', 'previous'] as const) p = press(p, d)
+    p = reports(p, [30, 40, 30])
+    expect(p).toMatchObject({ index: 2, mediaId: 30, awaiting: [] })
+    expect(resolveSkipFrom(p, tracks, 'next', 0, soon)).toEqual({ action: 'play', index: 3 })
+  })
+
+  it("ignores a stream's second report of a track already counted", () => {
+    // Each stream reports on opening and again with its first announcement.
+    let p = confirmed(1)
+    for (const d of ['next', 'next', 'previous'] as const) p = press(p, d)
+    p = reports(p, [30, 30, 40, 40, 30, 30])
+    expect(p).toMatchObject({ index: 2, mediaId: 30, awaiting: [] })
+  })
+
+  it('ignores reports from a stream the device has been told to leave', () => {
+    // Plays for 30 and 40 are on their way; the old stream, still on 20,
+    // reports it again (a resume, say). Nothing moves.
+    const p = press(press(confirmed(1), 'next'), 'next')
+    expect(followReportedTrack(p, tracks, 20, soon)).toBe(p)
+  })
+
+  it('does not jump ahead to a later play whose report arrives first', () => {
+    // Strictly in order: a report matching a later entry doesn't skip the
+    // ones before it.
+    const p = press(press(confirmed(1), 'next'), 'next') // awaiting [30, 40]
+    expect(followReportedTrack(p, tracks, 40, soon)).toBe(p)
+  })
+
+  it('stops waiting after the timeout and follows the stream again', () => {
+    // The plays for 30 and 40 never reported — one failed to open, say.
+    const p = press(press(confirmed(1), 'next'), 'next')
+    // Not yet: a moment before the deadline, the count still holds.
+    expect(followReportedTrack(p, tracks, 50, p.issuedAt + CONFIRM_TIMEOUT_MS - 1)).toBe(p)
+
+    const later = p.issuedAt + CONFIRM_TIMEOUT_MS
+    expect(followReportedTrack(p, tracks, 50, later)).toMatchObject({
+      index: 4,
+      mediaId: 50,
+      awaiting: [],
+    })
+    // And a press then starts a fresh count rather than queueing behind them.
+    expect(issuePlay(p, 4, 50, later).awaiting).toEqual([50])
+  })
+
+  it('starts afresh on a card scan', () => {
+    expect(issuePlay(null, 0, 10, soon)).toEqual({
+      index: 0,
+      mediaId: 10,
+      awaiting: [10],
+      issuedAt: soon,
+    })
+  })
+})
+
+describe('a playlist edited mid-listen', () => {
+  it('follows the stream when the playing track is moved later', () => {
+    // [10, 20, 30, 40] while 20 plays; a parent drags 20 to the end. The open
+    // stream still goes 20 -> 30 -> 40. Looking only ahead of 20's new place
+    // would never find 30, and Next would then stop playback.
+    const edited = [10, 30, 40, 20]
+    const p = followReportedTrack(confirmed(1, [10, 20, 30, 40]), edited, 30, soon)
+    expect(p).toMatchObject({ index: 1, mediaId: 30, awaiting: [] })
+    expect(resolveSkipFrom(p, edited, 'next', 0, soon)).toEqual({ action: 'play', index: 2 })
   })
 })

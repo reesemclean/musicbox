@@ -4,7 +4,12 @@ import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { devices, cards, media, playlistMedia } from '../db/schema.js'
 import { getLatestEpisode } from './podcastService.js'
-import { followReportedTrack, resolveSkipFrom, type PlaylistPosition } from '../lib/skip.js'
+import {
+  followReportedTrack,
+  issuePlay,
+  resolveSkipFrom,
+  type PlaylistPosition,
+} from '../lib/skip.js'
 
 // MQTT Topics
 export const TOPICS = {
@@ -525,13 +530,16 @@ class MqttService extends EventEmitter {
         console.log(`[MQTT] Playing playlist ${card.playlistId}, starting: ${firstTrack.title}`)
         // mediaId is the first track, so the device can report something
         // before the first metadata block arrives.
+        // A scan starts a fresh session, so nothing carries over: a play
+        // from before it, still unreported, can be overtaken on the device
+        // (one waiting behind the read cue is replaced, not queued) and would
+        // otherwise be waited for until the timeout.
         this.playPlaylist(
           macForTopic,
           this.macWithColons(macNoColons),
           card.playlistId,
-          0,
           url,
-          firstTrack.mediaId
+          issuePlay(null, 0, firstTrack.mediaId, Date.now())
         )
       } else {
         console.log(`[MQTT] Playlist ${card.playlistId} is empty`)
@@ -613,13 +621,14 @@ class MqttService extends EventEmitter {
       `[MQTT] Skip ${event.direction} on playlist ${playlist.id}: ` +
         `index ${playlist.position.index} -> ${outcome.index}`
     )
+    // Queued on the device behind any earlier play it hasn't reported yet,
+    // so the position carries those forward.
     this.playPlaylist(
       macNoColons,
       macWithColons,
       playlist.id,
-      outcome.index,
       url,
-      trackIds[outcome.index]
+      issuePlay(playlist.position, outcome.index, trackIds[outcome.index], Date.now())
     )
   }
 
@@ -795,25 +804,20 @@ class MqttService extends EventEmitter {
    * the device only ever reports a mediaId, which doesn't identify one — and
    * where in it to move from.
    *
-   * @param index Where in the playlist the stream starts, and `firstMediaId`
-   *   the track found there.
+   * @param position Where the stream starts, from issuePlay.
    */
   playPlaylist(
     macNoColons: string,
     macWithColons: string,
     playlistId: number,
-    index: number,
     url: string,
-    firstMediaId: number
+    position: PlaylistPosition
   ): void {
     this.playbackSessions.set(macWithColons, {
-      playlist: {
-        id: playlistId,
-        position: { index, mediaId: firstMediaId, confirmed: false, issuedAt: Date.now() },
-      },
+      playlist: { id: playlistId, position },
       startedAt: new Date(),
     })
-    this.play(macNoColons, url, firstMediaId)
+    this.play(macNoColons, url, position.mediaId)
   }
 
   /** Play a single item, clearing any playlist session. */
