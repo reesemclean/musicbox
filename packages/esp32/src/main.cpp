@@ -28,6 +28,10 @@
 // Max time to wait for the audio task to acknowledge a stop before an OTA.
 #define OTA_AUDIO_STOP_TIMEOUT_MS 3000
 
+// How long a card read already waiting on the reader can take to finish once
+// scanning is switched off: two NFC read timeouts, plus margin.
+#define OTA_NFC_SETTLE_MS 250
+
 // Once the input task starts, only it touches these.
 Button2 btnPlay, btnVolUp, btnVolDn, btnNext, btnPrev;
 
@@ -173,22 +177,27 @@ void onOta(const char* url, const char* version, const char* sha256) {
     update_underway = true;
     nfc_set_enabled(false);
 
+    // A read already waiting on the reader finishes on the scan task whatever
+    // the flag says. The scan task's recheck and onCardRead both drop it, but
+    // one that passed them just before they flipped could still queue a cue.
+    // So let it finish, then send the stop whatever the current state: it
+    // lands behind anything queued, rather than being skipped because the cue
+    // hadn't started yet. The loop is blocked for the update anyway.
+    delay(OTA_NFC_SETTLE_MS);
+    LOG_I(MOD_OTA, "Stopping audio for update");
+    audio_stop();
+
+    unsigned long start = millis();
+    while (audio_get_state() != AUDIO_IDLE &&
+           millis() - start < OTA_AUDIO_STOP_TIMEOUT_MS) {
+        delay(10);
+    }
+
     if (audio_get_state() != AUDIO_IDLE) {
-        LOG_I(MOD_OTA, "Stopping audio for update");
-        audio_stop();
-
-        unsigned long start = millis();
-        while (audio_get_state() != AUDIO_IDLE &&
-               millis() - start < OTA_AUDIO_STOP_TIMEOUT_MS) {
-            delay(10);
-        }
-
-        if (audio_get_state() != AUDIO_IDLE) {
-            // Proceed anyway: a wedged audio task is precisely when pushing
-            // new firmware matters most.
-            LOG_W(MOD_OTA, "Audio did not stop in %dms, updating anyway",
-                  OTA_AUDIO_STOP_TIMEOUT_MS);
-        }
+        // Proceed anyway: a wedged audio task is precisely when pushing
+        // new firmware matters most.
+        LOG_W(MOD_OTA, "Audio did not stop in %dms, updating anyway",
+              OTA_AUDIO_STOP_TIMEOUT_MS);
     }
 
     // Success restarts into the new firmware, so returning at all means the
@@ -400,6 +409,10 @@ static void inputTask(void* parameter) {
  * task first would make it wait behind whatever the loop is blocked on.
  */
 static void onCardRead(const char* uid) {
+    // Audio has to stay stopped for an update (§7). The scan task rechecks
+    // whether scanning is on, but a read can pass that just as it is turned
+    // off.
+    if (update_underway) return;
     audio_play_system_sound(SOUND_READ_CUE);
 }
 

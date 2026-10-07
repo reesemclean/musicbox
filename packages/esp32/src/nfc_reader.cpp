@@ -105,6 +105,11 @@ static void attempt_read() {
         return;
     }
 
+    // Scanning may have been switched off while that read was waiting on the
+    // reader — for an update, say. A read that finishes afterwards is
+    // dropped, so it can neither cue nor be resolved later.
+    if (!enabled) return;
+
     // The library takes the length straight from the frame and copies that
     // many bytes without checking the value, so a desynced frame yields
     // whatever that byte happened to be. Treat anything that is not a real UID
