@@ -96,6 +96,37 @@ divergences can move there once confirmed.
 
 ## Bugs — low
 
+Three edge cases left by the skip-tracking and OTA fixes (#9), found by its
+final review. Each needs a rare combination, so they were recorded here rather
+than fixed in another round.
+
+- [ ] **A playlist edited between a play and the device's request is followed
+  in the wrong order** (`mqttService.ts` `issuePlay` callers,
+  `routes/api/playlists/stream/$id.ts`). The server stores the track order
+  when it sends a play; the endpoint reads the playlist again when the device
+  connects — after the read cue, or after each earlier stream in a skip burst.
+  An edit in that gap leaves the server following an order the device isn't
+  playing (spec §3.6 says it follows the order the device plays), and a skip's
+  `?from=` can start on the wrong track or past the end (416). Fix: have the
+  endpoint serve the order the server planned — same process, so a plan id in
+  the URL would do — instead of re-querying.
+- [ ] **After a mid-listen edit, a skip can pick the wrong copy of a duplicated
+  track** (`lib/skip.ts` `currentIndexOf`). The playing track is mapped onto
+  the edited playlist by its index, else the nearest copy (ties to the
+  earlier). An insert or removal above a duplicate can land on the other copy:
+  stream [10,30,20,30,40] on the second 30, two tracks added at the top, and
+  Next replays 20 and 30. Fix: map by `playlist_media` row id while the row
+  still exists (removals keep ids; reorders re-insert every row), else score
+  copies by matching neighbours.
+- [ ] **A card scanned just before an OTA can play after the update fails**
+  (`main.cpp` `onOta`). If the `ota` command lands between a scan's
+  `card_scanned` and the server's `play`, the play waits in the socket while
+  the update runs, and after a fast failure it starts the card well after it
+  was presented. Separately, a read cued just before the update but not yet
+  handed over is discarded, leaving a cue with nothing after it. Fix: ignore
+  card-originated plays issued before the update, and play the error cue if a
+  failed update discarded a read.
+
 - [ ] **A card mapped to nothing gets no reply** (`mqttService.ts`
   `handleCardScanned`). The user hears the error cue only after the 3s
   timeout, instead of an immediate `error_sound`.
