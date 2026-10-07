@@ -1,6 +1,6 @@
 import mqtt, { MqttClient } from 'mqtt'
 import { EventEmitter } from 'node:events'
-import { eq } from 'drizzle-orm'
+import { asc, eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { devices, cards, media, playlistMedia } from '../db/schema.js'
 import { getLatestEpisode } from './podcastService.js'
@@ -452,7 +452,7 @@ class MqttService extends EventEmitter {
       // Only "playing" says which track is now under way — a "stopped" names
       // the track that just ended. The device sends -1 when there is none.
       if (event.status === 'playing' && event.mediaId !== undefined && event.mediaId > 0) {
-        await this.followPlaylistPosition(mac, event.mediaId)
+        this.followPlaylistPosition(mac, event.mediaId)
       }
     } else if (event.type === 'skip') {
       await this.handleSkip(macNoColons, mac, event)
@@ -513,23 +513,21 @@ class MqttService extends EventEmitter {
       // opens a single connection covering the whole listen, so there is no
       // per-track reconnect and no gap between tracks. Which track is playing
       // arrives in-band as ICY metadata.
-      const [firstTrack] = await db
-        .select({ mediaId: playlistMedia.mediaId, title: media.title })
-        .from(playlistMedia)
-        .innerJoin(media, eq(playlistMedia.mediaId, media.id))
-        .where(eq(playlistMedia.playlistId, card.playlistId))
-        .orderBy(playlistMedia.position)
-        .limit(1)
+      const trackIds = await this.playlistTrackIds(card.playlistId)
 
-      if (firstTrack) {
+      if (trackIds.length > 0) {
         if (card.volume !== null) {
           this.setVolume(macForTopic, card.volume)
         }
 
         const url = `${this.getStreamBaseUrl()}/api/playlists/stream/${card.playlistId}`
-        console.log(`[MQTT] Playing playlist ${card.playlistId}, starting: ${firstTrack.title}`)
-        // mediaId is the first track, so the device can report something
+        console.log(
+          `[MQTT] Playing playlist ${card.playlistId} (${trackIds.length} tracks), ` +
+            `starting with media ${trackIds[0]}`
+        )
+        // The play names the first track, so the device can report something
         // before the first metadata block arrives.
+        //
         // A scan starts a fresh session, so nothing carries over: a play
         // from before it, still unreported, can be overtaken on the device
         // (one waiting behind the read cue is replaced, not queued) and would
@@ -539,7 +537,7 @@ class MqttService extends EventEmitter {
           this.macWithColons(macNoColons),
           card.playlistId,
           url,
-          issuePlay(null, 0, firstTrack.mediaId, Date.now())
+          issuePlay(null, trackIds, 0, Date.now())
         )
       } else {
         console.log(`[MQTT] Playlist ${card.playlistId} is empty`)
@@ -622,13 +620,14 @@ class MqttService extends EventEmitter {
         `index ${playlist.position.index} -> ${outcome.index}`
     )
     // Queued on the device behind any earlier play it hasn't reported yet,
-    // so the position carries those forward.
+    // so the position carries those forward. The same list the skip was
+    // resolved against, since `?from=` indexes it.
     this.playPlaylist(
       macNoColons,
       macWithColons,
       playlist.id,
       url,
-      issuePlay(playlist.position, outcome.index, trackIds[outcome.index], Date.now())
+      issuePlay(playlist.position, trackIds, outcome.index, Date.now())
     )
   }
 
@@ -636,21 +635,28 @@ class MqttService extends EventEmitter {
    * Move a playlist session's position along to a track the device reported —
    * chiefly the stream's own announcement as each track begins.
    */
-  private async followPlaylistPosition(macWithColons: string, mediaId: number): Promise<void> {
+  private followPlaylistPosition(macWithColons: string, mediaId: number): void {
     const playlist = this.playbackSessions.get(macWithColons)?.playlist
     if (!playlist) return
 
-    const trackIds = await this.playlistTrackIds(playlist.id)
-    playlist.position = followReportedTrack(playlist.position, trackIds, mediaId, Date.now())
+    playlist.position = followReportedTrack(playlist.position, mediaId, Date.now())
   }
 
-  /** A playlist's tracks, in the order its stream plays them. */
+  /**
+   * A playlist's tracks, exactly as its stream endpoint serves them.
+   *
+   * Has to match that endpoint row for row, because a skip's `?from=` is an
+   * index into it: the same join on media (a row whose media is gone is not
+   * served, and nothing enforces the foreign key that would remove it) and
+   * the same tiebreak for equal positions.
+   */
   private async playlistTrackIds(playlistId: number): Promise<number[]> {
     const rows = await db
       .select({ mediaId: playlistMedia.mediaId })
       .from(playlistMedia)
+      .innerJoin(media, eq(playlistMedia.mediaId, media.id))
       .where(eq(playlistMedia.playlistId, playlistId))
-      .orderBy(playlistMedia.position)
+      .orderBy(asc(playlistMedia.position), asc(playlistMedia.id))
 
     return rows.map((r) => r.mediaId)
   }

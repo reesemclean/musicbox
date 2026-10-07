@@ -125,7 +125,7 @@ const soon = issuedAt + 500
 
 /** A play just issued for the track at `index`, not yet reported back. */
 function issued(index: number, trackIds = tracks): PlaylistPosition {
-  return { index, mediaId: trackIds[index], awaiting: [trackIds[index]], issuedAt }
+  return { stream: trackIds, index, mediaId: trackIds[index], awaiting: [trackIds[index]], issuedAt }
 }
 
 /** The device has reported every play it was sent, ending on `index`. */
@@ -135,41 +135,41 @@ function confirmed(index: number, trackIds = tracks): PlaylistPosition {
 
 describe('followReportedTrack', () => {
   it('is confirmed when the device reports the track it was sent', () => {
-    expect(followReportedTrack(issued(2), tracks, 30, soon)).toEqual(confirmed(2))
+    expect(followReportedTrack(issued(2), 30, soon)).toEqual(confirmed(2))
   })
 
   it('ignores the stream being left until the new one is confirmed', () => {
     // Sent to index 3 while index 1 was playing; the device then announces the
     // track after 1, from the old stream, before it has acted on the play.
     const position = issued(3)
-    expect(followReportedTrack(position, tracks, 30, soon)).toBe(position)
+    expect(followReportedTrack(position, 30, soon)).toBe(position)
   })
 
   it('follows the stream from track to track once confirmed', () => {
-    expect(followReportedTrack(confirmed(1), tracks, 30, soon)).toEqual(confirmed(2))
+    expect(followReportedTrack(confirmed(1), 30, soon)).toEqual(confirmed(2))
   })
 
   it('never follows a report backwards', () => {
     const position = confirmed(3)
-    expect(followReportedTrack(position, tracks, 20, soon)).toBe(position)
+    expect(followReportedTrack(position, 20, soon)).toBe(position)
   })
 
   it('stops waiting for the confirmation after a while', () => {
     const later = issuedAt + CONFIRM_TIMEOUT_MS
-    expect(followReportedTrack(issued(1), tracks, 30, later)).toEqual(confirmed(2))
+    expect(followReportedTrack(issued(1), 30, later)).toEqual(confirmed(2))
   })
 
   it('picks the copy ahead when a playlist holds a track twice', () => {
     const repeated = [10, 20, 10, 30]
-    expect(followReportedTrack(confirmed(1, repeated), repeated, 10, soon)).toEqual(
+    expect(followReportedTrack(confirmed(1, repeated), 10, soon)).toEqual(
       confirmed(2, repeated)
     )
   })
 
-  it('follows on from wherever an edit moved the current track', () => {
-    // 30 was at index 2 when recorded; a track ahead of it has since gone.
-    const edited = [10, 30, 40, 50]
-    expect(followReportedTrack(confirmed(2), edited, 40, soon)).toEqual(confirmed(2, edited))
+  it("follows the stream's own order, whatever the playlist says now", () => {
+    // It needs no playlist at all: the open stream plays what it was planned
+    // from, so its announcements are placed in that.
+    expect(followReportedTrack(confirmed(2), 40, soon)).toEqual(confirmed(3))
   })
 })
 
@@ -229,11 +229,11 @@ function press(
 ): PlaylistPosition {
   const outcome = resolveSkipFrom(position, trackIds, direction, elapsedSec, now)
   if (outcome.action !== 'play') throw new Error(`expected a play, got ${outcome.action}`)
-  return issuePlay(position, outcome.index, trackIds[outcome.index], now)
+  return issuePlay(position, trackIds, outcome.index, now)
 }
 
-function reports(position: PlaylistPosition, mediaIds: number[], trackIds = tracks): PlaylistPosition {
-  return mediaIds.reduce((p, id) => followReportedTrack(p, trackIds, id, soon), position)
+function reports(position: PlaylistPosition, mediaIds: number[]): PlaylistPosition {
+  return mediaIds.reduce((p, id) => followReportedTrack(p, id, soon), position)
 }
 
 describe('a burst of skips', () => {
@@ -275,34 +275,35 @@ describe('a burst of skips', () => {
     // Plays for 30 and 40 are on their way; the old stream, still on 20,
     // reports it again (a resume, say). Nothing moves.
     const p = press(press(confirmed(1), 'next'), 'next')
-    expect(followReportedTrack(p, tracks, 20, soon)).toBe(p)
+    expect(followReportedTrack(p, 20, soon)).toBe(p)
   })
 
   it('does not jump ahead to a later play whose report arrives first', () => {
     // Strictly in order: a report matching a later entry doesn't skip the
     // ones before it.
     const p = press(press(confirmed(1), 'next'), 'next') // awaiting [30, 40]
-    expect(followReportedTrack(p, tracks, 40, soon)).toBe(p)
+    expect(followReportedTrack(p, 40, soon)).toBe(p)
   })
 
   it('stops waiting after the timeout and follows the stream again', () => {
     // The plays for 30 and 40 never reported — one failed to open, say.
     const p = press(press(confirmed(1), 'next'), 'next')
     // Not yet: a moment before the deadline, the count still holds.
-    expect(followReportedTrack(p, tracks, 50, p.issuedAt + CONFIRM_TIMEOUT_MS - 1)).toBe(p)
+    expect(followReportedTrack(p, 50, p.issuedAt + CONFIRM_TIMEOUT_MS - 1)).toBe(p)
 
     const later = p.issuedAt + CONFIRM_TIMEOUT_MS
-    expect(followReportedTrack(p, tracks, 50, later)).toMatchObject({
+    expect(followReportedTrack(p, 50, later)).toMatchObject({
       index: 4,
       mediaId: 50,
       awaiting: [],
     })
     // And a press then starts a fresh count rather than queueing behind them.
-    expect(issuePlay(p, 4, 50, later).awaiting).toEqual([50])
+    expect(issuePlay(p, tracks, 4, later).awaiting).toEqual([50])
   })
 
   it('starts afresh on a card scan', () => {
-    expect(issuePlay(null, 0, 10, soon)).toEqual({
+    expect(issuePlay(null, tracks, 0, soon)).toEqual({
+      stream: tracks,
       index: 0,
       mediaId: 10,
       awaiting: [10],
@@ -311,14 +312,71 @@ describe('a burst of skips', () => {
   })
 })
 
+// The open stream keeps playing the order it was planned from; a skip is then
+// resolved against the playlist as edited. Each case: the stream, the track it
+// has reached, the edit, and what a press must do.
 describe('a playlist edited mid-listen', () => {
-  it('follows the stream when the playing track is moved later', () => {
-    // [10, 20, 30, 40] while 20 plays; a parent drags 20 to the end. The open
-    // stream still goes 20 -> 30 -> 40. Looking only ahead of 20's new place
-    // would never find 30, and Next would then stop playback.
-    const edited = [10, 30, 40, 20]
-    const p = followReportedTrack(confirmed(1, [10, 20, 30, 40]), edited, 30, soon)
-    expect(p).toMatchObject({ index: 1, mediaId: 30, awaiting: [] })
-    expect(resolveSkipFrom(p, edited, 'next', 0, soon)).toEqual({ action: 'play', index: 2 })
+  /** Play `planned` from the start and let the stream announce `heard`. */
+  function listenTo(planned: number[], heard: number[]): PlaylistPosition {
+    return reports(issuePlay(null, planned, 0, soon), [planned[0], ...heard])
+  }
+
+  it('the playing track moved later: Next plays what followed it', () => {
+    // [10, 20, 30, 40]; 20 is dragged to the end while the stream reaches 30.
+    const p = listenTo([10, 20, 30, 40], [20, 30])
+    expect(resolveSkipFrom(p, [10, 30, 40, 20], 'next', 0, soon)).toEqual({
+      action: 'play',
+      index: 2, // 40
+    })
+  })
+
+  it('an upcoming track moved to the end: Next does not stop playback', () => {
+    // [10, 20, 30, 40, 50]; 30 is moved to the end, but the stream plays on
+    // through 30 and 40. Looking for 40 after 30's new place found nothing,
+    // left the position on 30 — now last — and Next stopped.
+    const p = listenTo([10, 20, 30, 40, 50], [20, 30, 40])
+    expect(p).toMatchObject({ mediaId: 40 })
+    expect(resolveSkipFrom(p, [10, 20, 40, 50, 30], 'next', 0, soon)).toEqual({
+      action: 'play',
+      index: 3, // 50
+    })
+  })
+
+  it('an upcoming track moved to the top: the track playing is the one restarted', () => {
+    // [10, 20, 30, 40, 50]; 40 is moved to the top, and the stream reaches it.
+    const p = listenTo([10, 20, 30, 40, 50], [20, 30, 40])
+    expect(resolveSkipFrom(p, [40, 10, 20, 30, 50], 'previous', 20, soon)).toEqual({
+      action: 'play',
+      index: 0, // 40, not 30
+    })
+  })
+
+  it('a track removed above a duplicate: the copy playing is the one used', () => {
+    // [10, 20, 30, 20, 40] has 20 twice. 10 is removed while 30 plays, then
+    // the stream reaches the second 20. Taking the first copy sent Next back
+    // to 30, the track just heard.
+    const p = listenTo([10, 20, 30, 20, 40], [20, 30, 20])
+    expect(p).toMatchObject({ index: 3, mediaId: 20 })
+    expect(resolveSkipFrom(p, [20, 30, 20, 40], 'next', 0, soon)).toEqual({
+      action: 'play',
+      index: 3, // 40
+    })
+  })
+
+  it('a copy of the playing track added at the top: the copy playing is the one used', () => {
+    // [10, 20, 30, 40]; a copy of 30 is added at the top while 30 plays.
+    const p = listenTo([10, 20, 30, 40], [20, 30])
+    expect(resolveSkipFrom(p, [30, 10, 20, 30, 40], 'next', 0, soon)).toEqual({
+      action: 'play',
+      index: 4, // 40, not 10
+    })
+  })
+
+  it('the playing track removed: plays from the start', () => {
+    const p = listenTo([10, 20, 30, 40], [20, 30])
+    expect(resolveSkipFrom(p, [10, 20, 40], 'next', 0, soon)).toEqual({
+      action: 'play',
+      index: 0,
+    })
   })
 })

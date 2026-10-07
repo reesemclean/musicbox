@@ -384,11 +384,15 @@ report for the last one's. A card scan starts the count afresh, and the count
 is abandoned after a bounded wait (§9) in case a play never reports — both of
 its reports lost, or its stream failing to open.
 
-Following reports forward from the recorded position, rather than looking the
-reported track up anywhere in the playlist, is also what keeps a playlist that
-holds the same track twice from jumping back to the first copy. Once the
-playlist has been edited mid-listen, though, the open stream no longer lines up
-with it, and the reported track is taken wherever it now is.
+Server follows reports through the track order the stream was planned from —
+the playlist as it was when that `play` was issued — not the playlist as it is
+now. That order is what the device is playing: editing the playlist doesn't
+change a stream already open. Following forward through it is also what keeps
+a playlist that holds the same track twice from jumping back to the first
+copy. Only when a skip is resolved is the position mapped onto the playlist as
+it is now: to the playing track where the stream had it, or after an edit to
+the copy of it nearest that place. If it has been removed altogether, see the
+"no longer in the playlist" outcome below.
 
 Defined outcomes:
 
@@ -399,7 +403,7 @@ Defined outcomes:
 | `previous`, past the restart threshold | Replay the current track |
 | `previous`, within the threshold | Play from the previous track |
 | `previous`, on the first track | Replay it — there is nowhere further back |
-| The recorded track is no longer in the playlist | Play from the start. The playlist was edited mid-listen; guessing is worse than restarting |
+| The playing track is no longer in the playlist | Play from the start. It was removed mid-listen; guessing is worse than restarting |
 | No playlist context (single item playing, or Server restarted) | Do nothing. There is nothing to skip within, and a card scan restores context |
 
 ### 3.7 Volume

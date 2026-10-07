@@ -75,9 +75,15 @@ export function resolveSkip({
  * the same target.
  */
 export interface PlaylistPosition {
-  /** Index into the playlist's ordered tracks. */
+  /**
+   * The playlist's tracks as they were when the stream was planned, which is
+   * what the device is playing whatever edits are made since. The stream
+   * plays them in order from the index its play started at.
+   */
+  stream: number[]
+  /** Index into `stream` of the track playing. */
   index: number
-  /** The track at that index when recorded, to notice the playlist changing. */
+  /** The track at that index. */
   mediaId: number
   /**
    * The tracks of plays sent that the device hasn't reported starting yet,
@@ -112,40 +118,56 @@ function caughtUp(position: PlaylistPosition, now: number): boolean {
 }
 
 /**
- * Record a play just sent, starting at `index` (where `mediaId` is).
+ * Record a play just sent: a stream of `trackIds`, starting at `index`.
  *
- * `previous` is the position the play was decided from — passed for a skip,
- * whose play queues behind any the device hasn't reported yet. A card scan
- * passes null and starts afresh.
+ * `trackIds` must be the list the play's `?from=` index was taken from, in
+ * the order the stream endpoint serves it. `previous` is the position the
+ * play was decided from — passed for a skip, whose play queues behind any the
+ * device hasn't reported yet. A card scan passes null and starts afresh.
  */
 export function issuePlay(
   previous: PlaylistPosition | null,
+  trackIds: number[],
   index: number,
-  mediaId: number,
   now: number
 ): PlaylistPosition {
+  const mediaId = trackIds[index]
   const unreported = previous && !caughtUp(previous, now) ? previous.awaiting : []
-  return { index, mediaId, awaiting: [...unreported, mediaId], issuedAt: now }
+  return { stream: trackIds, index, mediaId, awaiting: [...unreported, mediaId], issuedAt: now }
 }
 
 /**
- * Find the recorded track in the playlist as it is now. -1 if it has been
+ * Where the playing track is in the playlist as it is now. -1 if it has been
  * removed, which resolveSkip treats as drift.
+ *
+ * Usually exactly where the stream has it. After an edit, the copy of the
+ * track nearest that place — so another copy elsewhere in the playlist isn't
+ * taken for it. Ties go to the earlier copy.
  */
 function currentIndexOf(position: PlaylistPosition, trackIds: number[]): number {
   if (trackIds[position.index] === position.mediaId) return position.index
-  // Edited since it was recorded. Find where the track went.
-  return trackIds.indexOf(position.mediaId)
+
+  let nearest = -1
+  trackIds.forEach((id, i) => {
+    if (id !== position.mediaId) return
+    if (nearest < 0 || Math.abs(i - position.index) < Math.abs(nearest - position.index)) {
+      nearest = i
+    }
+  })
+  return nearest
 }
 
 /**
  * Move the recorded position to match a track the device reported playing.
  *
+ * Followed through the stream's own order, not the playlist as it is now: the
+ * open stream doesn't change when the playlist is edited, so neither do the
+ * tracks it goes on to announce.
+ *
  * Returns the position unchanged when the report doesn't move it.
  */
 export function followReportedTrack(
   position: PlaylistPosition,
-  trackIds: number[],
   reportedMediaId: number,
   now: number
 ): PlaylistPosition {
@@ -162,22 +184,19 @@ export function followReportedTrack(
   const settled = position.awaiting.length === 0 ? position : { ...position, awaiting: [] }
   if (reportedMediaId === settled.mediaId) return settled
 
-  // A stream only ever moves forward, so normally look past the current
-  // position — which also picks the right copy when a playlist holds the same
-  // track twice. But once the playlist has been edited, the open stream
-  // (planned before the edit) no longer lines up with it, and looking ahead
-  // can miss a track that was moved earlier. Take the reported track wherever
-  // it now is.
-  const edited = trackIds[settled.index] !== settled.mediaId
-  const next = edited
-    ? trackIds.indexOf(reportedMediaId)
-    : trackIds.indexOf(reportedMediaId, settled.index + 1)
+  // A stream only ever moves forward, so look past the current track — which
+  // also picks the right copy when the playlist holds the same track twice.
+  const next = settled.stream.indexOf(reportedMediaId, settled.index + 1)
   if (next < 0) return settled
 
   return { ...settled, index: next, mediaId: reportedMediaId }
 }
 
-/** Decide a skip from a recorded position. */
+/**
+ * Decide a skip from a recorded position, against the playlist as it is now
+ * (`trackIds`, in stream order). The position is mapped onto it by
+ * currentIndexOf; the outcome indexes `trackIds`, as a play's `?from=` does.
+ */
 export function resolveSkipFrom(
   position: PlaylistPosition,
   trackIds: number[],
