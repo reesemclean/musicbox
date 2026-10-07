@@ -28,6 +28,10 @@
 // Max time to wait for the audio task to acknowledge a stop before an OTA.
 #define OTA_AUDIO_STOP_TIMEOUT_MS 3000
 
+// How long a card read already waiting on the reader can take to finish once
+// scanning is switched off: two NFC read timeouts, plus margin.
+#define OTA_NFC_SETTLE_MS 250
+
 // Once the input task starts, only it touches these.
 Button2 btnPlay, btnVolUp, btnVolDn, btnNext, btnPrev;
 
@@ -86,6 +90,12 @@ static unsigned long last_vol_repeat = 0;
 // Set when a press on play turned the sound machine off, so the long-press the
 // same hold goes on to reach doesn't turn it straight back on.
 static bool play_press_stopped_soundmachine = false;
+
+// Set when a press on play found a paused track. Resuming is the one thing
+// play does that makes sound, and the press may be the start of a hold for the
+// sound machine — so the resume waits for the release, and is dropped if the
+// hold got that far.
+static bool play_resume_on_release = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Restart reason logging
@@ -173,22 +183,33 @@ void onOta(const char* url, const char* version, const char* sha256) {
     update_underway = true;
     nfc_set_enabled(false);
 
+    // A read already waiting on the reader finishes on the scan task whatever
+    // the flag says. The scan task's recheck and onCardRead both drop it, but
+    // one that passed them just before they flipped could still queue a cue.
+    // So let it finish, then send the stop whatever the current state: it
+    // lands behind anything queued, rather than being skipped because the cue
+    // hadn't started yet. The loop is blocked for the update anyway.
+    delay(OTA_NFC_SETTLE_MS);
+
+    // Nothing new can be queued now. A read queued just before the update is
+    // stale, and would only be resolved if the update failed — playing a card
+    // long after it was presented.
+    nfc_discard_pending();
+
+    LOG_I(MOD_OTA, "Stopping audio for update");
+    audio_stop();
+
+    unsigned long start = millis();
+    while (audio_get_state() != AUDIO_IDLE &&
+           millis() - start < OTA_AUDIO_STOP_TIMEOUT_MS) {
+        delay(10);
+    }
+
     if (audio_get_state() != AUDIO_IDLE) {
-        LOG_I(MOD_OTA, "Stopping audio for update");
-        audio_stop();
-
-        unsigned long start = millis();
-        while (audio_get_state() != AUDIO_IDLE &&
-               millis() - start < OTA_AUDIO_STOP_TIMEOUT_MS) {
-            delay(10);
-        }
-
-        if (audio_get_state() != AUDIO_IDLE) {
-            // Proceed anyway: a wedged audio task is precisely when pushing
-            // new firmware matters most.
-            LOG_W(MOD_OTA, "Audio did not stop in %dms, updating anyway",
-                  OTA_AUDIO_STOP_TIMEOUT_MS);
-        }
+        // Proceed anyway: a wedged audio task is precisely when pushing
+        // new firmware matters most.
+        LOG_W(MOD_OTA, "Audio did not stop in %dms, updating anyway",
+              OTA_AUDIO_STOP_TIMEOUT_MS);
     }
 
     // Success restarts into the new firmware, so returning at all means the
@@ -242,6 +263,8 @@ void onPlaybackStatus(const char* status, int mediaId) {
 // once its double-click window has passed, which put 300ms between a press
 // and its effect — and it counts taps closer together than that as a double
 // or triple click, which nothing here handles, so rapid taps did nothing.
+// The one exception is play resuming a paused track, which waits for the
+// release (see onPlayPressed).
 // ─────────────────────────────────────────────────────────────────────────────
 
 void onPlayPressed(Button2 &btn) {
@@ -250,12 +273,36 @@ void onPlayPressed(Button2 &btn) {
     // it again.
     play_press_stopped_soundmachine = audio_get_mode() == MODE_SOUNDMACHINE;
 
-    // Stop the sound machine, pause, or resume — the audio task decides,
-    // since it owns the state the choice depends on.
+    // A paused track resumes on the release instead (see onPlayReleased).
+    // Acting now would play a second of it before a hold for the sound
+    // machine took over.
+    play_resume_on_release =
+        audio_get_mode() == MODE_NORMAL && audio_get_state() == AUDIO_PAUSED;
+    if (play_resume_on_release) return;
+
+    // Everything else a press does is silent — stop the sound machine,
+    // pause, or nothing during a cue — so it happens now. The audio task
+    // decides which, since it owns the state the choice depends on.
     audio_toggle();
 }
 
+void onPlayReleased(Button2 &btn) {
+    if (!play_resume_on_release) return;
+    play_resume_on_release = false;
+
+    // Audio has to stay stopped for an update (§7).
+    if (update_underway) return;
+
+    // A resume rather than a toggle: if the state has moved on since the
+    // press — a remote resume or stop — this does nothing instead of pausing.
+    audio_resume();
+}
+
 void onPlayLongPress(Button2 &btn) {
+    // The hold reached the sound machine, so the resume the press held back
+    // is no longer wanted — whatever happens below.
+    play_resume_on_release = false;
+
     if (play_press_stopped_soundmachine) return;
     if (audio_get_mode() == MODE_SOUNDMACHINE) return;
     // Audio was stopped for the update and has to stay that way (§7).
@@ -399,8 +446,15 @@ static void inputTask(void* parameter) {
  * so it goes out from here, the instant of the read. Handing it to the loop
  * task first would make it wait behind whatever the loop is blocked on.
  */
-static void onCardRead(const char* uid) {
+static bool onCardRead(const char* uid) {
+    // Rejected during an update: audio has to stay stopped (§7), and the
+    // scan would only be resolved — late — if the update failed. The scan
+    // task rechecks whether scanning is on, but a read can pass that just as
+    // it is turned off; this is the decision that counts, for the cue and the
+    // scan alike.
+    if (update_underway) return false;
     audio_play_system_sound(SOUND_READ_CUE);
+    return true;
 }
 
 /**
@@ -500,6 +554,7 @@ void setup() {
     }
 
     btnPlay.setPressedHandler(onPlayPressed);
+    btnPlay.setReleasedHandler(onPlayReleased);
     // "Detected" fires when the hold reaches the threshold, while the button
     // is still down. The plain long-click handler waits for the release.
     btnPlay.setLongClickDetectedHandler(onPlayLongPress);

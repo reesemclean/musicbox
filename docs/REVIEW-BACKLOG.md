@@ -46,11 +46,10 @@ divergences can move there once confirmed.
   ESP32-audioI2S picks its codec from that header. Upload already handles this
   correctly by storing `CANONICAL_MIME`.
 
-- [ ] **A failed OTA update leaves NFC switched off until the next reboot**
-  (`main.cpp` `onOta`, `ota_updater.cpp` `ota_start_update`). `onOta` disables
-  NFC and nothing re-enables it on failure. `ota_on_complete` is never
-  registered, so the failure isn't reported to the server either (spec §7,
-  §10). The download loop also has two problems of its own:
+- [ ] **A failed OTA update isn't reported, and the download can drop data or
+  hang** (`main.cpp` `onOta`, `ota_updater.cpp` `ota_start_update`).
+  `ota_on_complete` is never registered, so a failure isn't reported to the
+  server (spec §7, §10). The download loop also has two problems of its own:
   - It exits as soon as `http.connected()` goes false, dropping data still
     buffered in the socket. `flash_store.cpp` `download_to` already fixed
     exactly this and notes that multi-MB downloads hit it reliably.
@@ -64,11 +63,6 @@ divergences can move there once confirmed.
   same card, so a re-trigger needs the card to be absent for the window.
 
 ## Bugs — medium
-
-- [ ] **Pressing play during the read cue pauses the cue, and the card's content
-  never starts** (`main.cpp` `onPlayClick`, `audio_player.cpp` `CMD_PAUSE`).
-  Neither checks for `MODE_SYSTEM_SOUND`, so the deferred `play` waits until
-  the next resume. Spec §3.3 says pause is a no-op during a system sound.
 
 - [ ] **Rejected or unknown devices still get card scans answered**
   (`mqttService.ts` `handleCardScanned`, spec §1.3). No device-status check.
@@ -102,6 +96,37 @@ divergences can move there once confirmed.
 
 ## Bugs — low
 
+Three edge cases left by the skip-tracking and OTA fixes (#9), found by its
+final review. Each needs a rare combination, so they were recorded here rather
+than fixed in another round.
+
+- [ ] **A playlist edited between a play and the device's request is followed
+  in the wrong order** (`mqttService.ts` `issuePlay` callers,
+  `routes/api/playlists/stream/$id.ts`). The server stores the track order
+  when it sends a play; the endpoint reads the playlist again when the device
+  connects — after the read cue, or after each earlier stream in a skip burst.
+  An edit in that gap leaves the server following an order the device isn't
+  playing (spec §3.6 says it follows the order the device plays), and a skip's
+  `?from=` can start on the wrong track or past the end (416). Fix: have the
+  endpoint serve the order the server planned — same process, so a plan id in
+  the URL would do — instead of re-querying.
+- [ ] **After a mid-listen edit, a skip can pick the wrong copy of a duplicated
+  track** (`lib/skip.ts` `currentIndexOf`). The playing track is mapped onto
+  the edited playlist by its index, else the nearest copy (ties to the
+  earlier). An insert or removal above a duplicate can land on the other copy:
+  stream [10,30,20,30,40] on the second 30, two tracks added at the top, and
+  Next replays 20 and 30. Fix: map by `playlist_media` row id while the row
+  still exists (removals keep ids; reorders re-insert every row), else score
+  copies by matching neighbours.
+- [ ] **A card scanned just before an OTA can play after the update fails**
+  (`main.cpp` `onOta`). If the `ota` command lands between a scan's
+  `card_scanned` and the server's `play`, the play waits in the socket while
+  the update runs, and after a fast failure it starts the card well after it
+  was presented. Separately, a read cued just before the update but not yet
+  handed over is discarded, leaving a cue with nothing after it. Fix: ignore
+  card-originated plays issued before the update, and play the error cue if a
+  failed update discarded a read.
+
 - [ ] **A card mapped to nothing gets no reply** (`mqttService.ts`
   `handleCardScanned`). The user hears the error cue only after the 3s
   timeout, instead of an immediate `error_sound`.
@@ -115,9 +140,6 @@ divergences can move there once confirmed.
 - [ ] **Skip elapsed time includes time spent paused** (`audio_player.cpp`
   `audio_get_elapsed_sec`), so "previous" after a pause usually restarts the
   track instead (spec §3.6).
-- [ ] **`audio_set_max_volume` touches the decoder from the MQTT task**
-  (`audio_player.cpp`), breaking the rule that only the audio task does. Route
-  it through the command queue.
 - [ ] **Two refreshes of the same feed can overlap** (manual, scheduled, or
   `addPodcastFeed`) and insert duplicate episode rows.
 - [ ] **Dead code:** `ota_check_for_update`; `/api/cards/lookup` (leftover from

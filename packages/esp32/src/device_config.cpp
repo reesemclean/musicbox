@@ -5,6 +5,10 @@
 static DeviceConfig cfg;
 static Preferences prefs;
 
+// Set by a factory reset on the way down, acted on by config_init on the way
+// back up. See config_factory_reset.
+#define NVS_RESET_PENDING "reset_pending"
+
 static void update_provisioned() {
     cfg.provisioned = (cfg.wifi_ssid[0] != '\0' && cfg.api_base_url[0] != '\0');
 }
@@ -12,6 +16,18 @@ static void update_provisioned() {
 void config_init() {
     memset(&cfg, 0, sizeof(cfg));
     cfg.mqtt_port = 1883;
+
+    // A factory reset is carried out here rather than when it was asked for:
+    // this runs in setup, before any other task exists to write to NVS.
+    prefs.begin("musicbox", true);
+    bool reset_pending = prefs.getBool(NVS_RESET_PENDING, false);
+    prefs.end();
+    if (reset_pending) {
+        prefs.begin("musicbox", false);
+        prefs.clear();
+        prefs.end();
+        Serial.println("[Config] Factory reset: NVS cleared");
+    }
 
     prefs.begin("musicbox", true);  // read-only
 
@@ -130,18 +146,26 @@ const char* config_stream_base_url() {
     return cfg.api_base_url;
 }
 
+/**
+ * Mark a factory reset and restart; config_init clears NVS on the way up.
+ *
+ * Clearing here can't be made safe. This runs on the input task while the
+ * loop task carries on, and even a restart straight after the clear runs the
+ * WiFi shutdown handlers first, long enough for the loop to write something
+ * back into the namespace just cleared — an "approved" from the server would
+ * then survive the reset and bring the device back already approved. Writes
+ * after the mark don't matter: the clear at boot takes them too.
+ */
 void config_factory_reset() {
-    Serial.println("[Config] Factory reset - clearing NVS...");
+    Serial.println("[Config] Factory reset - restarting to clear NVS...");
 
-    // Its own handle, not the shared one: this runs on the input task, and
-    // the shared handle is in use on the loop task (NVS itself is safe to
-    // reach from both).
+    // Its own handle, not the shared one: the shared handle is in use on the
+    // loop task (NVS itself is safe to reach from both). put commits before
+    // it returns.
     Preferences reset_prefs;
     reset_prefs.begin("musicbox", false);
-    reset_prefs.clear();
+    reset_prefs.putBool(NVS_RESET_PENDING, true);
     reset_prefs.end();
 
-    Serial.println("[Config] NVS cleared, restarting...");
-    delay(500);
     ESP.restart();
 }

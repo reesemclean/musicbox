@@ -2,8 +2,18 @@ import { createFileRoute } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 // Note: useEffect kept for DeviceRemoteControl component
-import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield, Trash2, RefreshCw } from 'lucide-react'
+import { Cpu, Wifi, WifiOff, Clock, Globe, CheckCircle2, XCircle, AlertCircle, Check, Pause, Play, Square, Volume2, VolumeX, ChevronDown, ChevronUp, Music, Moon, Download, Shield, Trash2, RefreshCw, Pencil, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { DeviceLogs } from '@/components/DeviceLogs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -103,6 +113,7 @@ function DevicesPage() {
 
 function PendingDeviceCard({ device }: { device: Device }) {
   const queryClient = useQueryClient()
+  const [renaming, setRenaming] = useState(false)
 
   const approveMutation = useMutation({
     mutationFn: async () => {
@@ -156,6 +167,7 @@ function PendingDeviceCard({ device }: { device: Device }) {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <RenameDeviceButton onRename={() => setRenaming(true)} disabled={isLoading} />
           <Button
             variant="ghost"
             size="sm"
@@ -179,7 +191,94 @@ function PendingDeviceCard({ device }: { device: Device }) {
           </Button>
         </div>
       </div>
+      {renaming && <RenameDeviceDialog device={device} onClose={() => setRenaming(false)} />}
     </div>
+  )
+}
+
+/**
+ * Rename a device. Open while mounted — render it only when renaming.
+ *
+ * Render it beside a clickable row, never inside one. React bubbles events
+ * through portals along the component tree, so a click anywhere in the dialog
+ * — including the overlay click that closes it — would otherwise reach the
+ * row's own click handler and toggle it.
+ */
+function RenameDeviceDialog({ device, onClose }: { device: Device; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState(device.name ?? '')
+  const inputId = `device-name-${device.id}`
+
+  const renameMutation = useMutation({
+    mutationFn: async () => {
+      await updateDevice({ data: { id: device.id, name } })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      toast.success(name.trim() ? `Renamed to ${name.trim()}` : 'Device name cleared')
+      onClose()
+    },
+    onError: () => toast.error('Failed to rename device'),
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    renameMutation.mutate()
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Rename Device</DialogTitle>
+            <DialogDescription>
+              A name to tell this device apart, such as the room it's in. Leave it blank to clear it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-4">
+            <Label htmlFor={inputId}>Name</Label>
+            <Input
+              id={inputId}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Kids' Room"
+              autoFocus
+            />
+            <code className="text-xs text-muted-foreground">{device.mac}</code>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={renameMutation.isPending}>
+              {renameMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** The pencil that opens RenameDeviceDialog. Doesn't toggle the row it sits in. */
+function RenameDeviceButton({ onRename, disabled }: { onRename: () => void; disabled?: boolean }) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-8 w-8 p-0 text-muted-foreground"
+      aria-label="Rename device"
+      title="Rename device"
+      onClick={(e) => {
+        e.stopPropagation()
+        onRename()
+      }}
+      disabled={disabled}
+    >
+      <Pencil className="h-4 w-4" />
+    </Button>
   )
 }
 
@@ -232,6 +331,7 @@ function DevicesTable({ devices }: { devices: Device[] }) {
 
 function MobileDeviceCard({ device }: { device: Device }) {
   const [expanded, setExpanded] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   const queryClient = useQueryClient()
   const isOnline = getIsOnline(device)
   const canControl = device.status === 'approved' && isOnline
@@ -272,6 +372,7 @@ function MobileDeviceCard({ device }: { device: Device }) {
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <RenameDeviceButton onRename={() => setRenaming(true)} />
           <Button
             variant="ghost"
             size="sm"
@@ -291,6 +392,8 @@ function MobileDeviceCard({ device }: { device: Device }) {
           )}
         </div>
       </div>
+
+      {renaming && <RenameDeviceDialog device={device} onClose={() => setRenaming(false)} />}
 
       {expanded && (
         <div className="border-t border-border px-3 py-2 text-sm text-muted-foreground space-y-1">
@@ -316,6 +419,7 @@ function MobileDeviceCard({ device }: { device: Device }) {
 
 function DeviceRow({ device }: { device: Device }) {
   const [expanded, setExpanded] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   const queryClient = useQueryClient()
   const isOnline = getIsOnline(device)
   const canControl = device.status === 'approved' && isOnline
@@ -387,6 +491,7 @@ function DeviceRow({ device }: { device: Device }) {
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-1">
+            <RenameDeviceButton onRename={() => setRenaming(true)} />
             <Button
               variant="ghost"
               size="sm"
@@ -418,6 +523,9 @@ function DeviceRow({ device }: { device: Device }) {
           </td>
         </tr>
       )}
+      {/* Beside the row, not in it — see RenameDeviceDialog. Renders nothing
+          in place; its content is portalled to the body. */}
+      {renaming && <RenameDeviceDialog device={device} onClose={() => setRenaming(false)} />}
     </>
   )
 }

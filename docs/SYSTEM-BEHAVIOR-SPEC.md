@@ -371,14 +371,28 @@ last report.** The device reports a new track only once it has opened the new
 stream, a full connect after the skip, so two presses in quick succession
 resolved against its reports would both start from the same track and land on
 the same target. Server instead records the position each `play` starts at and
-moves it forward as the device reports later tracks (3.5). Until the device
-reports the track it was last sent, its reports — and the `elapsed` on its
-skip events — describe the stream it is leaving, and Server MUST disregard
-them, for no longer than a bounded wait (§9) in case both of the device's
-reports of that track are lost. Following reports forward from the recorded
-position, rather than looking the reported track up anywhere in the playlist,
-is also what keeps a playlist that holds the same track twice from jumping
-back to the first copy.
+moves it forward as the device reports later tracks (3.5).
+
+The device acts on `play` commands in the order they were sent and reports
+each one as it opens that stream. Until it has reported the last, its reports
+— and the `elapsed` on its skip events — describe a stream it has since been
+told to leave. Server MUST count those reports off against the plays it sent,
+in order, and take none of them as the current position until the last has
+been reported. Matching on the latest track alone is not enough: a burst that
+comes back to a track (Next, Next, Previous) would take the first play's
+report for the last one's. A card scan starts the count afresh, and the count
+is abandoned after a bounded wait (§9) in case a play never reports — both of
+its reports lost, or its stream failing to open.
+
+Server follows reports through the track order the stream was planned from —
+the playlist as it was when that `play` was issued — not the playlist as it is
+now. That order is what the device is playing: editing the playlist doesn't
+change a stream already open. Following forward through it is also what keeps
+a playlist that holds the same track twice from jumping back to the first
+copy. Only when a skip is resolved is the position mapped onto the playlist as
+it is now: to the playing track where the stream had it, or after an edit to
+the copy of it nearest that place. If it has been removed altogether, see the
+"no longer in the playlist" outcome below.
 
 Defined outcomes:
 
@@ -389,7 +403,7 @@ Defined outcomes:
 | `previous`, past the restart threshold | Replay the current track |
 | `previous`, within the threshold | Play from the previous track |
 | `previous`, on the first track | Replay it — there is nowhere further back |
-| The recorded track is no longer in the playlist | Play from the start. The playlist was edited mid-listen; guessing is worse than restarting |
+| The playing track is no longer in the playlist | Play from the start. It was removed mid-listen; guessing is worse than restarting |
 | No playlist context (single item playing, or Server restarted) | Do nothing. There is nothing to skip within, and a card scan restores context |
 
 ### 3.7 Volume
@@ -832,7 +846,7 @@ match — values should not silently diverge between spec and code.
 | Liveness grace period, streamed source | 3000ms | A decoder legitimately reports "not running" while it opens a connection and fills its first buffer; stream startup takes seconds, not milliseconds |
 | Liveness grace period, local source | 300ms | System sounds and sound machine alike — local flash reads are fast, this is a safety margin not a network allowance |
 | Skip-previous restart threshold | 3s | "Meant to restart this track" vs. "meant to go back" |
-| Skip confirmation wait | 10s | How long Server disregards a device's reports after sending it a `play`, until the device reports the new track (3.6). Only reached if both of the device's reports of that track are lost |
+| Skip confirmation wait | 10s | How long Server counts a device's reports off against the plays it sent (3.6) before going on without them, timed from the latest `play`. Only reached if a play never reports — both reports lost, or its stream failed to open |
 | Card-scanned resolution timeout | 3s | Bounds the wait after publishing `card_scanned` before the "can't do anything right now" cue (§5). Long enough that a slow-but-working resolution isn't falsely flagged, short enough not to leave the user guessing |
 | `icy-metaint` (playlist stream) | 8192 bytes | Audio between ICY metadata blocks (§8.5). Also the worst-case lag on reporting a track change: ~510ms at 128kbps, ~275ms at 238kbps |
 | Podcast feed refresh interval | 6h | Frequent enough that a card scanned in the morning gets that morning's episode (§11.3), infrequent enough not to hammer feed hosts |

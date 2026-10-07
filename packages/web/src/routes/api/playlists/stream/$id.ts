@@ -72,7 +72,9 @@ async function handlePlaylistStream(
     .from(playlistMedia)
     .innerJoin(media, eq(playlistMedia.mediaId, media.id))
     .where(eq(playlistMedia.playlistId, playlistId))
-    .orderBy(asc(playlistMedia.position))
+    // Ties on position broken by row, deterministically: the server indexes
+    // this same order to send `?from=` (mqttService playlistTrackIds).
+    .orderBy(asc(playlistMedia.position), asc(playlistMedia.id))
 
   if (rows.length === 0) {
     return new Response('Playlist is empty or does not exist', { status: 404 })
