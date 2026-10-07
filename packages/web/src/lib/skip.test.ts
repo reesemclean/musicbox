@@ -321,8 +321,9 @@ describe('a playlist edited mid-listen', () => {
     return reports(issuePlay(null, planned, 0, soon), [planned[0], ...heard])
   }
 
-  it('the playing track moved later: Next plays what followed it', () => {
-    // [10, 20, 30, 40]; 20 is dragged to the end while the stream reaches 30.
+  it('the track just played moved to the end: Next plays what follows', () => {
+    // [10, 20, 30, 40]; 20 is dragged to the end while it plays, and the
+    // stream moves on to 30. Next must play 40, not lose its place.
     const p = listenTo([10, 20, 30, 40], [20, 30])
     expect(resolveSkipFrom(p, [10, 30, 40, 20], 'next', 0, soon)).toEqual({
       action: 'play',

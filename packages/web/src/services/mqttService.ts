@@ -646,9 +646,9 @@ class MqttService extends EventEmitter {
    * A playlist's tracks, exactly as its stream endpoint serves them.
    *
    * Has to match that endpoint row for row, because a skip's `?from=` is an
-   * index into it: the same join on media (a row whose media is gone is not
-   * served, and nothing enforces the foreign key that would remove it) and
-   * the same tiebreak for equal positions.
+   * index into it — so the very same query: the same join on media, and the
+   * same tiebreak for equal positions, whose order SQLite otherwise leaves
+   * unspecified. (Positions can tie: a track can be added at an explicit one.)
    */
   private async playlistTrackIds(playlistId: number): Promise<number[]> {
     const rows = await db
