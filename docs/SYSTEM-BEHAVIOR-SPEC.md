@@ -334,10 +334,9 @@ to. It becomes a request Server fulfills:
 
 - The device publishes a skip event (direction: next/previous) rather than
   locally advancing anything. Server, which is the one that knows the
-  playlist's track order and the current position (from the ICY-metadata-
-  driven status stream, 3.5), computes the target position and responds
-  with a fresh `play` command pointing at a new continuous stream starting
-  there.
+  playlist's track order and the current position (tracked as described
+  below), computes the target position and responds with a fresh `play`
+  command pointing at a new continuous stream starting there.
 - This means a skip pays a connection-setup cost the same as any other
   `play` (§9) — acceptable, since a skip is an explicit user action, unlike
   a natural track transition within a playlist, which stays gapless because
@@ -351,21 +350,35 @@ to. It becomes a request Server fulfills:
 
 The skip event MUST carry the device's elapsed position within the current
 track, so Server can apply the restart-vs-previous rule above. Server knows
-the playlist order and, from the last `playback_status`, which track is
-playing — but not how far into it, and the device is the only party that
-does.
+the playlist order and which track is playing — but not how far into it, and
+the device is the only party that does.
 
 Fulfilling a skip requires two things Server would not otherwise need:
 
 - **A record of what it told each device to play.** `playback_status` reports
   a `mediaId`, which identifies a track but not the playlist it came from —
   the same track may appear in several. Server MUST therefore remember the
-  playlist context it issued with the last `play`. This may be held in memory:
+  playlist context it issued with the last `play`, and the position within it
+  (below). This may be held in memory:
   losing it on restart costs nothing permanent, since the next card scan
   re-establishes it, and persisting it would mean a write on every play.
 - **A playlist stream that can begin at an arbitrary track.** §8.5's endpoint
   serves a playlist from the beginning; skipping means requesting the same
   playlist starting at a different position.
+
+**A skip resolves from the position Server last sent, not from the device's
+last report.** The device reports a new track only once it has opened the new
+stream, a full connect after the skip, so two presses in quick succession
+resolved against its reports would both start from the same track and land on
+the same target. Server instead records the position each `play` starts at and
+moves it forward as the device reports later tracks (3.5). Until the device
+reports the track it was last sent, its reports — and the `elapsed` on its
+skip events — describe the stream it is leaving, and Server MUST disregard
+them, for no longer than a bounded wait (§9) in case both of the device's
+reports of that track are lost. Following reports forward from the recorded
+position, rather than looking the reported track up anywhere in the playlist,
+is also what keeps a playlist that holds the same track twice from jumping
+back to the first copy.
 
 Defined outcomes:
 
@@ -376,7 +389,7 @@ Defined outcomes:
 | `previous`, past the restart threshold | Replay the current track |
 | `previous`, within the threshold | Play from the previous track |
 | `previous`, on the first track | Replay it — there is nowhere further back |
-| Reported track isn't in the playlist | Play from the start. The two have drifted; guessing is worse than restarting |
+| The recorded track is no longer in the playlist | Play from the start. The playlist was edited mid-listen; guessing is worse than restarting |
 | No playlist context (single item playing, or Server restarted) | Do nothing. There is nothing to skip within, and a card scan restores context |
 
 ### 3.7 Volume
@@ -819,6 +832,7 @@ match — values should not silently diverge between spec and code.
 | Liveness grace period, streamed source | 3000ms | A decoder legitimately reports "not running" while it opens a connection and fills its first buffer; stream startup takes seconds, not milliseconds |
 | Liveness grace period, local source | 300ms | System sounds and sound machine alike — local flash reads are fast, this is a safety margin not a network allowance |
 | Skip-previous restart threshold | 3s | "Meant to restart this track" vs. "meant to go back" |
+| Skip confirmation wait | 10s | How long Server disregards a device's reports after sending it a `play`, until the device reports the new track (3.6). Only reached if both of the device's reports of that track are lost |
 | Card-scanned resolution timeout | 3s | Bounds the wait after publishing `card_scanned` before the "can't do anything right now" cue (§5). Long enough that a slow-but-working resolution isn't falsely flagged, short enough not to leave the user guessing |
 | `icy-metaint` (playlist stream) | 8192 bytes | Audio between ICY metadata blocks (§8.5). Also the worst-case lag on reporting a track change: ~510ms at 128kbps, ~275ms at 238kbps |
 | Podcast feed refresh interval | 6h | Frequent enough that a card scanned in the morning gets that morning's episode (§11.3), infrequent enough not to hammer feed hosts |

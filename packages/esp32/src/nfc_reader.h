@@ -10,8 +10,14 @@ typedef std::function<void(const char* uid)> CardScannedCallback;
 // Returns true if PN532 was found
 bool nfc_init();
 
-// Set callback for card scans
+// Set callback for card scans. Runs on the loop task, from nfc_loop().
 void nfc_on_card_scanned(CardScannedCallback callback);
+
+// Set a callback that runs on the scan task the instant a new UID is captured,
+// before the read is handed to the loop task. For feedback that mustn't wait
+// on the loop task, which can stall behind the network — so keep it quick and
+// safe from any task. Register before enabling scanning.
+void nfc_on_card_read(CardScannedCallback callback);
 
 // Call in loop to poll for cards
 // Only processes cards when enabled

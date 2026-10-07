@@ -42,17 +42,20 @@ void audio_play_system_sound(SystemSound sound);
 
 // Loop a local file until stopped. Volume < 0 leaves the current volume.
 void audio_play_soundmachine(const char* path, int volume);
-void audio_stop_soundmachine();
 
 void audio_pause();
 void audio_resume();
 void audio_stop();
 
-// Volume, 0..42. Requests above the configured max are clamped to it.
+// The physical play button: stops the sound machine, pauses, or resumes,
+// whichever the current state calls for. Does nothing during a cue.
+void audio_toggle();
+
+// Volume, 0..42. Requests above the configured max are clamped to it. Safe
+// from any task, and never queued: the audio task applies the latest value.
 void audio_set_volume(int level);
-int audio_get_volume();
+void audio_step_volume(int delta);
 void audio_set_max_volume(int level);
-int audio_get_max_volume();
 
 AudioState audio_get_state();
 AudioMode audio_get_mode();

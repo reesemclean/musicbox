@@ -133,9 +133,13 @@ const char* config_stream_base_url() {
 void config_factory_reset() {
     Serial.println("[Config] Factory reset - clearing NVS...");
 
-    prefs.begin("musicbox", false);
-    prefs.clear();
-    prefs.end();
+    // Its own handle, not the shared one: this runs on the input task, and
+    // the shared handle is in use on the loop task (NVS itself is safe to
+    // reach from both).
+    Preferences reset_prefs;
+    reset_prefs.begin("musicbox", false);
+    reset_prefs.clear();
+    reset_prefs.end();
 
     Serial.println("[Config] NVS cleared, restarting...");
     delay(500);
