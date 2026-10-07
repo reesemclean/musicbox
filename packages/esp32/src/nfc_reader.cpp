@@ -72,7 +72,7 @@ static unsigned long last_desync_report = 0;
 
 // Callbacks
 static CardScannedCallback on_card_scanned_cb = nullptr;  // loop task
-static CardScannedCallback on_card_read_cb = nullptr;     // scan task
+static CardReadCallback on_card_read_cb = nullptr;        // scan task
 
 /** Bring the reader up. Scan task only. */
 static bool try_init() {
@@ -143,8 +143,9 @@ static void attempt_read() {
 
     // Feedback goes out from here rather than after the hand-off: the loop
     // task can be stalled behind a network call, and the cue is what tells
-    // the user they can take the card away.
-    if (on_card_read_cb) on_card_read_cb(scan.uid);
+    // the user they can take the card away. A read the callback rejects goes
+    // no further — no cue without a scan, and no scan without a cue.
+    if (on_card_read_cb && !on_card_read_cb(scan.uid)) return;
 
     // Dropped rather than waited on: blocking here would only delay the next
     // read, and a scan the loop task has not drained yet is already stale.
@@ -202,8 +203,12 @@ void nfc_on_card_scanned(CardScannedCallback callback) {
     on_card_scanned_cb = callback;
 }
 
-void nfc_on_card_read(CardScannedCallback callback) {
+void nfc_on_card_read(CardReadCallback callback) {
     on_card_read_cb = callback;
+}
+
+void nfc_discard_pending() {
+    if (scanQueue != NULL) xQueueReset(scanQueue);
 }
 
 void nfc_loop() {

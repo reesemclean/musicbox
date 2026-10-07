@@ -190,6 +190,12 @@ void onOta(const char* url, const char* version, const char* sha256) {
     // lands behind anything queued, rather than being skipped because the cue
     // hadn't started yet. The loop is blocked for the update anyway.
     delay(OTA_NFC_SETTLE_MS);
+
+    // Nothing new can be queued now. A read queued just before the update is
+    // stale, and would only be resolved if the update failed — playing a card
+    // long after it was presented.
+    nfc_discard_pending();
+
     LOG_I(MOD_OTA, "Stopping audio for update");
     audio_stop();
 
@@ -440,12 +446,15 @@ static void inputTask(void* parameter) {
  * so it goes out from here, the instant of the read. Handing it to the loop
  * task first would make it wait behind whatever the loop is blocked on.
  */
-static void onCardRead(const char* uid) {
-    // Audio has to stay stopped for an update (§7). The scan task rechecks
-    // whether scanning is on, but a read can pass that just as it is turned
-    // off.
-    if (update_underway) return;
+static bool onCardRead(const char* uid) {
+    // Rejected during an update: audio has to stay stopped (§7), and the
+    // scan would only be resolved — late — if the update failed. The scan
+    // task rechecks whether scanning is on, but a read can pass that just as
+    // it is turned off; this is the decision that counts, for the cue and the
+    // scan alike.
+    if (update_underway) return false;
     audio_play_system_sound(SOUND_READ_CUE);
+    return true;
 }
 
 /**
