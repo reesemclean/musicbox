@@ -141,7 +141,10 @@ void config_factory_reset() {
     reset_prefs.clear();
     reset_prefs.end();
 
+    // Straight to the restart — clear() has already committed. Any wait here
+    // is time for the loop task, still running, to write something back into
+    // the namespace just cleared: an "approved" from the server would survive
+    // the reset and bring the device back already approved.
     Serial.println("[Config] NVS cleared, restarting...");
-    delay(500);
     ESP.restart();
 }
