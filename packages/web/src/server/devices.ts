@@ -28,7 +28,8 @@ export const getDevices = createServerFn({ method: 'GET' })
 
 interface UpdateDeviceData {
   id: number
-  name?: string
+  /** Blank or null clears the name. */
+  name?: string | null
   status?: 'pending' | 'approved' | 'rejected'
   soundMachineSound?: string | null
   soundMachineVolume?: number | null
@@ -39,6 +40,12 @@ export const updateDevice = createServerFn({ method: 'POST' })
   .inputValidator((data: UpdateDeviceData) => data)
   .handler(async ({ data }) => {
     const { id, ...updates } = data
+
+    // Stored trimmed, and a blank name as no name at all, so the UI shows its
+    // placeholder rather than an empty label.
+    if (updates.name !== undefined) {
+      updates.name = updates.name?.trim() || null
+    }
 
     // Get current device state to check for status change
     const [current] = await db.select().from(devices).where(eq(devices.id, id)).limit(1)
