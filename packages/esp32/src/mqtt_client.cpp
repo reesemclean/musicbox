@@ -14,11 +14,12 @@
 // mqttClient (publish, subscribe, loop) must happen on the task that runs
 // mqtt_loop() — i.e. the Arduino loop task on Core 1.
 //
-// Anything originating on the audio task (Core 0) must hand off via a queue
-// drained in mqtt_loop(), the same way wifi_manager defers its event
-// callbacks. mqtt_publish_playback_status() is the one such path today; if
-// you add another publisher reachable from Core 0, route it through a queue
-// too rather than calling mqttClient directly.
+// Anything originating on another task must hand off via a queue drained on
+// the loop task, the same way wifi_manager defers its event callbacks. Two
+// paths do today: mqtt_publish_playback_status() from the audio task, and
+// button skips from the input task (queued in main.cpp). If you add another
+// publisher reachable from elsewhere, route it through a queue too rather
+// than calling mqttClient directly.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // WiFi client for MQTT
@@ -98,6 +99,15 @@ void mqtt_init() {
     // silently — no error, no partial send — so a too-small buffer looks like
     // a device that has gone quiet.
     mqttClient.setBufferSize(4096);
+
+    // A reconnect blocks the loop task for as long as these allow. The
+    // defaults — 3s to open the connection, then 15s for the broker to answer
+    // — suit a remote broker; this one is on the local network, where an
+    // answer takes milliseconds or isn't coming. The connection timeout also
+    // becomes the socket's send and receive timeout, so it stays loose enough
+    // for a publish while a stream is busy on the same WiFi.
+    wifiClient.setConnectionTimeout(2000);
+    mqttClient.setSocketTimeout(5);
 
     statusQueue = xQueueCreate(STATUS_QUEUE_SIZE, sizeof(PlaybackStatusMsg));
     if (statusQueue == NULL) {

@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { devices, cards, media, playlistMedia } from '../db/schema.js'
 import { getLatestEpisode } from './podcastService.js'
-import { resolveSkip } from '../lib/skip.js'
+import { followReportedTrack, resolveSkipFrom, type PlaylistPosition } from '../lib/skip.js'
 
 // MQTT Topics
 export const TOPICS = {
@@ -153,7 +153,9 @@ export interface PlaybackStatus {
  *
  * `playback_status` reports a mediaId, which identifies a track but not the
  * playlist it came from — the same track can appear in several. Fulfilling a
- * skip needs that context, so it is recorded when the play is issued.
+ * skip needs that context, so it is recorded when the play is issued, along
+ * with the position within it (see PlaylistPosition for why the position
+ * isn't simply read back from the device's reports).
  *
  * In memory only: a server restart loses it, and skip then has nothing to
  * resolve against until the next card scan. That's an accepted limitation —
@@ -161,7 +163,8 @@ export interface PlaybackStatus {
  * on its own the moment someone scans a card.
  */
 export interface PlaybackSession {
-  playlistId: number | null
+  /** Null while a single item plays — there is nothing to skip within. */
+  playlist: { id: number; position: PlaylistPosition } | null
   startedAt: Date
 }
 
@@ -200,6 +203,9 @@ class MqttService extends EventEmitter {
   // The server holds them instead and serves them on request.
   private deviceLogs: Map<string, DeviceLogLine[]> = new Map()
   private logSeq = 0
+  // The tail of each device's message handling, keyed by topic MAC. See
+  // inDeviceOrder.
+  private deviceChains: Map<string, Promise<void>> = new Map()
 
   constructor() {
     super()
@@ -315,7 +321,7 @@ class MqttService extends EventEmitter {
       const eventMatch = topic.match(/^musicbox\/devices\/([^/]+)\/events$/)
       if (eventMatch) {
         const mac = eventMatch[1]
-        await this.handleDeviceEvent(mac, message as DeviceEvent)
+        this.inDeviceOrder(mac, () => this.handleDeviceEvent(mac, message as DeviceEvent))
         return
       }
 
@@ -323,12 +329,32 @@ class MqttService extends EventEmitter {
       const statusMatch = topic.match(/^musicbox\/devices\/([^/]+)\/status$/)
       if (statusMatch) {
         const mac = statusMatch[1]
-        await this.handleDeviceStatus(mac, message)
+        this.inDeviceOrder(mac, () => this.handleDeviceStatus(mac, message))
         return
       }
     } catch (err) {
       console.error('[MQTT] Failed to handle message:', err)
     }
+  }
+
+  /**
+   * Handle one device's messages one at a time, in the order they arrived.
+   *
+   * Handlers await the database partway through, so left to run concurrently
+   * two quick skips would both resolve against the position as it stood
+   * before either — and land on the same track.
+   */
+  private inDeviceOrder(macNoColons: string, handle: () => Promise<void>): void {
+    const run = (this.deviceChains.get(macNoColons) ?? Promise.resolve())
+      .then(handle)
+      // Caught at every step: a rejection left in the chain would skip
+      // everything this device sends afterwards.
+      .catch((err) => console.error(`[MQTT] Failed to handle message from ${macNoColons}:`, err))
+
+    this.deviceChains.set(macNoColons, run)
+    void run.finally(() => {
+      if (this.deviceChains.get(macNoColons) === run) this.deviceChains.delete(macNoColons)
+    })
   }
 
   private async handleRegistration(reg: DeviceRegistration): Promise<void> {
@@ -417,6 +443,12 @@ class MqttService extends EventEmitter {
       })
 
       this.emit('playback:status', { mac, status: event.status, mediaId: event.mediaId, mediaTitle })
+
+      // Only "playing" says which track is now under way — a "stopped" names
+      // the track that just ended. The device sends -1 when there is none.
+      if (event.status === 'playing' && event.mediaId !== undefined && event.mediaId > 0) {
+        await this.followPlaylistPosition(mac, event.mediaId)
+      }
     } else if (event.type === 'skip') {
       await this.handleSkip(macNoColons, mac, event)
     } else if (event.type === 'device_logs') {
@@ -497,6 +529,7 @@ class MqttService extends EventEmitter {
           macForTopic,
           this.macWithColons(macNoColons),
           card.playlistId,
+          0,
           url,
           firstTrack.mediaId
         )
@@ -538,18 +571,17 @@ class MqttService extends EventEmitter {
    * Answer a physical next/previous press.
    *
    * The device holds no queue, so it can't advance on its own: it reports the
-   * press and we decide. Which playlist is playing comes from the session
-   * recorded when the play was issued; which track, from the last status the
-   * device reported (kept current mid-stream by ICY metadata).
+   * press and we decide, from the playlist and position recorded in the
+   * session when the play was issued.
    */
   private async handleSkip(
     macNoColons: string,
     macWithColons: string,
     event: SkipEvent
   ): Promise<void> {
-    const session = this.playbackSessions.get(macWithColons)
+    const playlist = this.playbackSessions.get(macWithColons)?.playlist
 
-    if (!session?.playlistId) {
+    if (!playlist) {
       // Either a single item is playing — where there is nothing to skip to —
       // or the server restarted and lost the session. Both recover on the next
       // card scan, so do nothing rather than guess.
@@ -557,38 +589,61 @@ class MqttService extends EventEmitter {
       return
     }
 
-    const tracks = await db
-      .select({ mediaId: playlistMedia.mediaId })
-      .from(playlistMedia)
-      .where(eq(playlistMedia.playlistId, session.playlistId))
-      .orderBy(playlistMedia.position)
+    const trackIds = await this.playlistTrackIds(playlist.id)
 
-    const currentMediaId = this.playbackStatusStore.get(macWithColons)?.mediaId
-    const currentIndex = tracks.findIndex((t) => t.mediaId === currentMediaId)
-
-    const outcome = resolveSkip({
-      direction: event.direction,
-      currentIndex,
-      trackCount: tracks.length,
-      elapsedSec: event.elapsed ?? 0,
-    })
+    const outcome = resolveSkipFrom(
+      playlist.position,
+      trackIds,
+      event.direction,
+      event.elapsed ?? 0,
+      Date.now()
+    )
 
     if (outcome.action === 'none') return
 
     if (outcome.action === 'stop') {
-      console.log(`[MQTT] Skip ran past the end of playlist ${session.playlistId}`)
+      console.log(`[MQTT] Skip ran past the end of playlist ${playlist.id}`)
       this.stop(macNoColons)
       return
     }
 
-    const target = tracks[outcome.index]
-    const url = `${this.getStreamBaseUrl()}/api/playlists/stream/${session.playlistId}?from=${outcome.index}`
+    const url = `${this.getStreamBaseUrl()}/api/playlists/stream/${playlist.id}?from=${outcome.index}`
 
     console.log(
-      `[MQTT] Skip ${event.direction} on playlist ${session.playlistId}: ` +
-        `index ${currentIndex} -> ${outcome.index}`
+      `[MQTT] Skip ${event.direction} on playlist ${playlist.id}: ` +
+        `index ${playlist.position.index} -> ${outcome.index}`
     )
-    this.playPlaylist(macNoColons, macWithColons, session.playlistId, url, target.mediaId)
+    this.playPlaylist(
+      macNoColons,
+      macWithColons,
+      playlist.id,
+      outcome.index,
+      url,
+      trackIds[outcome.index]
+    )
+  }
+
+  /**
+   * Move a playlist session's position along to a track the device reported —
+   * chiefly the stream's own announcement as each track begins.
+   */
+  private async followPlaylistPosition(macWithColons: string, mediaId: number): Promise<void> {
+    const playlist = this.playbackSessions.get(macWithColons)?.playlist
+    if (!playlist) return
+
+    const trackIds = await this.playlistTrackIds(playlist.id)
+    playlist.position = followReportedTrack(playlist.position, trackIds, mediaId, Date.now())
+  }
+
+  /** A playlist's tracks, in the order its stream plays them. */
+  private async playlistTrackIds(playlistId: number): Promise<number[]> {
+    const rows = await db
+      .select({ mediaId: playlistMedia.mediaId })
+      .from(playlistMedia)
+      .where(eq(playlistMedia.playlistId, playlistId))
+      .orderBy(playlistMedia.position)
+
+    return rows.map((r) => r.mediaId)
   }
 
   private async handleDeviceStatus(macNoColons: string, status: { online: boolean }): Promise<void> {
@@ -737,16 +792,27 @@ class MqttService extends EventEmitter {
    * Play a playlist stream and remember that we did.
    *
    * The session is what lets a later skip know which playlist to move within —
-   * the device only ever reports a mediaId, which doesn't identify one.
+   * the device only ever reports a mediaId, which doesn't identify one — and
+   * where in it to move from.
+   *
+   * @param index Where in the playlist the stream starts, and `firstMediaId`
+   *   the track found there.
    */
   playPlaylist(
     macNoColons: string,
     macWithColons: string,
     playlistId: number,
+    index: number,
     url: string,
     firstMediaId: number
   ): void {
-    this.playbackSessions.set(macWithColons, { playlistId, startedAt: new Date() })
+    this.playbackSessions.set(macWithColons, {
+      playlist: {
+        id: playlistId,
+        position: { index, mediaId: firstMediaId, confirmed: false, issuedAt: Date.now() },
+      },
+      startedAt: new Date(),
+    })
     this.play(macNoColons, url, firstMediaId)
   }
 
@@ -757,7 +823,7 @@ class MqttService extends EventEmitter {
     url: string,
     mediaId: number
   ): void {
-    this.playbackSessions.set(macWithColons, { playlistId: null, startedAt: new Date() })
+    this.playbackSessions.set(macWithColons, { playlist: null, startedAt: new Date() })
     this.play(macNoColons, url, mediaId)
   }
 

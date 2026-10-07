@@ -32,11 +32,10 @@ typedef enum {
     CMD_PLAY_STREAM,
     CMD_PLAY_SYSTEM_SOUND,
     CMD_PLAY_SOUNDMACHINE,
-    CMD_STOP_SOUNDMACHINE,
     CMD_PAUSE,
     CMD_RESUME,
+    CMD_TOGGLE,
     CMD_STOP,
-    CMD_SET_VOLUME,
 } CommandType;
 
 typedef struct {
@@ -59,9 +58,6 @@ static volatile AudioState state = AUDIO_IDLE;
 static volatile AudioMode mode = MODE_NORMAL;
 static volatile int current_media_id = -1;
 
-static int current_volume = 10;
-static int max_volume = VOLUME_MAX;
-
 static unsigned long source_started_ms = 0;
 static unsigned long track_started_ms = 0;
 
@@ -81,8 +77,42 @@ static volatile bool deferred_track_ended = false;
 static PlaybackStatusCallback on_playback_status = nullptr;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Volume — a target, not a queued command.
+//
+// Any task may move the target; the audio task applies it to the decoder when
+// it changes. Queuing each change instead meant a button computed its next step
+// from a level the audio task had not caught up to — so presses made while it
+// was busy opening a stream all landed on the same level — and a held ramp
+// could fill the command queue and push out a play.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static portMUX_TYPE volume_mux = portMUX_INITIALIZER_UNLOCKED;
+static int target_volume = 10;       // guarded by volume_mux
+static int max_volume = VOLUME_MAX;  // guarded by volume_mux
+static int applied_volume = -1;      // audio task only; -1 forces the first apply
+
+// Caller holds volume_mux.
+static int clamp_volume_locked(int level) {
+    if (level < 0) level = 0;
+    if (level > max_volume) level = max_volume;
+    return level;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Internals (audio task only)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Bring the decoder in line with the target volume. */
+static void apply_volume() {
+    portENTER_CRITICAL(&volume_mux);
+    int level = target_volume;
+    portEXIT_CRITICAL(&volume_mux);
+
+    if (level == applied_volume) return;
+    audio.setVolume(level);
+    applied_volume = level;
+    LOG_D(MOD_AUDIO, "Volume %d", level);
+}
 
 static void emit_status(const char* status) {
     if (on_playback_status) on_playback_status(status, current_media_id);
@@ -93,6 +123,24 @@ static void go_idle(const char* status) {
     mode = MODE_NORMAL;
     source_started_ms = 0;
     if (status) emit_status(status);
+    current_media_id = -1;
+}
+
+// Library content is playing or paused — the thing the server is showing.
+static bool library_content_active() {
+    return mode == MODE_NORMAL && state != AUDIO_IDLE && current_media_id >= 0;
+}
+
+/**
+ * A local source — a cue, or the sound machine — has just replaced whatever
+ * was playing.
+ *
+ * Neither reports a status of its own, so if library content was cut off it
+ * has to be reported stopped here. Otherwise the server goes on showing the
+ * last track as playing, and with nothing else to correct it, for good.
+ */
+static void library_content_replaced() {
+    if (library_content_active()) emit_status("stopped");
     current_media_id = -1;
 }
 
@@ -162,8 +210,11 @@ static void handle_play_system_sound(SystemSound sound) {
         soundmachine_path[0] = '\0';
     }
 
+    // On failure the stream (if any) is already gone — opening the file
+    // stopped it — but the liveness check will notice and report it finished.
     if (!start_local(path)) return;
 
+    library_content_replaced();
     mode = MODE_SYSTEM_SOUND;
     state = AUDIO_PLAYING;
 }
@@ -178,17 +229,20 @@ static void handle_play_soundmachine(const char* path, int volume) {
     soundmachine_path[sizeof(soundmachine_path) - 1] = '\0';
 
     if (volume >= 0) {
-        current_volume = volume > max_volume ? max_volume : volume;
-        audio.setVolume(current_volume);
+        audio_set_volume(volume);
+        // Now rather than on the next pass, so the loop doesn't open at the
+        // old level.
+        apply_volume();
     }
 
     if (!start_local(soundmachine_path)) {
         soundmachine_path[0] = '\0';
-        go_idle(NULL);
+        // Opening the file stopped anything that was playing.
+        go_idle(library_content_active() ? "stopped" : NULL);
         return;
     }
 
-    current_media_id = -1;
+    library_content_replaced();
     mode = MODE_SOUNDMACHINE;
     state = AUDIO_PLAYING;
     LOG_I(MOD_AUDIO, "Sound machine started");
@@ -211,13 +265,49 @@ static void handle_stop() {
     go_idle(wasPlaying ? "stopped" : NULL);
 }
 
-static void handle_set_volume(int level) {
-    if (level < 0) level = 0;
-    if (level > VOLUME_MAX) level = VOLUME_MAX;
-    if (level > max_volume) level = max_volume;
-    current_volume = level;
-    audio.setVolume(level);
-    LOG_D(MOD_AUDIO, "Volume %d", level);
+static void handle_pause() {
+    // A cue isn't pausable (§3.3). Pausing one would also strand a play
+    // waiting behind it: track-end detection only runs while PLAYING, so a
+    // paused cue never finishes and never hands over.
+    if (mode == MODE_SYSTEM_SOUND || state != AUDIO_PLAYING) return;
+    audio.pauseResume();
+    state = AUDIO_PAUSED;
+    emit_status("paused");
+}
+
+static void handle_resume() {
+    if (state != AUDIO_PAUSED) return;
+    audio.pauseResume();
+    state = AUDIO_PLAYING;
+    emit_status("playing");
+}
+
+/**
+ * The physical play button.
+ *
+ * Decided here rather than by the caller because the answer depends on state
+ * this task owns. Deciding on the loop task meant two quick presses could
+ * both see "playing" and both ask for a pause.
+ */
+static void handle_toggle() {
+    switch (mode) {
+        case MODE_SOUNDMACHINE:
+            // The button is the loop's off switch. There is no physical pause
+            // for it — only stop (§3.8).
+            handle_stop_soundmachine();
+            return;
+
+        case MODE_SYSTEM_SOUND:
+            return;  // cues aren't pausable (§3.3)
+
+        case MODE_NORMAL:
+            if (state == AUDIO_PLAYING) {
+                handle_pause();
+            } else if (state == AUDIO_PAUSED) {
+                handle_resume();
+            }
+            return;
+    }
 }
 
 /**
@@ -281,23 +371,10 @@ static void process_command(const AudioCommand& cmd) {
         case CMD_PLAY_STREAM:        handle_play_stream(cmd.url, cmd.mediaId); break;
         case CMD_PLAY_SYSTEM_SOUND:  handle_play_system_sound(cmd.sound); break;
         case CMD_PLAY_SOUNDMACHINE:  handle_play_soundmachine(cmd.url, cmd.volume); break;
-        case CMD_STOP_SOUNDMACHINE:  handle_stop_soundmachine(); break;
-        case CMD_PAUSE:
-            if (state == AUDIO_PLAYING) {
-                audio.pauseResume();
-                state = AUDIO_PAUSED;
-                emit_status("paused");
-            }
-            break;
-        case CMD_RESUME:
-            if (state == AUDIO_PAUSED) {
-                audio.pauseResume();
-                state = AUDIO_PLAYING;
-                emit_status("playing");
-            }
-            break;
-        case CMD_STOP:       handle_stop(); break;
-        case CMD_SET_VOLUME: handle_set_volume(cmd.volume); break;
+        case CMD_PAUSE:              handle_pause(); break;
+        case CMD_RESUME:             handle_resume(); break;
+        case CMD_TOGGLE:             handle_toggle(); break;
+        case CMD_STOP:               handle_stop(); break;
     }
 }
 
@@ -314,6 +391,8 @@ static void audioTask(void* parameter) {
         if (xQueueReceive(commandQueue, &cmd, 0) == pdTRUE) {
             process_command(cmd);
         }
+
+        apply_volume();
 
         audio.loop();
 
@@ -373,7 +452,7 @@ bool audio_init() {
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     audio.forceMono(true);  // single speaker
     audio.setVolumeSteps(VOLUME_MAX);
-    audio.setVolume(current_volume);
+    // The initial volume is applied by the task's first pass.
     audio.setConnectionTimeout(2000, 2700);
 
     xTaskCreatePinnedToCore(
@@ -407,12 +486,6 @@ void audio_play_soundmachine(const char* path, int volume) {
     send_command(cmd);
 }
 
-void audio_stop_soundmachine() {
-    AudioCommand cmd = {};
-    cmd.type = CMD_STOP_SOUNDMACHINE;
-    send_command(cmd);
-}
-
 void audio_pause() {
     AudioCommand cmd = {};
     cmd.type = CMD_PAUSE;
@@ -431,30 +504,42 @@ void audio_stop() {
     send_command(cmd);
 }
 
-void audio_set_volume(int level) {
+void audio_toggle() {
     AudioCommand cmd = {};
-    cmd.type = CMD_SET_VOLUME;
-    cmd.volume = level;
+    cmd.type = CMD_TOGGLE;
     send_command(cmd);
 }
 
-int audio_get_volume() {
-    return current_volume;
+void audio_set_volume(int level) {
+    portENTER_CRITICAL(&volume_mux);
+    target_volume = clamp_volume_locked(level);
+    portEXIT_CRITICAL(&volume_mux);
+}
+
+/**
+ * Move the volume by `delta` from wherever it was last set.
+ *
+ * The read and the write happen under one lock, so presses arriving faster
+ * than the audio task applies them each still count.
+ */
+void audio_step_volume(int delta) {
+    portENTER_CRITICAL(&volume_mux);
+    target_volume = clamp_volume_locked(target_volume + delta);
+    portEXIT_CRITICAL(&volume_mux);
 }
 
 void audio_set_max_volume(int level) {
     if (level < 0) level = 0;
     if (level > VOLUME_MAX) level = VOLUME_MAX;
-    max_volume = level;
-    if (current_volume > max_volume) {
-        current_volume = max_volume;
-        audio.setVolume(current_volume);
-    }
-    LOG_I(MOD_AUDIO, "Max volume %d", max_volume);
-}
 
-int audio_get_max_volume() {
-    return max_volume;
+    // Lowering the cap below the current level brings the level down with it
+    // (§3.7). Only the target changes here — the decoder is the audio task's.
+    portENTER_CRITICAL(&volume_mux);
+    max_volume = level;
+    target_volume = clamp_volume_locked(target_volume);
+    portEXIT_CRITICAL(&volume_mux);
+
+    LOG_I(MOD_AUDIO, "Max volume %d", level);
 }
 
 AudioState audio_get_state() {

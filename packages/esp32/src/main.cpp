@@ -28,7 +28,32 @@
 // Max time to wait for the audio task to acknowledge a stop before an OTA.
 #define OTA_AUDIO_STOP_TIMEOUT_MS 3000
 
+// Once the input task starts, only it touches these.
 Button2 btnPlay, btnVolUp, btnVolDn, btnNext, btnPrev;
+
+// How often the input task samples the buttons. Well inside the debounce time,
+// so a press is acted on within a few ms of being confirmed.
+#define BUTTON_POLL_MS 5
+
+// A firmware update is under way. Set before audio is stopped for it, so a
+// long-press in that window can't start the sound machine back up.
+static volatile bool update_underway = false;
+
+// Skips pressed on the input task, waiting for the loop task to publish them —
+// it is the only task allowed to call into MQTT.
+typedef struct {
+    const char* direction;  // a string literal, so safe to pass between tasks
+    uint32_t elapsed_sec;   // how far into the track, at the press
+    unsigned long pressed_at;
+} SkipRequest;
+
+#define SKIP_QUEUE_SIZE 4
+
+// A skip still waiting this long after the press is dropped rather than sent:
+// the loop task was stalled reconnecting, and by now the user has given up or
+// pressed again. Normally one is published within a few ms.
+#define SKIP_STALE_MS 1000
+static QueueHandle_t skipQueue = NULL;
 
 // Device state
 static bool mqtt_broker_found = false;
@@ -39,6 +64,8 @@ static bool previously_approved = false;
 // A card was read and we are waiting for the server to say what it means.
 static bool awaiting_card_resolve = false;
 static unsigned long card_read_at = 0;
+
+// Button state below here belongs to the input task.
 
 // Combo: hold vol up + vol down — restart on release after 2s, factory reset at 5s
 static unsigned long both_vol_pressed_start = 0;
@@ -52,6 +79,13 @@ static unsigned long vol_hold_start = 0;
 static unsigned long last_vol_repeat = 0;
 #define VOL_REPEAT_AFTER_MS 400  // treat as a hold, not a click
 #define VOL_REPEAT_EVERY_MS 120  // ~8 steps a second once ramping
+
+// Hold play this long to start the sound machine.
+#define PLAY_HOLD_MS 1000
+
+// Set when a press on play turned the sound machine off, so the long-press the
+// same hold goes on to reach doesn't turn it straight back on.
+static bool play_press_stopped_soundmachine = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Restart reason logging
@@ -132,6 +166,13 @@ void onVolume(int level) {
 void onOta(const char* url, const char* version, const char* sha256) {
     LOG_I(MOD_OTA, "Update available: v%s", version);
 
+    // Nothing may start audio again while it drains below. Buttons stay live
+    // on the input task while this blocks the loop — only the long-press
+    // could start audio, and it checks this — and card reads cue from the
+    // scan task, so they are switched off first rather than after the wait.
+    update_underway = true;
+    nfc_set_enabled(false);
+
     if (audio_get_state() != AUDIO_IDLE) {
         LOG_I(MOD_OTA, "Stopping audio for update");
         audio_stop();
@@ -150,8 +191,13 @@ void onOta(const char* url, const char* version, const char* sha256) {
         }
     }
 
-    nfc_set_enabled(false);
-    ota_start_update(url, version, sha256);
+    // Success restarts into the new firmware, so returning at all means the
+    // update failed and the old firmware is still running. Give back what the
+    // update took away — card reading would otherwise stay off until reboot.
+    if (!ota_start_update(url, version, sha256)) {
+        update_underway = false;
+        if (config_get()->approved) nfc_set_enabled(true);
+    }
 }
 
 void onApproved() {
@@ -190,27 +236,30 @@ void onPlaybackStatus(const char* status, int mediaId) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Buttons
+// Buttons — everything here runs on the input task.
+//
+// Every button acts on the press, not the click. Button2 reports a click only
+// once its double-click window has passed, which put 300ms between a press
+// and its effect — and it counts taps closer together than that as a double
+// or triple click, which nothing here handles, so rapid taps did nothing.
 // ─────────────────────────────────────────────────────────────────────────────
 
-void onPlayClick(Button2 &btn) {
-    // While the sound machine runs, the play button is its off switch. There
-    // is no physical pause for the loop — only stop.
-    if (audio_get_mode() == MODE_SOUNDMACHINE) {
-        LOG_D(MOD_BTN, "Stopping sound machine");
-        audio_stop_soundmachine();
-        return;
-    }
+void onPlayPressed(Button2 &btn) {
+    // Read before the toggle is queued: once it runs, the sound machine is no
+    // longer the mode, and this same hold reaching the long-press would start
+    // it again.
+    play_press_stopped_soundmachine = audio_get_mode() == MODE_SOUNDMACHINE;
 
-    if (audio_get_state() == AUDIO_PLAYING) {
-        audio_pause();
-    } else if (audio_get_state() == AUDIO_PAUSED) {
-        audio_resume();
-    }
+    // Stop the sound machine, pause, or resume — the audio task decides,
+    // since it owns the state the choice depends on.
+    audio_toggle();
 }
 
 void onPlayLongPress(Button2 &btn) {
+    if (play_press_stopped_soundmachine) return;
     if (audio_get_mode() == MODE_SOUNDMACHINE) return;
+    // Audio was stopped for the update and has to stay that way (§7).
+    if (update_underway) return;
 
     const char* path = flash_soundmachine_path();
     if (!path) {
@@ -224,41 +273,119 @@ void onPlayLongPress(Button2 &btn) {
     audio_play_soundmachine(path, flash_soundmachine_volume());
 }
 
-static void adjust_volume(int delta) {
-    int vol = audio_get_volume() + delta;
-    if (vol < 0) vol = 0;
-    if (vol > audio_get_max_volume()) vol = audio_get_max_volume();
-    if (vol != audio_get_volume()) audio_set_volume(vol);
-}
-
-void onVolUpClick(Button2 &btn) { adjust_volume(+1); }
-void onVolDnClick(Button2 &btn) { adjust_volume(-1); }
+// The step lands at once; holding on past VOL_REPEAT_AFTER_MS ramps.
+void onVolUpPressed(Button2 &btn) { audio_step_volume(+1); }
+void onVolDnPressed(Button2 &btn) { audio_step_volume(-1); }
 
 /**
  * Skip is a request, not a local operation.
  *
  * The device holds no queue, so it reports the press and its position within
- * the current track; the server decides what to play and sends it back.
+ * the current track; the server decides what to play and sends it back. The
+ * report itself goes out from the loop task — see publish_pending_skips().
  */
-static void publish_skip(const char* direction) {
+static void request_skip(const char* direction) {
+    if (skipQueue == NULL) return;
     if (audio_get_mode() != MODE_NORMAL || audio_get_state() == AUDIO_IDLE) {
         return;  // nothing to skip within
     }
-    if (!mqtt_is_connected()) {
-        LOG_W(MOD_BTN, "Cannot skip while offline");
+
+    // Elapsed is taken now, at the press, not whenever the loop task gets to
+    // publishing it.
+    SkipRequest skip = { direction, audio_get_elapsed_sec(), millis() };
+    if (xQueueSend(skipQueue, &skip, 0) != pdTRUE) {
+        LOG_W(MOD_BTN, "Skip queue full, dropping press");
+    }
+}
+
+void onNextPressed(Button2 &btn) {
+    LOG_D(MOD_BTN, "Next");
+    request_skip("next");
+}
+
+void onPrevPressed(Button2 &btn) {
+    LOG_D(MOD_BTN, "Previous");
+    request_skip("previous");
+}
+
+/** Sample every button. */
+static void poll_buttons() {
+    btnPlay.loop();
+    btnVolUp.loop();
+    btnVolDn.loop();
+    btnNext.loop();
+    btnPrev.loop();
+}
+
+/**
+ * Vol up + vol down held together.
+ *
+ * Release after RESTART_HOLD_MS restarts; holding to FACTORY_RESET_HOLD_MS
+ * factory-resets (clears NVS, back to the captive portal) without waiting for
+ * the release.
+ */
+static void check_volume_combo() {
+    if (btnVolUp.isPressed() && btnVolDn.isPressed()) {
+        if (both_vol_pressed_start == 0) {
+            both_vol_pressed_start = millis();
+        } else if (millis() - both_vol_pressed_start >= FACTORY_RESET_HOLD_MS) {
+            LOG_I(MOD_SYS, "Factory reset (vol up+down held 5s)");
+            config_factory_reset();  // clears NVS and restarts
+        }
         return;
     }
-    mqtt_publish_skip(direction, audio_get_elapsed_sec());
+
+    if (both_vol_pressed_start > 0) {
+        unsigned long held = millis() - both_vol_pressed_start;
+        if (held >= RESTART_HOLD_MS) {
+            LOG_I(MOD_SYS, "Manual restart (vol up+down released after %lums)", held);
+            delay(100);
+            ESP.restart();
+        }
+    }
+    both_vol_pressed_start = 0;
 }
 
-void onNextClick(Button2 &btn) {
-    LOG_D(MOD_BTN, "Next");
-    publish_skip("next");
+/**
+ * Step the volume while exactly one volume button is held. Both together is
+ * the restart/factory-reset combo, so that is left alone.
+ */
+static void ramp_volume() {
+    bool volUp = btnVolUp.isPressed();
+    bool volDn = btnVolDn.isPressed();
+
+    if (volUp == volDn) {
+        vol_hold_start = 0;
+        return;
+    }
+
+    unsigned long now = millis();
+    if (vol_hold_start == 0) {
+        vol_hold_start = now;
+        last_vol_repeat = now;
+    } else if (now - vol_hold_start > VOL_REPEAT_AFTER_MS &&
+               now - last_vol_repeat >= VOL_REPEAT_EVERY_MS) {
+        last_vol_repeat = now;
+        audio_step_volume(volUp ? +1 : -1);
+    }
 }
 
-void onPrevClick(Button2 &btn) {
-    LOG_D(MOD_BTN, "Previous");
-    publish_skip("previous");
+/**
+ * Buttons, on a task of their own.
+ *
+ * The loop task can stall for seconds — an MQTT reconnect to a server that
+ * isn't answering blocks it — and buttons sampled there froze with it. Nothing
+ * a press does needs the loop task: audio commands can be queued from any
+ * task, and a skip, the one press that needs the network, is handed back to
+ * the loop to publish.
+ */
+static void inputTask(void* parameter) {
+    for (;;) {
+        poll_buttons();
+        check_volume_combo();
+        ramp_volume();
+        vTaskDelay(pdMS_TO_TICKS(BUTTON_POLL_MS));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -266,16 +393,21 @@ void onPrevClick(Button2 &btn) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A uid has been captured. Nothing is known about it yet.
+ * A uid has been captured. Nothing is known about it yet. Scan task.
  *
- * The cue fires first and immediately: its job is to tell the user the card
- * was read and can be taken away, which must not wait on the network. Only
- * then do we ask the server what the card means.
+ * The cue's job is to tell the user the card was read and can be taken away,
+ * so it goes out from here, the instant of the read. Handing it to the loop
+ * task first would make it wait behind whatever the loop is blocked on.
  */
-void onCardRead(const char* uid) {
-    LOG_I(MOD_CARD, "Card read: %s", uid);
-
+static void onCardRead(const char* uid) {
     audio_play_system_sound(SOUND_READ_CUE);
+}
+
+/**
+ * The same read, now on the loop task: ask the server what the card means.
+ */
+void onCardScanned(const char* uid) {
+    LOG_I(MOD_CARD, "Card read: %s", uid);
 
     if (!mqtt_is_connected()) {
         // No point waiting for an answer that cannot arrive.
@@ -289,18 +421,26 @@ void onCardRead(const char* uid) {
     mqtt_publish_card_scanned(uid);
 }
 
-/**
- * Sample every button.
- *
- * Button feel is governed by how often this runs rather than by anything in
- * the handlers, so nothing on this task may block for long between passes.
- */
-static void poll_buttons() {
-    btnPlay.loop();
-    btnVolUp.loop();
-    btnVolDn.loop();
-    btnNext.loop();
-    btnPrev.loop();
+// ─────────────────────────────────────────────────────────────────────────────
+// Skips — pressed on the input task, published here on the loop task.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void publish_pending_skips() {
+    if (skipQueue == NULL) return;
+
+    SkipRequest skip;
+    while (xQueueReceive(skipQueue, &skip, 0) == pdTRUE) {
+        if (!mqtt_is_connected()) {
+            LOG_W(MOD_BTN, "Cannot skip while offline");
+            continue;
+        }
+        if (millis() - skip.pressed_at > SKIP_STALE_MS) {
+            LOG_W(MOD_BTN, "Dropping skip pressed %lums ago",
+                  millis() - skip.pressed_at);
+            continue;
+        }
+        mqtt_publish_skip(skip.direction, skip.elapsed_sec);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -346,24 +486,44 @@ void setup() {
     btnNext.begin(BTN_NEXT, INPUT_PULLUP, true);
     btnPrev.begin(BTN_PREV, INPUT_PULLUP, true);
 
-    // Default debounce is 50ms, which on top of the polling interval is most
-    // of what makes a press feel late.
-    btnPlay.setDebounceTime(20);
-    btnVolUp.setDebounceTime(20);
-    btnVolDn.setDebounceTime(20);
-    btnNext.setDebounceTime(20);
-    btnPrev.setDebounceTime(20);
+    Button2* buttons[] = { &btnPlay, &btnVolUp, &btnVolDn, &btnNext, &btnPrev };
+    for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++) {
+        // A press fires once it has been held this long, so this is now most
+        // of the delay between pressing and hearing. Still well past contact
+        // bounce; Button2's default is 50.
+        buttons[i]->setDebounceTime(20);
+        // No multi-click gestures are used, so report each press on its own.
+        // This also matters for the long-press: Button2 only looks for one on
+        // the first click of a sequence, so a tap followed quickly by a hold
+        // would otherwise never start the sound machine.
+        buttons[i]->setDoubleClickTime(0);
+    }
 
-    btnPlay.setClickHandler(onPlayClick);
-    btnPlay.setLongClickHandler(onPlayLongPress);
-    btnPlay.setLongClickTime(1000);
-    btnVolUp.setClickHandler(onVolUpClick);
-    btnVolDn.setClickHandler(onVolDnClick);
-    btnNext.setClickHandler(onNextClick);
-    btnPrev.setClickHandler(onPrevClick);
+    btnPlay.setPressedHandler(onPlayPressed);
+    // "Detected" fires when the hold reaches the threshold, while the button
+    // is still down. The plain long-click handler waits for the release.
+    btnPlay.setLongClickDetectedHandler(onPlayLongPress);
+    btnPlay.setLongClickTime(PLAY_HOLD_MS);
+    btnVolUp.setPressedHandler(onVolUpPressed);
+    btnVolDn.setPressedHandler(onVolDnPressed);
+    btnNext.setPressedHandler(onNextPressed);
+    btnPrev.setPressedHandler(onPrevPressed);
+
+    skipQueue = xQueueCreate(SKIP_QUEUE_SIZE, sizeof(SkipRequest));
+    if (skipQueue == NULL) {
+        LOG_E(MOD_BTN, "Failed to create skip queue");
+    }
+
+    // Started here, ahead of the WiFi wait below, so the buttons work from
+    // the first seconds after power-on. Core 1 alongside the loop and scan
+    // tasks, away from audio and WiFi on core 0, and one priority above both
+    // so a press is handled even while either is busy. It sleeps between
+    // samples, so it costs them next to nothing.
+    xTaskCreatePinnedToCore(inputTask, "InputTask", 4096, NULL, 2, NULL, 1);
 
     nfc_init();
-    nfc_on_card_scanned(onCardRead);
+    nfc_on_card_read(onCardRead);
+    nfc_on_card_scanned(onCardScanned);
 
     // Reads still register offline — the cue fires and the sound machine
     // works — even though resolving a card needs the server.
@@ -399,50 +559,8 @@ void loop() {
     wifi_loop();
     mqtt_loop();
 
-    poll_buttons();
-
-    // Combo: vol up + vol down held
-    //   Release after 2s → restart
-    //   Hold 5s → factory reset (clears NVS, back to captive portal)
-    if (btnVolUp.isPressed() && btnVolDn.isPressed()) {
-        if (both_vol_pressed_start == 0) {
-            both_vol_pressed_start = millis();
-        } else if (millis() - both_vol_pressed_start >= FACTORY_RESET_HOLD_MS) {
-            LOG_I(MOD_SYS, "Factory reset (vol up+down held 5s)");
-            config_factory_reset();  // clears NVS and restarts
-        }
-    } else {
-        if (both_vol_pressed_start > 0) {
-            unsigned long held = millis() - both_vol_pressed_start;
-            if (held >= RESTART_HOLD_MS) {
-                LOG_I(MOD_SYS, "Manual restart (vol up+down released after %lums)", held);
-                delay(100);
-                ESP.restart();
-            }
-        }
-        both_vol_pressed_start = 0;
-    }
-
-    // Ramp while exactly one volume button is held. Both together is the
-    // restart/factory-reset combo, so leave that alone.
-    {
-        bool volUp = btnVolUp.isPressed();
-        bool volDn = btnVolDn.isPressed();
-
-        if (volUp != volDn) {
-            unsigned long now = millis();
-            if (vol_hold_start == 0) {
-                vol_hold_start = now;
-                last_vol_repeat = now;
-            } else if (now - vol_hold_start > VOL_REPEAT_AFTER_MS &&
-                       now - last_vol_repeat >= VOL_REPEAT_EVERY_MS) {
-                last_vol_repeat = now;
-                adjust_volume(volUp ? +1 : -1);
-            }
-        } else {
-            vol_hold_start = 0;
-        }
-    }
+    // Buttons are sampled on the input task; only skips come through here.
+    publish_pending_skips();
 
     // Hands over reads the scan task has already completed — does not block.
     nfc_loop();
@@ -496,7 +614,7 @@ void loop() {
             millis() / 1000);
     }
 
-    // Kept short: this adds directly to button-polling latency, which is now
-    // what governs the interval on most passes.
+    // Kept short so a card read or a skip reaches MQTT promptly. Buttons no
+    // longer depend on it — they have their own task.
     delay(2);
 }
