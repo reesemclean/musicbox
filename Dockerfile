@@ -23,13 +23,13 @@ ARG FIRMWARE_VERSION=latest
 RUN cd packages/esp32 && FIRMWARE_VERSION=${FIRMWARE_VERSION} pio run
 
 # --- Web Build Stage ---
-FROM node:24-alpine AS base
+FROM node:24.22-alpine AS base
 COPY requirements.txt /tmp/requirements.txt
 RUN apk add --no-cache tini python3 py3-pip curl ffmpeg && \
     pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt
 
-FROM node:24-alpine AS builder
+FROM node:24.22-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
